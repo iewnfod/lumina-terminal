@@ -114,6 +114,14 @@ export function useTerminalManager(): TerminalManager {
     const closeOnLastTabRef = useRef(config.closeWindowOnLastTab);
     closeOnLastTabRef.current = config.closeWindowOnLastTab;
 
+    // Mirror of config.profileLastOpened in a ref so newTerminal can record a
+    // profile's open time without a stale closure across rapid successive opens
+    // (the ref is updated immediately on each open, ahead of the config write).
+    const profileLastOpenedRef = useRef<Record<string, number>>(config.profileLastOpened ?? {});
+    useEffect(() => {
+        profileLastOpenedRef.current = config.profileLastOpened ?? {};
+    }, [config.profileLastOpened]);
+
     const idsRef = useRef(ids);
     idsRef.current = ids;
     const currentIdRef = useRef(currentId);
@@ -177,7 +185,14 @@ export function useTerminalManager(): TerminalManager {
         const id = addTerminal(p);
         setCurrentId(id);
         info(`New terminal: profile=${profile.name} id=${id}`);
-    }, [config, addTerminal, systemTheme]);
+        // Record this profile as just-opened so the empty-state quick-launch
+        // list can sort by recency. Update the ref immediately to stay correct
+        // across rapid successive opens, then persist. updateConfig handles its
+        // own error logging and never rejects, so fire-and-forget is safe.
+        const nextLastOpened = {...profileLastOpenedRef.current, [profile.name]: Date.now()};
+        profileLastOpenedRef.current = nextLastOpened;
+        updateConfig({profileLastOpened: nextLastOpened});
+    }, [config, addTerminal, systemTheme, updateConfig]);
 
     const closeTerminal = useCallback((id: string) => {
         debug(`closeTerminal called for id=${id}`);

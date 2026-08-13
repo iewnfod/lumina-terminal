@@ -20,6 +20,11 @@ export interface EmptyStateProps {
      *  (the default uses the generic binding; others use their profile-specific
      *  binding), sharing one source of truth with the command palette (§3.2). */
     bindings: Binding[];
+    /** Per-profile last-opened timestamps (ms), keyed by profile name — drives
+     *  the recency sort. */
+    profileLastOpened?: Record<string, number>;
+    /** Max profiles to show (most recent first). `undefined`/`<= 0` → show all. */
+    maxProfiles?: number;
     /** Open a new tab with the given profile. */
     onNewTab: (profile: TerminalProfile) => void;
 }
@@ -36,14 +41,18 @@ export interface EmptyStateProps {
  * profile buttons are interactive, so clicks still open a tab (Tauri skips
  * interactive children of a drag region).
  */
-export default function EmptyState({foregroundColor, profiles, bindings, onNewTab}: EmptyStateProps) {
+export default function EmptyState({foregroundColor, profiles, bindings, profileLastOpened, maxProfiles, onNewTab}: EmptyStateProps) {
     const t = useI18n();
-    // Default profile first — it's the one the generic new-tab shortcut opens.
-    const ordered = useMemo(() => {
-        const def = profiles.find((p) => p.default) ?? profiles[0];
-        if (!def) return [];
-        return [def, ...profiles.filter((p) => p !== def)];
-    }, [profiles]);
+    // Sort by last-opened time, most recent first; profiles never opened
+    // (no record) keep their config order at the end. Capped at maxProfiles.
+    // (Shortcut hints are derived per-row via profileNewTabShortcut, which
+    // already knows which profile is the default.)
+    const displayed = useMemo(() => {
+        const entries = profiles.map((p) => ({p, t: profileLastOpened?.[p.name] ?? -Infinity}));
+        entries.sort((a, b) => b.t - a.t);
+        const limit = maxProfiles && maxProfiles > 0 ? maxProfiles : entries.length;
+        return entries.slice(0, limit).map((e) => e.p);
+    }, [profiles, profileLastOpened, maxProfiles]);
 
     return (
         <motion.div
@@ -71,7 +80,7 @@ export default function EmptyState({foregroundColor, profiles, bindings, onNewTa
                 variants={fadeSlideUp}
                 className="flex flex-col gap-1 w-full max-w-sm max-h-[40vh] overflow-y-auto px-2 pb-2"
             >
-                {ordered.map((profile) => {
+                {displayed.map((profile) => {
                     const shortcut = profileNewTabShortcut(bindings, profile);
                     return (
                         <motion.button

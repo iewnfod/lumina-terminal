@@ -70,6 +70,15 @@ export interface GlobalConfig {
      * default tab on first run) regardless of this flag. When false, a "never"-
      * mode launch starts with no tabs (the empty state takes over). */
     loadDefaultProfileOnStartup?: boolean;
+    /** Per-profile "last opened" timestamps (ms since epoch), keyed by profile
+     * name. Recorded each time a terminal is opened with that profile and used
+     * to sort the empty-state quick-launch list by recency. Grows as profiles
+     * are opened; entries for deleted profiles are harmless dead keys. */
+    profileLastOpened?: Record<string, number>;
+    /** Max number of profiles the empty-state quick-launch list shows (the most
+     * recently opened first). An uncommon setting — no UI; edit config.json to
+     * change. 0/undefined/unset → show all. */
+    emptyStateMaxProfiles?: number;
     /** When true, run a read-only MCP (Model Context Protocol) HTTP server on
      *  127.0.0.1 so a local AI client can see open tabs, the running command,
      *  the live cwd, and recent terminal output. Off by default. The server
