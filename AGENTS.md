@@ -71,6 +71,9 @@ src/
 │   │                        #   + reorderByDrop (move item into gap; same ref when it's a no-op)
 │   ├── chunkedWriter.ts     # ChunkedWriter — bounded-chunk feeder for term.write() (UTF-16-safe slicing)
 │   ├── terminalGeometry.ts  # profileWindowSize — measure cell size + compute OS window size for rows/cols
+│   ├── initialWindowSize.ts # Shared once-per-session lock for "size the main window to a terminal profile"
+│   │                        #   on startup. Used by Term (terminal mounts first) and useEmptyStateWindowSize
+│   │                        #   (app starts with no terminal) so exactly one sizes the window per session.
 │   ├── bindingsSettings.ts  # bindings-editor pure logic: actionLabel, detectConflicts, toDraft, …
 │   └── FloatingFitAddon.ts  # xterm fit addon subclass (centered sub-cell fit)
 │
@@ -101,6 +104,9 @@ src/
 │   ├── useTerminalManager.ts# useTerminalManager() — tab list/profiles/active id + create/close/reorder/
 │   │                        #   tear-off + cross-window merge/hover listeners (extracted from App.tsx)
 │   ├── useWindowGeometry.ts # useWindowGeometry(isMainWindow) — restore + persist window pos/size (Wayland-aware)
+│   ├── useEmptyStateWindowSize.ts # useEmptyStateWindowSize(opts) — when the app starts with no terminal, size the
+│   │                        #   main window to the default profile via profileWindowSize (same dummy-xterm measure
+│   │                        #   + once-per-session lock Term uses), so the empty state isn't stuck at the OS size.
 │   ├── useCommandPaletteActions.tsx # useCommandPaletteActions(opts) — build the palette action list (JSX)
 │   ├── useKeyRecorder.ts    # useKeyRecorder(index, onRecord, onCancel) — global keydown capture for bindings editor
 │   ├── useTearoffSession.ts # useTearoffSession() → {label, payload} | "no" | null (tab tear-off boot)

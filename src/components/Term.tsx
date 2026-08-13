@@ -9,6 +9,7 @@ import {WebglAddon} from "@xterm/addon-webgl";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {parseProfilePadding} from "../lib/term.ts";
 import {profileWindowSize} from "../lib/terminalGeometry.ts";
+import {isInitialWindowSizeApplied, markInitialWindowSizeApplied} from "../lib/initialWindowSize.ts";
 import {ChunkedWriter} from "../lib/chunkedWriter.ts";
 import {sampleEdgeBackground} from "../lib/edgeBackground.ts";
 import {loadBindings} from "../lib/bindings.ts";
@@ -33,8 +34,6 @@ import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
 import {reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 import {CurrentCommandParser} from "../lib/currentCommand.ts";
 import SearchBar from "./SearchBar.tsx";
-
-let hasAppliedInitialWindowSize = false;
 
 interface TermProps {
     id: string;
@@ -281,16 +280,16 @@ export default function Term(props : TermProps) {
         // restore effect has already applied the remembered size, and applying
         // the profile rows/cols here would clobber it.
         const skipForRemembered = !!(config.rememberWindowSize && config.rememberedWindowSize);
-        if (!hasAppliedInitialWindowSize && getCurrentWindow().label === "main" && !skipForRemembered) {
-            hasAppliedInitialWindowSize = true;
+        if (!isInitialWindowSizeApplied() && getCurrentWindow().label === "main" && !skipForRemembered) {
+            markInitialWindowSizeApplied();
             const windowSize = getWindowSizeFromRowsAndColumns();
             getCurrentWindow().setSize(windowSize).catch((e) => {
                 error(`Failed to apply initial window size for terminal ${id}: ${e}`).catch(() => {});
             });
-        } else if (!hasAppliedInitialWindowSize) {
+        } else if (!isInitialWindowSizeApplied()) {
             // Mark as applied even when we skipped, so a later profile change
             // doesn't suddenly resize the window.
-            hasAppliedInitialWindowSize = true;
+            markInitialWindowSizeApplied();
         }
 
         // profile is already the product of parseProfile(), which resolved

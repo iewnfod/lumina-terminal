@@ -64,8 +64,13 @@ export interface TerminalManager {
     /** Add a chrome-only tab (Settings/About — no PTY). If already present,
      *  just activates it. Centralized so App's open* handlers share one path. */
     openChromeTab: (id: string) => void;
-    // True once the initial-tab seeding effect has run for this window.
+    // True once the initial-tab seeding effect has run for this window. The ref
+    // guards the seed effect itself; `initialized` (state) mirrors it so React
+    // consumers re-render when seeding completes (e.g. the empty state and its
+    // window sizer, which must wait for the seed decision before acting — a ref
+    // alone wouldn't trigger the render they need).
     isInitialized: React.MutableRefObject<boolean>;
+    initialized: boolean;
     /** "Ask every time" close dialog state + resolver. App renders
      *  SessionSaveDialog from these. */
     sessionDialog: {
@@ -103,6 +108,9 @@ export function useTerminalManager(): TerminalManager {
     const dragScreenPosRef = useRef<{x: number; y: number} | null>(null);
     const [commands, setCommands] = useState<Record<string, CurrentCommand | null>>({});
     const isInitialized = useRef<boolean>(false);
+    // Reactive mirror of isInitialized, so consumers re-render when seeding
+    // finishes. Set wherever the ref is set.
+    const [initialized, setInitialized] = useState(false);
     const closeOnLastTabRef = useRef(config.closeWindowOnLastTab);
     closeOnLastTabRef.current = config.closeWindowOnLastTab;
 
@@ -520,6 +528,7 @@ export function useTerminalManager(): TerminalManager {
             if (session.restoreTabs === undefined) return;
             if (config.profiles.length && ids.length === 0) {
                 isInitialized.current = true;
+                setInitialized(true);
                 getCurrentWindow().setResizable(true).catch((e) =>
                     error(`Failed to set window resizable: ${e}`)
                 );
@@ -676,6 +685,7 @@ export function useTerminalManager(): TerminalManager {
         // The profile in the payload is already resolved (post parseProfile),
         // so we insert it directly without re-merging globalProfile.
         isInitialized.current = true;
+        setInitialized(true);
         const {ptyId, profile: seedProfile} = tearoff.payload;
         getCurrentWindow().setResizable(true).catch((e) =>
             error(`Failed to set tear-off window resizable: ${e}`)
@@ -713,6 +723,7 @@ export function useTerminalManager(): TerminalManager {
         setCommandsFor,
         openChromeTab,
         isInitialized,
+        initialized,
         sessionDialog: {open: session.dialog.open, count: session.dialog.count, resolve: session.resolveDialog},
     };
 }

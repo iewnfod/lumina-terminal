@@ -32,6 +32,7 @@ import {useInstallSource} from "./hooks/useInstallSource.ts";
 import UpdateModal from "./components/UpdateModal.tsx";
 import {listen} from "@tauri-apps/api/event";
 import {useWindowGeometry} from "./hooks/useWindowGeometry.ts";
+import {useEmptyStateWindowSize} from "./hooks/useEmptyStateWindowSize.ts";
 import {useTerminalManager} from "./hooks/useTerminalManager.ts";
 import {useCommandPaletteActions} from "./hooks/useCommandPaletteActions.tsx";
 import {reportCommandFinished} from "./lib/terminalApi.ts";
@@ -143,6 +144,20 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // for tear-off windows (they're positioned by createTearoffWindow).
     const isMainWindow = getCurrentWindow().label === "main";
     useWindowGeometry(isMainWindow);
+    // When the app starts with no terminal (empty state), no Term ever mounts
+    // to size the window — so size it to the default profile here, sharing the
+    // same once-per-session lock Term uses (whichever runs first wins).
+    const emptyStateContainerRef = useRef<HTMLDivElement>(null);
+    useEmptyStateWindowSize({
+        active: ids.length === 0 && mgr.initialized,
+        containerRef: emptyStateContainerRef,
+        defaultProfile,
+        globalProfile: config.globalProfile,
+        systemTheme,
+        paddingOffset,
+        rememberWindowSize: config.rememberWindowSize,
+        rememberedWindowSize: config.rememberedWindowSize,
+    });
 
     // Settings/About are chrome-only tabs (no PTY). openChromeTab adds the id
     // if absent and activates it — the single path used by both handlers.
@@ -387,19 +402,21 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                         )}
                         {/* Empty state: the last tab was closed while "keep
                             window on last tab closed" is on, so the window
-                            stays but ids is empty. isInitialized gates the
-                            first render (before seeding) so this never flashes
-                            on startup. Sits above the chrome glass layer like
-                            Settings/About. */}
-                        {ids.length === 0 && mgr.isInitialized.current && (
-                            <MaskedSurface className="absolute inset-0" style={{zIndex: 1}}>
-                                <EmptyState
-                                    foregroundColor={effectiveFg ?? "#ffffff"}
-                                    profiles={config.profiles}
-                                    bindings={parsedBindings}
-                                    onNewTab={(profile) => { mgr.newTerminal(profile); }}
-                                />
-                            </MaskedSurface>
+                            stays but ids is empty. mgr.initialized (state, set
+                            when seeding finishes) gates the first render so
+                            this never flashes before the seed decision. Sits
+                            above the chrome glass layer like Settings/About. */}
+                        {ids.length === 0 && mgr.initialized && (
+                            <div ref={emptyStateContainerRef} className="absolute inset-0" style={{zIndex: 1}}>
+                                <MaskedSurface className="absolute inset-0">
+                                    <EmptyState
+                                        foregroundColor={effectiveFg ?? "#ffffff"}
+                                        profiles={config.profiles}
+                                        bindings={parsedBindings}
+                                        onNewTab={(profile) => { mgr.newTerminal(profile); }}
+                                    />
+                                </MaskedSurface>
+                            </div>
                         )}
                         {ids.filter((id) => id in terminals).map((id) => {
                             // A tab reattaches (replay scrollback + swap the PTY's
