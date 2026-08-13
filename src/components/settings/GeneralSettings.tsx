@@ -25,6 +25,7 @@ interface GeneralDraft {
     rememberWindowSize: boolean;
     sessionSaveMode: "never" | "always" | "ask";
     sessionSaveScrollback: boolean;
+    loadDefaultProfileOnStartup: boolean;
 }
 
 /** Theme-mode options shown in the Select below. Kept here (near the only
@@ -62,6 +63,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         rememberWindowSize: config.rememberWindowSize ?? false,
         sessionSaveMode: config.sessionSaveMode ?? "ask",
         sessionSaveScrollback: config.sessionSaveScrollback ?? false,
+        loadDefaultProfileOnStartup: config.loadDefaultProfileOnStartup !== false,
     };
 
     const {draft, setDraft, isDirty, save} = useSettingsDraft<GeneralDraft>(
@@ -81,6 +83,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 rememberWindowSize: d.rememberWindowSize,
                 sessionSaveMode: d.sessionSaveMode,
                 sessionSaveScrollback: d.sessionSaveScrollback,
+                loadDefaultProfileOnStartup: d.loadDefaultProfileOnStartup,
             };
             // Default-profile change rewrites the profiles array (only one may
             // be default at a time), so apply it here rather than via a flat
@@ -93,7 +96,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, currentDefault],
     );
 
     return (
@@ -413,6 +416,30 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                                 isSelected={draft.sessionSaveScrollback}
                                 isDisabled={draft.sessionSaveMode === "never"}
                                 onChange={(v) => setDraft((prev) => ({...prev, sessionSaveScrollback: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+
+                        {/* Load Default Profile on Startup: only meaningful when
+                            nothing is restored, i.e. when mode is "never".
+                            Disabled otherwise so it can't be toggled with no
+                            effect. */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className={draft.sessionSaveMode === "never" ? "cursor-pointer" : "cursor-pointer opacity-50"}>{t["Load Default Profile on Startup"]}</Label>}
+                            description={t["Open a default-profile tab when Lumina starts. Only applies when tabs are not saved on exit."]}
+                            onClick={() => {
+                                if (draft.sessionSaveMode !== "never") return;
+                                setDraft((prev) => ({...prev, loadDefaultProfileOnStartup: !prev.loadDefaultProfileOnStartup}));
+                            }}
+                        >
+                            <Switch
+                                isSelected={draft.loadDefaultProfileOnStartup}
+                                isDisabled={draft.sessionSaveMode !== "never"}
+                                onChange={(v) => setDraft((prev) => ({...prev, loadDefaultProfileOnStartup: v}))}
                             >
                                 <Switch.Control>
                                     <Switch.Thumb />

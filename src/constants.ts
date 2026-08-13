@@ -179,6 +179,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     rememberWindowSize: false,
     sessionSaveMode: "ask",
     sessionSaveScrollback: false,
+    loadDefaultProfileOnStartup: true,
     enableMcp: false,
 };
 

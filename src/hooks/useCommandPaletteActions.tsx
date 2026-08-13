@@ -3,7 +3,7 @@ import {Terminal as TerminalIcon, X, PanelLeftClose, PanelLeftOpen, Monitor, Mon
 import type {CommandAction} from "../components/CommandPalette.tsx";
 import {TerminalProfile} from "../types/terminal.ts";
 import {Binding, Actions} from "../types/config.ts";
-import {bindingToShortcut, findBinding} from "../lib/bindings.ts";
+import {bindingToShortcut, findBinding, profileNewTabShortcut} from "../lib/bindings.ts";
 
 /**
  * Build the command-palette action list from the live config + bindings + i18n.
@@ -42,15 +42,12 @@ export function useCommandPaletteActions(opts: {
         const newLabel = t["New {name}"];
         const newDesc = t['Create a new terminal with profile "{name}"'];
         for (const profile of profiles) {
-            const isDefault = profile.default;
-            const profileArgs = isDefault ? undefined : { profileName: profile.name };
-            const profileBinding = findBinding(parsedBindings, "newTab", profileArgs);
             actions.push({
                 id: `new-terminal-${profile.name}`,
                 label: newLabel.replace("{name}", profile.name),
                 description: newDesc.replace("{name}", profile.name),
                 icon: <TerminalIcon size={18} />,
-                shortcut: profileBinding ? bindingToShortcut(profileBinding) : undefined,
+                shortcut: profileNewTabShortcut(parsedBindings, profile),
                 category: t["Terminal"],
                 keywords: ["new", "terminal", "新建", profile.name],
                 onSelect: () => newTerminal(profile),

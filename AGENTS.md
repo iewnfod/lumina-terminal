@@ -132,6 +132,12 @@ src/
 │   │                        #   this choice). Driven by useSessionPersistence; glass Modal.
 │   ├── ShellIcon.tsx        # Per-shell tab icon (bash/zsh/fish/nu/pwsh/ssh/default)
 │   ├── ThemePreview.tsx     # 8-color ANSI swatch with tooltip
+│   ├── EmptyState.tsx       # Profile quick-launch list shown in the main area when the last tab is
+│   │                        #   closed while "keep window on last tab closed" is on (ids empty).
+│   │                        #   Centered icon + heading + clickable profile rows (shell icon via
+│   │                        #   getShellType/ShellIcon); the default profile shows its new-tab
+│   │                        #   shortcut hint (findBinding/bindingToShortcut). Whole surface is a
+│   │                        #   window drag region (data-tauri-drag-region).
 │   └── settings/
 │       ├── GeneralSettings.tsx
 │       ├── GlobalProfileSettings.tsx

@@ -1,7 +1,7 @@
 import {useEffect, useState} from "react";
 import {ITheme} from "@xterm/xterm";
-import {TerminalProfile} from "../types/terminal.ts";
-import {parseProfileTheme} from "../lib/term.ts";
+import {TerminalProfile, TerminalRenderOptions} from "../types/terminal.ts";
+import {parseProfileTheme, type SystemTheme} from "../lib/term.ts";
 import {foregroundFor, isColorDark} from "../lib/color.ts";
 import {error} from "@tauri-apps/plugin-log";
 
@@ -23,6 +23,24 @@ export interface EffectiveTheme {
      *  has "spread" its color across the whole window). Chrome uses this to
      *  skip its glass tint so the TUI's color passes through unmodified. */
     isSpread: boolean;
+}
+
+/** Resolve a profile's theme exactly as {@link parseProfile} does at tab
+ *  creation: merge globalProfile's theme first (as the base), then the
+ *  profile's own themePath/inline theme, with systemTheme choosing the
+ *  bare-profile fallback palette. Centralizing this keeps the empty-state
+ *  fallback (a raw config profile, not pre-parsed) consistent with what a real
+ *  terminal shows. */
+async function resolveProfileTheme(
+    profile: TerminalRenderOptions,
+    globalProfile: TerminalRenderOptions | undefined,
+    systemTheme: SystemTheme | undefined,
+): Promise<ITheme> {
+    if (globalProfile) {
+        const globalTheme = await parseProfileTheme(globalProfile, undefined, systemTheme);
+        return parseProfileTheme(profile, globalTheme, systemTheme);
+    }
+    return parseProfileTheme(profile, undefined, systemTheme);
 }
 
 /**
@@ -55,6 +73,14 @@ export function useEffectiveTheme(
      *  canvas) follows the mode, not just the chrome text. `null`/`undefined` =
      *  bg follows the terminal/TUI (theme mode "terminal"). */
     forceBg: string | null = null,
+    /** Global render options, merged the same way {@link parseProfile} merges
+     *  them at tab-creation time so the resolved theme matches a real terminal.
+     *  Required for the empty-state fallback, whose profile is raw (not
+     *  pre-parsed). */
+    globalProfile?: TerminalRenderOptions,
+    /** OS light/dark preference; picks the fallback palette for a bare profile
+     *  (no themePath/inline theme), matching useSystemTheme. */
+    systemTheme?: SystemTheme,
 ): EffectiveTheme & { setEdgeBg: (color: string | null) => void } {
     const [currentTheme, setCurrentTheme] = useState<ITheme | null>(null);
     // Uniform background color sampled from the active terminal's outer ring
@@ -62,16 +88,25 @@ export function useEffectiveTheme(
     // TUI bleeds seamlessly to the window edges; null => use theme.background.
     const [edgeBg, setEdgeBg] = useState<string | null>(null);
 
-    // Resolve the active profile's theme.
+    // Resolve the profile's theme the same way parseProfile does at tab
+    // creation: merge globalProfile first, then the profile's own
+    // themePath/inline theme, with systemTheme picking the bare-profile
+    // fallback palette. This matters for the empty-state fallback, where the
+    // profile is a raw config profile (not pre-parsed) — without the global
+    // merge + systemTheme it resolves to the wrong palette. Active profiles are
+    // already pre-parsed (.theme set), so re-resolving yields the same result.
     useEffect(() => {
-        if (currentProfile) {
-            parseProfileTheme(currentProfile).then((theme) => {
-                setCurrentTheme(theme);
-            }).catch((e) => {
+        if (!currentProfile) return;
+        let cancelled = false;
+        resolveProfileTheme(currentProfile, globalProfile, systemTheme)
+            .then((theme) => {
+                if (!cancelled) setCurrentTheme(theme);
+            })
+            .catch((e) => {
                 error(`Failed to resolve profile theme: ${e}`).catch(() => {});
             });
-        }
-    }, [currentProfile]);
+        return () => { cancelled = true; };
+    }, [currentProfile, globalProfile, systemTheme]);
 
     // Clear the sampled edge background whenever the active tab changes, so a
     // previously fullscreen TUI's color doesn't bleed into the next tab. The

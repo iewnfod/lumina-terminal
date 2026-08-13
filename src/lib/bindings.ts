@@ -73,6 +73,27 @@ export function findBinding(
         return aKeys.every((k) => b.args![k] === args![k]);
     });
 }
+
+/**
+ * Shortcut segments for the "new terminal with this profile" action. Mirrors
+ * how the command palette derives it: the default profile uses the generic
+ * `newTab` binding (no args); a non-default profile uses its profile-specific
+ * binding (`newTab` + `{profileName}`). Returns `undefined` when no binding
+ * exists. Centralized so the command palette, the empty-state quick-launch
+ * list, and any future surface agree on which shortcut belongs to which
+ * profile (single source of truth, §3.2).
+ *
+ * Takes a structural `{name, default?}` so this pure module need not depend on
+ * the terminal types.
+ */
+export function profileNewTabShortcut(
+    bindings: Binding[],
+    profile: { name: string; default?: boolean },
+): { abbr?: string; content: string }[] | undefined {
+    const args = profile.default ? undefined : { profileName: profile.name };
+    const b = findBinding(bindings, "newTab", args);
+    return b ? bindingToShortcut(b) : undefined;
+}
 // Stable signature for a key + modifier set. CtrlOrCommand is normalized to its
 // platform-specific form (cmd on macOS, ctrl elsewhere) so the same binding
 // produces one signature regardless of platform, and conflict detection stays

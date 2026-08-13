@@ -190,6 +190,11 @@ export function useTerminalManager(): TerminalManager {
                         error(`Failed to close window on last tab: ${e}`)
                     );
                     return;
+                } else {
+                    // Keep the window open: no tabs remain, so clear the active
+                    // id. Must be null (not the closed id) so the empty state
+                    // renders and App-level key bindings stay live.
+                    newCurrentId = null;
                 }
             }
             setIds(newIds);
@@ -217,8 +222,12 @@ export function useTerminalManager(): TerminalManager {
                     error(`Failed to close window on last tab: ${e}`)
                 );
                 return;
+            } else {
+                // closeWindowOnLastTab is off: keep the window open with no
+                // active tab. currentId MUST be null (not the closed id) so the
+                // empty state renders and App-level key bindings stay live.
+                newCurrentId = null;
             }
-            // If closeWindowOnLastTab is false, fall through to clear state
         }
 
         setTerminals((prevState) => {
@@ -270,6 +279,10 @@ export function useTerminalManager(): TerminalManager {
                     getCurrentWindow().close().catch((e) =>
                         error(`Failed to close source window after detach: ${e}`)
                     );
+                } else {
+                    // Keep the source window open: no tabs remain, so clear the
+                    // active id (null, not the detached id) for the empty state.
+                    newCurrentId = null;
                 }
             }
             setTerminals((prevState) => {
@@ -642,9 +655,19 @@ export function useTerminalManager(): TerminalManager {
                     });
                 } else {
                     session.markRestored();
-                    newTerminal(defaultProfile).catch((e) =>
-                        error(`Failed to create initial terminal: ${e}`)
-                    );
+                    // When session saving is off, the "load default profile on
+                    // startup" setting decides whether to seed a default tab or
+                    // start empty (the empty state then takes over). With saving
+                    // on but nothing to restore (e.g. first run), always seed a
+                    // default tab — the setting is meaningless there.
+                    const seedDefault = config.sessionSaveMode === "never"
+                        ? config.loadDefaultProfileOnStartup !== false
+                        : true;
+                    if (seedDefault) {
+                        newTerminal(defaultProfile).catch((e) =>
+                            error(`Failed to create initial terminal: ${e}`)
+                        );
+                    }
                 }
             }
             return;

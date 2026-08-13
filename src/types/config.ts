@@ -64,6 +64,12 @@ export interface GlobalConfig {
      * the session file large. Only consulted when a save actually happens
      * (mode "always", or "ask" + user picks Save). */
     sessionSaveScrollback?: boolean;
+    /** When true (default), open a tab with the default profile when Lumina
+     * starts with nothing to restore. Only consulted when `sessionSaveMode` is
+     * "never" — with saving on, launches restore a saved session (or seed a
+     * default tab on first run) regardless of this flag. When false, a "never"-
+     * mode launch starts with no tabs (the empty state takes over). */
+    loadDefaultProfileOnStartup?: boolean;
     /** When true, run a read-only MCP (Model Context Protocol) HTTP server on
      *  127.0.0.1 so a local AI client can see open tabs, the running command,
      *  the live cwd, and recent terminal output. Off by default. The server

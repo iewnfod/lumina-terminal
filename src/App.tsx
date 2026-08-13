@@ -1,4 +1,5 @@
 import Term from "./components/Term.tsx";
+import EmptyState from "./components/EmptyState.tsx";
 import MaskedSurface from "./components/ui/MaskedSurface.tsx";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
@@ -56,8 +57,22 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
             return null;
         }
     }, [currentId, terminals]);
+    // The default profile (first flagged default, else the first). Used as the
+    // terminal-theme fallback when no tab is active (see themeProfile) and by
+    // findProfile/newTerminal for the "new tab" action.
+    const defaultProfile = useMemo(() => {
+        return config.profiles.find(p => p.default) || config.profiles[0];
+    }, [config.profiles]);
     const systemTheme = useSystemTheme();
     const themeMode = config.themeMode ?? "terminal";
+    // When following the terminal theme but no terminal is active (empty state —
+    // all tabs closed, or startup with loadDefaultProfileOnStartup off), fall
+    // back to the default profile's palette so the chrome still reads as a
+    // terminal theme instead of reverting to black/system. Other modes force
+    // their own bg, so the profile is irrelevant there.
+    const themeProfile = themeMode === "terminal" && !currentProfile
+        ? (defaultProfile ?? null)
+        : currentProfile;
     // Translate the theme mode into a dark override for useEffectiveTheme.
     // "terminal" → null (derive from bg, the legacy behavior). "system" → null
     // until the OS theme resolves, then the resolved value.
@@ -75,7 +90,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         : darkOverride === true ? "#1a1a1a"
         : darkOverride === false ? "#fafafa"
         : null; // system unresolved → briefly fall back to terminal bg
-    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(currentProfile, currentId, config.enableColorSpread !== false, darkOverride, forceBg);
+    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(themeProfile, currentId, config.enableColorSpread !== false, darkOverride, forceBg, config.globalProfile, systemTheme);
     // Glass material filling the terminal area. The terminal surface is clipped
     // to a rounded rectangle via clip-path; its four corners are transparent,
     // exposing this chrome layer beneath — so the chrome reads as a continuous
@@ -112,9 +127,6 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // self-updater, which only supports AppImage on Linux.
     const installSource = useInstallSource();
     const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
-    const defaultProfile = useMemo(() => {
-        return config.profiles.find(p => p.default) || config.profiles[0];
-    }, [config.profiles]);
     // Resolve a profile by name, falling back to the default profile. Centralized
     // so newTab handlers (command palette, keybinding, drag) all share one path.
     const findProfile = useCallback((name?: string) => {
@@ -167,6 +179,11 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
 
     // Keyboard bindings for non-terminal tabs (Settings, About, etc.)
     const isNonTerminalTab = currentId === SETTINGS_TAB_ID || currentId === ABOUT_TAB_ID;
+    // The App-level key handler also serves the empty state — when the last tab
+    // is closed while "keep window on last tab closed" is on, currentId becomes
+    // null and no Term/xterm instance is mounted to field shortcuts. Without
+    // this, new-tab / settings / command-palette hotkeys become dead keys.
+    const appKeyHandlerActive = isNonTerminalTab || currentId === null;
     const handleNonTerminalAction = useCallback((action: Actions, args?: Record<string, string>) => {
         info(`Keybinding action from non-terminal tab: ${action}`);
         switch (action) {
@@ -203,7 +220,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                 break;
         }
     }, [currentId, mgr, findProfile, openSettings, tabBarVisible, updateConfig]);
-    useKeyboardBindings(parsedBindings, handleNonTerminalAction, isNonTerminalTab);
+    useKeyboardBindings(parsedBindings, handleNonTerminalAction, appKeyHandlerActive);
 
     // Global: prevent browser defaults for configured shortcuts
     useEffect(() => {
@@ -365,6 +382,22 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     updater={updater}
                                     installSource={installSource}
                                     onShowUpdateModal={() => setIsUpdateModalOpen(true)}
+                                />
+                            </MaskedSurface>
+                        )}
+                        {/* Empty state: the last tab was closed while "keep
+                            window on last tab closed" is on, so the window
+                            stays but ids is empty. isInitialized gates the
+                            first render (before seeding) so this never flashes
+                            on startup. Sits above the chrome glass layer like
+                            Settings/About. */}
+                        {ids.length === 0 && mgr.isInitialized.current && (
+                            <MaskedSurface className="absolute inset-0" style={{zIndex: 1}}>
+                                <EmptyState
+                                    foregroundColor={effectiveFg ?? "#ffffff"}
+                                    profiles={config.profiles}
+                                    bindings={parsedBindings}
+                                    onNewTab={(profile) => { mgr.newTerminal(profile); }}
                                 />
                             </MaskedSurface>
                         )}
