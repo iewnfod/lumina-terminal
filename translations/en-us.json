@@ -218,5 +218,7 @@
     "Pin on Top": "Pin on Top",
     "Unpin from Top": "Unpin from Top",
     "Always on top is not supported on Wayland": "Always on top is not supported on Wayland",
-    "Remembering window position is not supported on Wayland": "Remembering window position is not supported on Wayland"
+    "Remembering window position is not supported on Wayland": "Remembering window position is not supported on Wayland",
+    "IME Duplicate Input Fix": "IME Duplicate Input Fix",
+    "Prevent duplicated IME input on Linux; turn off if IME input feels slow": "Prevent duplicated IME input on Linux; turn off if IME input feels slow"
 }

@@ -39,6 +39,14 @@ export interface GlobalConfig {
      * default. Only affects newly created tabs; the initial tab of a window
      * has no active terminal to inherit from and uses the profile default. */
     inheritWorkingDirectory?: boolean;
+    /** When true (default), install the IME duplicate-input guard on each
+     *  terminal's hidden textarea (lib/imeCompositionGuard.ts). The guard
+     *  normalizes WebKitGTK/IBus commits that arrive without a matching
+     *  compositionstart so committed text is sent exactly once. It rewrites
+     *  the textarea on each such commit, which can cost IME responsiveness on
+     *  slower machines — turn it off to restore raw xterm behavior (IME input
+     *  on Linux/WebKitGTK may then duplicate again). */
+    imeDuplicateInputFix?: boolean;
     /** When true, restore the main window to its last position on startup
      * (main window only; tear-off windows are positioned by their spawner). */
     rememberWindowPosition?: boolean;

@@ -175,6 +175,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     themeMode: "terminal",
     autoUpdateOnStartup: true,
     inheritWorkingDirectory: false,
+    imeDuplicateInputFix: true,
     rememberWindowPosition: false,
     rememberWindowSize: false,
     sessionSaveMode: "ask",

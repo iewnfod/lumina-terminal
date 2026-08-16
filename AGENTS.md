@@ -26,6 +26,12 @@ The backend (`src-tauri/`) is intentionally thin: it spawns/kills PTYs,
 streams output via Tauri events, and exposes a few filesystem helpers. All UI
 logic, state, and derivation live in the frontend.
 
+`@xterm/xterm` stays on stable 6.0.0 plus a local backport patch
+(`patches/@xterm__xterm@6.0.0.patch`, declared in `pnpm-workspace.yaml`) that
+vendors two upstream IME fixes the WebKitGTK duplicate-input fix depends on
+(xterm.js #5439 + #5698). See `patches/README.md`; drop the patch when the
+next stable xterm release containing both ships.
+
 ---
 
 ## 2. Source Map
@@ -74,6 +80,8 @@ src/
 │   ├── initialWindowSize.ts # Shared once-per-session lock for "size the main window to a terminal profile"
 │   │                        #   on startup. Used by Term (terminal mounts first) and useEmptyStateWindowSize
 │   │                        #   (app starts with no terminal) so exactly one sizes the window per session.
+│   ├── imeCompositionGuard.ts # WebKitGTK/IBus normalization for xterm's unmatched keyCode-229 IME fallback
+│   │                        #   (config-gated: global imeDuplicateInputFix, default on — see GeneralSettings)
 │   ├── bindingsSettings.ts  # bindings-editor pure logic: actionLabel, detectConflicts, toDraft, …
 │   └── FloatingFitAddon.ts  # xterm fit addon subclass (centered sub-cell fit)
 │
@@ -125,7 +133,7 @@ src/
 │   │   ├── SectionTitle.tsx     # <h2> heading + optional subtitle (consistent mb)
 │   │   └── SaveFooter.tsx       # Save (disabled-when-clean) + unsaved hint + trailing action slot
 │   ├── Term.tsx             # Single xterm instance: addons, PTY lifecycle, edge bg polling
-│   ├── SearchBar.tsx        # In-terminal search overlay (Ctrl+Shift+F): drives the headless
+│   ├── SearchBar.tsx        # In-terminal search overlay (Ctrl+F): drives the headless
 │   │                        #   @xterm/addon-search via a glass top slide-down bar (case /
 │   │                        #   whole-word / regex toggles + result counter). Mounted in Term.
 │   ├── TabBar.tsx           # Sidebar tab list. One HTML5 drag serves two outcomes: dropped

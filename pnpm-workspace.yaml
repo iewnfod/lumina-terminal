@@ -1,2 +1,4 @@
 allowBuilds:
   esbuild: true
+patchedDependencies:
+  '@xterm/xterm@6.0.0': patches/@xterm__xterm@6.0.0.patch
