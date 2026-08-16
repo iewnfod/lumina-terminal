@@ -77,7 +77,7 @@ jobs:
       - name: Read existing release title and notes
         id: release_meta
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Force bash on every OS: the command substitution + heredoc below are
         # bash syntax, which the Windows runner's default shell (PowerShell) can't run.
         shell: bash
