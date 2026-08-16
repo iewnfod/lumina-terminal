@@ -482,11 +482,17 @@ export default function Term(props : TermProps) {
     // WebKitGTK + IBus can commit text without a matching compositionstart.
     // Normalize that event sequence before xterm's delayed keyCode-229 fallback
     // reads the textarea, and suppress its duplicate unmatched compositionend.
+    // Config-gated (imeDuplicateInputFix, default on): the per-commit textarea
+    // rewrite can cost IME responsiveness, so users who feel lag can opt out
+    // and get the raw xterm behavior back. Toggling re-runs this effect — the
+    // guard's disposer uninstalls it live, no terminal restart needed.
+    const imeFixEnabled = config.imeDuplicateInputFix !== false;
     useEffect(() => {
+        if (!imeFixEnabled) return;
         const textarea = termRef.current?.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
         if (!textarea) return;
         return installImeCompositionGuard(textarea);
-    }, [id]);
+    }, [id, imeFixEnabled]);
 
     // Register this terminal's serialize function with the parent so the
     // "tear off tab" command can capture the xterm buffer right before opening

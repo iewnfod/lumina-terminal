@@ -215,5 +215,7 @@
     "Pin on Top": "置顶窗口",
     "Unpin from Top": "取消置顶",
     "Always on top is not supported on Wayland": "Wayland 会话不支持窗口置顶",
-    "Remembering window position is not supported on Wayland": "Wayland 会话不支持记住窗口位置"
+    "Remembering window position is not supported on Wayland": "Wayland 会话不支持记住窗口位置",
+    "IME Duplicate Input Fix": "输入法重复输入修复",
+    "Prevent duplicated IME input on Linux; turn off if IME input feels slow": "修复 Linux 下输入法重复输入；若输入法响应变慢可关闭"
 }

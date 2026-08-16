@@ -21,6 +21,7 @@ interface GeneralDraft {
     enableColorSpread: boolean;
     autoUpdateOnStartup: boolean;
     inheritWorkingDirectory: boolean;
+    imeDuplicateInputFix: boolean;
     rememberWindowPosition: boolean;
     rememberWindowSize: boolean;
     sessionSaveMode: "never" | "always" | "ask";
@@ -58,6 +59,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         enableColorSpread: config.enableColorSpread !== false,
         autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
         inheritWorkingDirectory: config.inheritWorkingDirectory ?? false,
+        imeDuplicateInputFix: config.imeDuplicateInputFix !== false,
         rememberWindowPosition: config.rememberWindowPosition ?? false,
         rememberWindowSize: config.rememberWindowSize ?? false,
         sessionSaveMode: config.sessionSaveMode ?? "ask",
@@ -77,6 +79,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 enableColorSpread: d.enableColorSpread,
                 autoUpdateOnStartup: d.autoUpdateOnStartup,
                 inheritWorkingDirectory: d.inheritWorkingDirectory,
+                imeDuplicateInputFix: d.imeDuplicateInputFix,
                 rememberWindowPosition: d.rememberWindowPosition,
                 rememberWindowSize: d.rememberWindowSize,
                 sessionSaveMode: d.sessionSaveMode,
@@ -93,7 +96,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, currentDefault],
     );
 
     return (
@@ -458,6 +461,29 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                             <Switch
                                 isSelected={draft.inheritWorkingDirectory}
                                 onChange={(v) => setDraft((prev) => ({...prev, inheritWorkingDirectory: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+
+                        {/* IME Duplicate Input Fix: normalize WebKitGTK/IBus IME
+                            commits that arrive without a matching
+                            compositionstart so text isn't sent twice. The guard
+                            rewrites the textarea on each such commit — if that
+                            costs IME responsiveness, opting out restores the
+                            raw xterm behavior (input may duplicate again on
+                            Linux). */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className="cursor-pointer">{t["IME Duplicate Input Fix"]}</Label>}
+                            description={t["Prevent duplicated IME input on Linux; turn off if IME input feels slow"]}
+                            onClick={() => setDraft((prev) => ({...prev, imeDuplicateInputFix: !prev.imeDuplicateInputFix}))}
+                        >
+                            <Switch
+                                isSelected={draft.imeDuplicateInputFix}
+                                onChange={(v) => setDraft((prev) => ({...prev, imeDuplicateInputFix: v}))}
                             >
                                 <Switch.Control>
                                     <Switch.Thumb />

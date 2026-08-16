@@ -49,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 ### Terminal
 * Multi-tab terminal backed by [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/) — each tab runs a real shell process
 * **Tear off tabs** — move a tab into its own window (`Ctrl+Shift+L` / `Cmd+Shift+L`) while keeping the running process and scrollback alive
-* **Find in terminal** (`Ctrl+Shift+F` / `Cmd+Shift+F`) — match-case / whole-word / regex with a live result counter, via [addon-search](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-search)
+* **Find in terminal** (`Ctrl+F` / `Cmd+F`) — match-case / whole-word / regex with a live result counter, via [addon-search](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-search)
 * Configurable shell per profile — PowerShell, WSL, Git Bash, or any executable
 * Optional [WebGL renderer](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) for GPU-accelerated rendering
 * [Unicode 11 width rules](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) + optional [grapheme-cluster](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode-graphemes) rendering for correct emoji/symbol widths
@@ -68,7 +68,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 ### Keyboard Shortcuts
 * Fully customizable keybindings stored in the config file. Defaults:
   * `Ctrl/Cmd+T` — New tab · `Ctrl/Cmd+W` — Close tab
-  * `Ctrl/Cmd+Shift+L` — Tear off tab · `Ctrl/Cmd+Shift+F` — Find
+  * `Ctrl/Cmd+Shift+L` — Tear off tab · `Ctrl/Cmd+F` — Find
   * `Ctrl/Cmd+,` — Settings · `Ctrl/Cmd+Shift+P` — Command palette
   * `Ctrl/Cmd+1–9` — Switch to tab by index
 * `Ctrl+C` / `Ctrl+Shift+C` swap (non-macOS) — copy with `Ctrl+C`, send SIGINT with `Ctrl+Shift+C`
