@@ -1,0 +1,44 @@
+name: Trigger AUR publish (fallback)
+
+# Runs AFTER the Release workflow completes successfully, using the
+# `workflow_run` event. This avoids the GITHUB_TOKEN permission restriction
+# that `release` events impose on `repository_dispatch` calls (release-triggered
+# runs get permissions stripped — `gh api POST /dispatches` then 403s).
+#
+# `workflow_run` runs with normal permissions, so `actions: write` here works.
+#
+# Triggered by: Release workflow completing with success.
+# The AUR workflow (aur.yml) listens on `repository_dispatch: publish-aur` and
+# reads the tag from `client_payload.tag`.
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+
+jobs:
+  trigger-aur:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Trigger Publish to AUR workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The completed Release run's head_branch is the tag (e.g. v0.2.1).
+          tag="${{ github.event.workflow_run.head_branch }}"
+          if [[ -z "${tag}" || "${tag}" == "master" ]]; then
+            echo "::error::No release tag found (head_branch=${tag}); aborting" >&2
+            exit 1
+          fi
+          echo "::notice::Dispatching publish-aur for tag ${tag}"
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/dispatches" \
+            -f event_type=publish-aur \
+            -f "client_payload[tag]=${tag}"

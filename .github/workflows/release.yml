@@ -77,6 +77,8 @@ jobs:
       - name: Read existing release title and notes
         id: release_meta
         env:
+          # GITHUB_TOKEN (built-in) with the job's contents: write permission
+          # is sufficient — no PAT needed for reading release metadata.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Force bash on every OS: the command substitution + heredoc below are
         # bash syntax, which the Windows runner's default shell (PowerShell) can't run.
@@ -112,40 +114,3 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
-
-  # After the entire build matrix uploads its .deb artifacts, fire the AUR
-  # publish workflow. We can't rely on `release: published` for that one
-  # because the assets aren't uploaded yet when the release goes live, and
-  # polling is ugly. This job is the clean hand-off: by the time it runs,
-  # every arch's .deb is already on the release.
-  #
-  # We use a `repository_dispatch` event rather than `gh workflow run`
-  # because the latter requires a PAT/App token (the default GITHUB_TOKEN is
-  # blocked from spawning new workflow runs). A dispatch event is allowed
-  # with the built-in GITHUB_TOKEN — no extra secret to manage. The AUR
-  # workflow listens on `repository_dispatch` type `publish-aur` and reads
-  # the tag from `client_payload.tag`. It runs on the default branch, so it
-  # always uses the latest workflow code.
-  trigger-aur:
-    needs: publish-tauri
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      # repository_dispatch POST requires actions: write on the token.
-      actions: write
-    steps:
-      - name: Trigger Publish to AUR workflow
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          # Fire repository_dispatch with type `publish-aur`; the tag rides
-          # in client_payload. Requires `actions: read` on GITHUB_TOKEN
-          # (repo default), which the job already has.
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/dispatches" \
-            -f event_type=publish-aur \
-            -f 'client_payload[tag]=${{ github.ref_name }}'
-          echo "::notice::Dispatched repository_dispatch(publish-aur) for tag ${{ github.ref_name }}"
