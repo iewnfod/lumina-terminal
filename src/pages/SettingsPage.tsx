@@ -9,6 +9,7 @@ import {
     FileCog,
     Bug,
     Globe,
+    Image,
     Keyboard,
     GripVertical,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { TerminalProfile } from "../types/terminal.ts";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import { useGlass } from "../hooks/useGlass.ts";
 import { glassSurface } from "../lib/glass.ts";
+import { isColorDark } from "../lib/color.ts";
 import { whileHoverTap, springSnappy } from "../lib/motion.ts";
 import { info, debug } from "@tauri-apps/plugin-log";
 import ProfileSettings from "../components/settings/ProfileSettings.tsx";
@@ -27,6 +29,7 @@ import GlobalProfileSettings from "../components/settings/GlobalProfileSettings.
 import GeneralSettings from "../components/settings/GeneralSettings.tsx";
 import AddProfileModal from "../components/settings/AddProfileModal.tsx";
 import BindingsSettings from "../components/settings/BindingsSettings.tsx";
+import CommandIconSettings from "../components/settings/CommandIconSettings.tsx";
 import MaskedSurface from "../components/ui/MaskedSurface.tsx";
 
 type SettingsSection = "general" | "globalProfile" | "bindings" | "developer" | string;
@@ -251,6 +254,18 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
                         </div>
                     </SidebarItem>
 
+                    {/* Command Icons */}
+                    <SidebarItem
+                        isSelected={selectedSection === "commandIcons"}
+                        onClick={() => handleSectionChange("commandIcons")}
+                        colors={colors}
+                    >
+                        <div className="flex items-center gap-2">
+                            <Image size={15} />
+                            <span className="truncate">{t["Command Icons"]}</span>
+                        </div>
+                    </SidebarItem>
+
                     <div className="mb-1" />
 
                     {/* Profiles header */}
@@ -333,6 +348,8 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
                             <GlobalProfileSettings borderColor={colors.borderColor} />
                         ) : selectedSection === "bindings" ? (
                             <BindingsSettings borderColor={colors.borderColor} />
+                        ) : selectedSection === "commandIcons" ? (
+                            <CommandIconSettings borderColor={colors.borderColor} dark={isColorDark(bg)} />
                         ) : selectedSection === "developer" ? (
                             <DeveloperSettings />
                         ) : (

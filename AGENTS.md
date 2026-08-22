@@ -65,6 +65,14 @@ src/
 │   ├── proxyApi.ts          # startProxySync/stopProxySync invoke wrappers (log-on-reject) — the
 │   │                        #   system-proxy watcher domain API (sibling to terminalApi.ts)
 │   ├── cliApi.ts            # getCliArgs() wrapper — reads parsed launch flags (log-on-reject)
+│   ├── appIcon.ts           # Command→tab-icon mapping: resolveAppFromCommand (wrapper-skipping)
+│   │                        #   + getAppIcon(line, userRules?) — user rules (config commandIcons,
+│   │                        #   plain basename or regex-vs-whole-line) run before the built-in
+│   │                        #   APP_COMMANDS table. Also the custom:" icon id helpers. Single
+│   │                        #   source of truth for which running command shows which app icon.
+│   ├── commandIconApi.ts    # importCommandIcon/pruneCommandIcons/listCommandIcons invoke wrappers
+│   │                        #   (log-on-reject) + cached asset-protocol URL resolution for custom:
+│   │                        #   icon ids — the custom command-icon domain API (sibling to terminalApi.ts)
 │   ├── shellIcon.ts         # getShellType(profile) → "bash"|"zsh"|"fish"|"nu"|"pwsh"|"ssh"|"default"
 │   ├── bindings.ts          # parseBindings, matchBinding, loadBindings, useKeyboardBindings,
 │   │                        #   exported actionSignature / keySignature
@@ -151,6 +159,11 @@ src/
 │   ├── SessionSaveDialog.tsx # "Ask every time" close confirmation (Save / Don't Save + remember
 │   │                        #   this choice). Driven by useSessionPersistence; glass Modal.
 │   ├── ShellIcon.tsx        # Per-shell tab icon (bash/zsh/fish/nu/pwsh/ssh/default)
+│   ├── AppIcon.tsx          # Per-command tab icon: branded app logos from assets/app-icons/
+│   │                        #   (registry loaded via import.meta.glob) or custom: imported images
+│   │                        #   (asset-protocol URL, resolved+cached via lib/commandIconApi.ts).
+│   │                        # Rendered when the running command maps to an app (lib/appIcon.ts);
+│   │                        # takes precedence over ShellIcon.
 │   ├── ThemePreview.tsx     # 8-color ANSI swatch with tooltip
 │   ├── EmptyState.tsx       # Profile quick-launch list shown in the main area when the last tab is
 │   │                        #   closed while "keep window on last tab closed" is on (ids empty).
@@ -164,6 +177,11 @@ src/
 │       ├── ProfileSettings.tsx
 │       ├── RenderSettings.tsx     # Shared render-option form (rows/cols/font/theme/webgl)
 │       ├── BindingsSettings.tsx
+│       ├── CommandIconSettings.tsx # User command→icon rules editor (config commandIcons): match
+│       │                       #   input + regex toggle (live validation) + icon picker (built-ins
+│       │                       #   + every stored imported SVG/PNG via list_command_icons) + live
+│       │                       #   test preview. Saving prunes unreferenced icon files (the only
+│       │                       #   cleanup moment) and re-lists.
 │       ├── DeveloperSettings.tsx
 │       ├── AddProfileModal.tsx
 │       ├── ShellSelector.tsx      # Shared shell picker (dropdown + custom path + browse)
@@ -193,6 +211,12 @@ src-tauri/src/
 │                  #   with streaming-UTF-8 decoding + two-mode burst coalescing;
 │                  #   reattach_terminal atomically swaps the channel for tab tear-off
 ├── command_tracker.rs # CommandInfo type + foreground_command() /proc + ps + privileged-name logic
+├── command_icons.rs # User-imported command icon storage: import_command_icon (validate ext/size,
+│                  #   copy into <app data dir>/command-icons with a content-hash name),
+│                  #   list_command_icons (picker source — every stored icon, so a rule can be
+│                  #   switched away and back), prune_command_icons (drop files no saved rule
+│                  #   references — the ONLY cleanup moment); pure helpers (sanitize_stem, ext_of, …)
+│                  #   parameterized by dir (tests/command_icons.rs)
 ├── shell_integration.rs # bash/zsh/fish OSC-1337 injection (precmd/preexec hooks for exit codes
 │                  #   and command text) + the per-shell proxy-sync hooks whose env-file
 │                  #   (proxy.env, same dir) is written by proxy.rs; hook sources are
@@ -238,6 +262,8 @@ tests/             # Backend integration tests (mandatory for backend work — s
 │                  #   + process_cwd against this process's own /proc entry
 ├── command_tracker.rs # basename / privileged-name classification + real /proc & ps
 │                  #   argv resolution against a live child (Unix-only file)
+├── command_icons.rs # import (ext/size validation, hash-named dedup) + prune over temp dirs;
+│                  #   sanitize_stem / ext_of pure helpers
 ├── install_source.rs # pacman/dpkg/rpm stdout sample shapes (hit and miss)
 ├── fonts.rs       # CSS font-family → first concrete family extraction
 ├── utils.rs       # path_exist / read_file over real temp files
@@ -304,6 +330,11 @@ categories that tend to duplicate:
   source for mapping a `TerminalProfile` to its icon category; `components/
   ShellIcon.tsx` renders it. Do not re-derive shell type from `exePath` in the
   TabBar or elsewhere.
+- **Command → app icon** → `lib/appIcon.ts` (`getAppIcon`) is the single source
+  for mapping a running command line to a tab icon (built-in table + user
+  `commandIcons` rules, regex-vs-whole-line included); custom icons resolve
+  through `lib/commandIconApi.ts`. Never match commands against icons anywhere
+  else (TabBar, MCP, settings preview all go through `getAppIcon`).
 - **Shared settings sub-forms** → `ShellSelector`, `SshFields`, `RenderSettings`.
   When a new settings page needs the same fields, reuse these components.
 

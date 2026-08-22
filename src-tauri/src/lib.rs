@@ -6,6 +6,7 @@
 // thin. `system` stays private: it is pure environment probing with no test
 // surface.
 pub mod cli;
+pub mod command_icons;
 pub mod command_tracker;
 pub mod file_manager;
 pub mod fonts;
@@ -21,6 +22,7 @@ pub mod utils;
 mod system;
 
 use crate::cli::*;
+use crate::command_icons::*;
 use crate::file_manager::*;
 use crate::fonts::*;
 use crate::install_source::*;
@@ -200,6 +202,9 @@ pub fn run() {
             stop_mcp_server,
             start_proxy_sync,
             stop_proxy_sync,
+            import_command_icon,
+            prune_command_icons,
+            list_command_icons,
             find_shells,
             path_exist,
             read_file,

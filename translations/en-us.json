@@ -222,5 +222,22 @@
     "IME Duplicate Input Fix": "IME Duplicate Input Fix",
     "Prevent duplicated IME input on Linux; turn off if IME input feels slow": "Prevent duplicated IME input on Linux; turn off if IME input feels slow",
     "Auto Proxy Sync": "Auto Proxy Sync",
-    "Keep proxy environment variables in sync with the system proxy in running terminals (bash/zsh/fish)": "Keep proxy environment variables in sync with the system proxy in running terminals (bash/zsh/fish)"
+    "Keep proxy environment variables in sync with the system proxy in running terminals (bash/zsh/fish)": "Keep proxy environment variables in sync with the system proxy in running terminals (bash/zsh/fish)",
+    "Command Icons": "Command Icons",
+    "The tab icon follows the running command. Plain rules match the command name; regex rules match the whole command line. Rules run top to bottom before the built-in icons.": "The tab icon follows the running command. Plain rules match the command name; regex rules match the whole command line. Rules run top to bottom before the built-in icons.",
+    "{n} rule(s) in total": "{n} rule(s) in total",
+    "No command icon rules yet.": "No command icon rules yet.",
+    "Add Rule": "Add Rule",
+    "Match": "Match",
+    "Regular expression - match the whole command line": "Regular expression - match the whole command line",
+    "Invalid regular expression": "Invalid regular expression",
+    "Fix invalid regular expressions first": "Fix invalid regular expressions first",
+    "Choose icon": "Choose icon",
+    "Import image…": "Import image…",
+    "Icon images": "Icon images",
+    "Preview": "Preview",
+    "Test command:": "Test command:",
+    "No match - the shell icon is used": "No match - the shell icon is used",
+    "Matches rule": "Matches rule",
+    "Built-in icon": "Built-in icon"
 }

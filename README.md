@@ -62,6 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 ### User Interface
 * **Command Palette** (`Ctrl+Shift+P` / `Cmd+Shift+P`) — search and execute commands with keyboard navigation
 * **Tab Bar** — sidebar with drag region and hover-close, toggleable via title bar or palette
+* **Command icons** — the tab icon follows the running command (vim, neovim, opencode, Claude Code, …). User-defined rules: plain command names or regex matched against the whole command line, with built-in app icons or your own imported SVG/PNG. Configure in Settings → Command Icons.
 * **Custom Title Bar** — window controls integrated with the terminal theme on Windows & Linux
 * **Auto Theme** — UI light/dark mode syncs to the terminal background color
 * **Color Spread** — a fullscreen TUI's uniform edge background fills the window chrome for an immersive look (toggleable)

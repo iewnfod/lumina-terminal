@@ -222,5 +222,22 @@
     "IME Duplicate Input Fix": "输入法重复输入修复",
     "Prevent duplicated IME input on Linux; turn off if IME input feels slow": "修复 Linux 下输入法重复输入；若输入法响应变慢可关闭",
     "Auto Proxy Sync": "自动同步代理",
-    "Keep proxy environment variables in sync with the system proxy in running terminals (bash/zsh/fish)": "让运行中的终端（bash/zsh/fish）的代理环境变量自动跟随系统代理，无需重启"
+    "Keep proxy environment variables in sync with the system proxy in running terminals (bash/zsh/fish)": "让运行中的终端（bash/zsh/fish）的代理环境变量自动跟随系统代理，无需重启",
+    "Command Icons": "命令图标",
+    "The tab icon follows the running command. Plain rules match the command name; regex rules match the whole command line. Rules run top to bottom before the built-in icons.": "标签页图标会跟随正在运行的命令。普通规则按命令名匹配；正则规则匹配整条命令行。规则自上而下、先于内置图标生效。",
+    "{n} rule(s) in total": "共 {n} 条规则",
+    "No command icon rules yet.": "还没有命令图标规则。",
+    "Add Rule": "添加规则",
+    "Match": "匹配",
+    "Regular expression - match the whole command line": "正则表达式 - 匹配整条命令行",
+    "Invalid regular expression": "无效的正则表达式",
+    "Fix invalid regular expressions first": "请先修正无效的正则表达式",
+    "Choose icon": "选择图标",
+    "Import image…": "导入图片…",
+    "Icon images": "图标图片",
+    "Preview": "预览",
+    "Test command:": "测试命令：",
+    "No match - the shell icon is used": "未命中 - 将显示 Shell 图标",
+    "Matches rule": "命中规则",
+    "Built-in icon": "内置图标"
 }

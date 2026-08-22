@@ -307,8 +307,10 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                         // child and term-command never reports it. The static
                         // startupCommand is the user's declared intent for this
                         // tab, so it's a reliable signal in that case.
-                        appIcon: (cmd && getAppIcon(cmd.command))
-                            ?? getAppIcon(terminals[id].startupCommand ?? "")
+                        // User-defined rules (config.commandIcons) run before
+                        // the built-in mapping inside getAppIcon.
+                        appIcon: (cmd && getAppIcon(cmd.command, config.commandIcons))
+                            ?? getAppIcon(terminals[id].startupCommand ?? "", config.commandIcons)
                             ?? undefined,
                     };
                 }

@@ -11,6 +11,21 @@ export interface Binding {
     args?: Record<string, string>;
 }
 
+/** One user-defined command→icon rule (see GlobalConfig.commandIcons). */
+export interface CommandIconRule {
+    /** What to match. When `isRegex` is false this is a command *name*
+     *  (basename) compared exactly (case-insensitive, `.exe` stripped,
+     *  sudo/env wrappers skipped) — same semantics as the built-in mapping.
+     *  When true it is a JavaScript regex source tested against the whole raw
+     *  command line, so arguments can participate (`^git\\s+push`). */
+    match: string;
+    isRegex?: boolean;
+    /** Icon to show: a built-in app icon id (`src/assets/app-icons/<id>`,
+     *  e.g. "neovim") or a `custom:<file>` reference to an image imported via
+     *  the backend into the app data dir (see lib/commandIconApi.ts). */
+    icon: string;
+}
+
 export interface GlobalConfig {
     language: Languages;
     profiles: TerminalProfile[];
@@ -101,6 +116,11 @@ export interface GlobalConfig {
      *  is read-only — there is deliberately no tool to write to the PTY. */
     enableMcp?: boolean;
     /** Port for the MCP server (loopback only). Defaults to 28700 when unset.
-     *  Only consulted when the server (re)starts. */
+     * Only consulted when the server (re)starts. */
     mcpPort?: number;
+    /** User-defined command→icon rules for the tab icon. Evaluated in array
+     *  order BEFORE the built-in mapping in lib/appIcon.ts, so the first
+     *  matching rule wins and can override a built-in icon. Undefined/empty →
+     *  built-in behavior only. */
+    commandIcons?: CommandIconRule[];
 }
