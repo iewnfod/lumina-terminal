@@ -31,7 +31,7 @@ fn discovers_candidates_across_dirs() {
     let path_value = format!("{}{SEP}{}", a.display(), b.display());
 
     let mut found = Vec::new();
-    scan_path_for(&path_value, ':', &["bash", "zsh", "fish", "nu"], &mut found);
+    scan_path_for(&path_value, SEP, &["bash", "zsh", "fish", "nu"], &mut found);
 
     assert!(found.contains(&a.join("bash").to_string_lossy().to_string()));
     assert!(found.contains(&a.join("zsh").to_string_lossy().to_string()));
@@ -46,7 +46,7 @@ fn repeated_dirs_are_deduped() {
     let path_value = format!("{}{SEP}{}", a.display(), a.display());
 
     let mut found = Vec::new();
-    scan_path_for(&path_value, ':', &["bash"], &mut found);
+    scan_path_for(&path_value, SEP, &["bash"], &mut found);
     assert_eq!(found.len(), 1);
 }
 
@@ -58,7 +58,7 @@ fn same_name_in_different_dirs_yields_both() {
     let path_value = format!("{}{SEP}{}", a.display(), b.display());
 
     let mut found = Vec::new();
-    scan_path_for(&path_value, ':', &["bash"], &mut found);
+    scan_path_for(&path_value, SEP, &["bash"], &mut found);
     assert_eq!(found.len(), 2);
 }
 
