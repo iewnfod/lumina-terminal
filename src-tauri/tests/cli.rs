@@ -38,26 +38,40 @@ fn long_command_flag_matches_short_e() {
 
 #[test]
 fn trailing_var_arg_captures_all_plain_arguments() {
-    // Everything after -e is captured — up to the next dash-token: a
-    // recognized long flag still parses as a flag, and an unknown dash-token
-    // errors (see the two tests below). Quoted/multi-word commands work as
-    // long as no argument starts with '-'.
     let cli = parse(&["-e", "echo", "hello world"]).expect("parse");
     assert_eq!(cli.command, vec!["echo", "hello world"]);
 }
 
 #[test]
-fn flags_after_the_command_are_still_parsed_as_flags() {
+fn dash_tokens_after_the_command_are_captured_verbatim() {
+    // Alacritty `-e` semantics: once -e starts the command, EVERYTHING after
+    // belongs to it — other flags must be given before -e. This is what
+    // `allow_hyphen_values` buys over bare `trailing_var_arg` (which parsed
+    // a known flag as a flag and rejected unknown dash-tokens).
+    let cli = parse(&["-e", "grep", "-n", "pattern"]).expect("parse");
+    assert_eq!(cli.command, vec!["grep", "-n", "pattern"]);
+
     let cli = parse(&["-e", "vim", "--hold"]).expect("parse");
-    assert_eq!(cli.command, vec!["vim"]);
-    assert!(cli.hold);
+    assert_eq!(cli.command, vec!["vim", "--hold"]);
+    assert!(!cli.hold, "--hold after -e is command data, not the flag");
+
+    let cli = parse(&["-e", "sh", "-c", "echo hi"]).expect("parse");
+    assert_eq!(cli.command, vec!["sh", "-c", "echo hi"]);
 }
 
 #[test]
-fn unknown_dash_token_after_command_is_rejected() {
-    // `-n` here is not a known Lumina flag, so clap rejects it instead of
-    // silently folding it into the command.
-    assert!(parse(&["-e", "grep", "-n", "pattern"]).is_err());
+fn flags_before_the_command_still_parse_as_flags() {
+    let cli = parse(&["--hold", "--profile", "dev", "-T", "t", "-e", "vim"]).expect("parse");
+    assert_eq!(cli.command, vec!["vim"]);
+    assert!(cli.hold);
+    assert_eq!(cli.profile.as_deref(), Some("dev"));
+    assert_eq!(cli.title.as_deref(), Some("t"));
+}
+
+#[test]
+fn command_equals_form_still_works() {
+    let cli = parse(&["--command=htop"]).expect("parse");
+    assert_eq!(cli.command, vec!["htop"]);
 }
 
 #[test]

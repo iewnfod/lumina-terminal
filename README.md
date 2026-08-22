@@ -102,7 +102,7 @@ lumina-terminal -e nvim                         # run nvim; closes on :q
 lumina-terminal --hold -e ls -la                # run ls -la, keep the output
 lumina-terminal --working-directory ~/projects -e npm run dev
 lumina-terminal --profile work                  # open the "work" profile
-lumina-terminal --profile dev -e cargo build --hold
+lumina-terminal --hold --profile dev -e cargo build
 lumina-terminal -T "build log"                  # set the window title
 ```
 

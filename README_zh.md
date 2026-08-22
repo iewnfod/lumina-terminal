@@ -102,7 +102,7 @@ lumina-terminal -e nvim                         # 运行 nvim；:q 后关闭
 lumina-terminal --hold -e ls -la                # 运行 ls -la 并保留输出
 lumina-terminal --working-directory ~/projects -e npm run dev
 lumina-terminal --profile work                  # 打开 "work" 配置文件
-lumina-terminal --profile dev -e cargo build --hold
+lumina-terminal --hold --profile dev -e cargo build
 lumina-terminal -T "build log"                  # 设置窗口标题
 ```
 

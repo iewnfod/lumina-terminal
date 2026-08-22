@@ -7,9 +7,13 @@
 //! initial tab in the seed effect (keeping all UI logic in the frontend, per
 //! the project's layering rules).
 //!
-//! `--command` / `-e` uses `trailing_var_arg`, so it must be the final flag —
-//! every argument after it is captured as part of the command, matching
-//! Alacritty's `-e` semantics.
+//! `--command` / `-e` combines `trailing_var_arg` with `allow_hyphen_values`,
+//! so it must be the final flag — every argument after it (including
+//! dash-shaped ones like `-n` or `--hold`) is captured verbatim as part of the
+//! command, matching Alacritty's `-e` semantics. `trailing_var_arg` alone does
+//! NOT do this for options: without `allow_hyphen_values`, a known flag after
+//! the command is parsed as a flag and an unknown dash-token is a parse error
+//! (regression-tested in tests/cli.rs).
 
 use std::ffi::OsString;
 use std::sync::Mutex;
@@ -25,12 +29,14 @@ use tauri::State;
 #[serde(rename_all = "camelCase")]
 pub struct CliArgs {
     /// Command and args to run on startup (passed to the configured shell).
-    /// Must be the final argument; consumes everything after it. Empty = none.
+    /// Must be the final flag: everything after it is captured verbatim,
+    /// including tokens that look like flags (`-e grep -n x`). Empty = none.
     #[arg(
         short = 'e',
         long = "command",
         num_args = 1..,
         trailing_var_arg = true,
+        allow_hyphen_values = true,
         value_name = "COMMAND"
     )]
     pub command: Vec<String>,
