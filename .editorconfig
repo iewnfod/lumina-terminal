@@ -9,3 +9,5 @@ insert_final_newline = true
 ij_javascript_use_semicolon_after_statement = true
 ij_typescript_use_semicolon_after_statement = true
 
+[*.rs]
+insert_final_newline = true

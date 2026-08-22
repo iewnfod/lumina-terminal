@@ -1,8 +1,10 @@
 name: CI - Backend
 
-# Verifies the Rust/Tauri backend still compiles on every commit / PR, across
-# all three desktop platforms (Linux / Windows / macOS). Uses `cargo check`
-# (type + borrow check, no linking/codegen) for speed — NOT `tauri build`.
+# Verifies the Rust/Tauri backend on every commit / PR, across all three
+# desktop platforms (Linux / Windows / macOS): `cargo check` as a fast
+# type/borrow gate, then `cargo test` which builds AND runs the full
+# integration-test suite in src-tauri/tests/ (see AGENTS.md §3.7). NOT
+# `tauri build`.
 #
 # This job is INTENTIONALLY independent of the frontend build: it drops a
 # placeholder dist/index.html (see below) instead of running `pnpm build`, so
@@ -12,6 +14,10 @@ name: CI - Backend
 # `--locked` enforces that the committed `src-tauri/Cargo.lock` is up to date;
 # a drift that would silently change resolved versions locally fails here
 # instead.
+#
+# Platform-dependent tests self-skip on the OSes where their dependency is
+# absent (gsettings e2e, real-shell hooks, /proc reads) — a test failing on an
+# unrelated platform is a bug in the test, not the runner.
 
 # Run on every branch and every PR, not just master — a feature branch should
 # be verified before it ever merges.
@@ -21,7 +27,7 @@ on:
 
 jobs:
   check:
-    name: cargo check (${{ matrix.os }})
+    name: backend check + test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -88,7 +94,16 @@ jobs:
           mkdir -p dist
           printf '<!DOCTYPE html><html><head></head><body></body></html>\n' > dist/index.html
 
-      # The actual verification: type + borrow check across the matrix. No
-      # binary is produced.
+      # The actual verification, in two steps:
+      #
+      # 1. `cargo check` — fast type + borrow check across the matrix. No
+      #    binary is produced; fails quickly on compile errors.
+      # 2. `cargo test` — full build + run of every integration test in
+      #    src-tauri/tests/ (the placeholder dist above also satisfies
+      #    `generate_context!` for these builds). rust-cache makes the
+      #    incremental cost over the check step small.
       - name: cargo check
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: cargo test
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml

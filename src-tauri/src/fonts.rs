@@ -33,7 +33,8 @@ const GENERIC_FAMILIES: &[&str] = &[
 /// Parse a CSS `font-family` string (e.g. `"Fira Code, monospace"`) and return
 /// the first concrete (non-generic) family name, trimmed of quotes/whitespace.
 /// Returns `None` if the string is empty or only contains generic families.
-fn first_concrete_family(css_family: &str) -> Option<String> {
+/// Pure — `pub` so the integration tests can drive it directly.
+pub fn first_concrete_family(css_family: &str) -> Option<String> {
     for part in css_family.split(',') {
         let trimmed = part.trim().trim_matches(|c| c == '"' || c == '\'');
         if trimmed.is_empty() {

@@ -1,20 +1,24 @@
-mod cli;
-mod command_tracker;
-mod file_manager;
-mod fonts;
-mod install_source;
-mod mcp;
-// Public so the integration tests in tests/ can exercise the pure detection
-// parsers and the generated shell-hook sources (the app crate is not consumed
-// as a library by anything else).
+// Modules are `pub` so the integration tests in tests/ can exercise them (the
+// app crate is not consumed as a library by anything else). Per AGENTS.md §3.7,
+// logic a test needs is extracted into a named `pub fn` with explicit inputs
+// (see `proxy`'s parsers, `ssh::parse_ssh_config_content`,
+// `terminal::flush_utf8_pass`, …) while the `#[tauri::command]` wrappers stay
+// thin. `system` stays private: it is pure environment probing with no test
+// surface.
+pub mod cli;
+pub mod command_tracker;
+pub mod file_manager;
+pub mod fonts;
+pub mod install_source;
+pub mod mcp;
 pub mod proxy;
 pub mod shell_integration;
-mod shells;
-mod ssh;
-mod state;
+pub mod shells;
+pub mod ssh;
+pub mod state;
+pub mod terminal;
+pub mod utils;
 mod system;
-mod terminal;
-mod utils;
 
 use crate::cli::*;
 use crate::file_manager::*;

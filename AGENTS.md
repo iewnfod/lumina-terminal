@@ -211,12 +211,37 @@ src-tauri/src/
 │                  #   recent_output ring buffer; Streamable HTTP endpoint on 127.0.0.1 via axum,
 │                  #   config-driven start/stop (start_mcp_server/stop_mcp_server). Read-only by
 │                  #   design — no PTY-write tool.
-├── ssh.rs         # SshConfig/SshHostEntry types + parse_ssh_config (~/.ssh/config)
-├── shells.rs      # find_shells — PATH + known-dir shell discovery (Win MSYS2/Git, Unix homebrew)
+├── ssh.rs         # SshConfig/SshHostEntry types + parse_ssh_config (~/.ssh/config) →
+│                  #   parse_ssh_config_content (pure content parser, tested in tests/ssh_config.rs)
+├── shells.rs      # find_shells — PATH + known-dir shell discovery (Win MSYS2/Git, Unix homebrew);
+│                  #   PATH scan extracted as scan_path_for (tested in tests/shells.rs)
 ├── system.rs      # is_wayland, is_debug, get_commit_hash, get_log_dir, open_devtools
-├── install_source.rs # install_source — pacman/dpkg/rpm package-ownership detection
+├── install_source.rs # install_source — pacman/dpkg/rpm package-ownership detection;
+│                  #   stdout parsers extracted pure (tested in tests/install_source.rs)
 ├── file_manager.rs # open_in_file_manager — xdg-open / open -R / explorer (per-OS)
-└── utils.rs       # path_exist, read_file (tiny fs helpers)
+├── fonts.rs       # find_font — CSS font-family → font file bytes for ligature parsing;
+│                  #   first_concrete_family pure (tested in tests/fonts.rs)
+└── utils.rs       # path_exist, read_file (tiny fs helpers; tested in tests/utils.rs)
+
+tests/             # Backend integration tests (mandatory for backend work — see §3.7).
+│                  #   Each file targets one src/ module against the lib crate
+│                  #   (lumina_terminal_lib); run with
+│                  #   `cargo test --manifest-path src-tauri/Cargo.toml`.
+├── proxy.rs       # per-source proxy parsers + env-file render + real-gsettings e2e (self-skipping)
+├── shell_hooks.rs # real bash/zsh/fish lifecycle of the generated proxy-sync hooks (self-skipping)
+├── cli.rs         # launch-flag parsing + the macOS -psn_* argv filter
+├── ssh_config.rs  # ~/.ssh/config content parsing: wildcards, keyword case, invalid port
+├── shells.rs      # scan_path_for over controlled temp dirs: hits, dedup, separators
+├── state.rs       # RecentOutput 64 KiB UTF-8-safe tail + capped exit/command stores
+├── mcp.rs         # strip_ansi: CSI/OSC/DCS removal, control chars, torn escapes
+├── terminal.rs    # flush_utf8_pass (split multi-byte chars, malformed safety net)
+│                  #   + process_cwd against this process's own /proc entry
+├── command_tracker.rs # basename / privileged-name classification + real /proc & ps
+│                  #   argv resolution against a live child (Unix-only file)
+├── install_source.rs # pacman/dpkg/rpm stdout sample shapes (hit and miss)
+├── fonts.rs       # CSS font-family → first concrete family extraction
+├── utils.rs       # path_exist / read_file over real temp files
+└── file_manager.rs # nonexistent-path guard (rejected before any OS spawn)
 ```
 
 ---
@@ -397,6 +422,39 @@ path to the logger.
 - **Never log:** routine success of hot operations, raw user keystrokes/output
   (privacy + volume), per-render state, unmodified values passed through.
 
+### 3.7 Backend tests are mandatory (`src-tauri/tests/`)
+
+Every backend change ships with tests. Integration tests live in
+`src-tauri/tests/<module>.rs`, one file per `src/` module, and target the lib
+crate (`lumina_terminal_lib`). CI (`.github/workflows/ci-backend.yml`) runs the
+whole suite with `cargo test` on all three desktop platforms alongside
+`cargo check`, so an untested regression fails the build.
+
+- **Test the logic, not the Tauri plumbing.** If a `#[tauri::command]` handler
+  contains parse/compute logic, extract it into a named `pub fn` with explicit
+  inputs and test THAT; the command wrapper stays a thin shell. Established
+  examples to follow: `proxy`'s per-source parsers, `ssh::parse_ssh_config_content`,
+  `shells::scan_path_for`, `terminal::flush_utf8_pass`,
+  `install_source::{pacman,dpkg,rpm}_owner_package`, `mcp::strip_ansi`,
+  `fonts::first_concrete_family`.
+- **Modules are `pub` in `lib.rs` for exactly this purpose** (the crate is not
+  consumed as a library otherwise). Keep the `pub` surface to what tests need.
+- **No env-var mutation in tests.** Tests run in parallel threads of one
+  process, so `std::env::set_var` races. Parameterize the code instead
+  (that's why `scan_path_for` takes the PATH value rather than reading it).
+- **Platform-dependent tests self-skip** — gate with `#![cfg(unix)]` /
+  `#[cfg(target_os = ...)]`, or print a skip notice and return when an
+  external dependency is absent (see `tests/proxy.rs`' gsettings e2e and
+  `tests/shell_hooks.rs`). A test must never fail on an unrelated platform.
+- **Sample-output parsers** (proxy sources, package managers) are tested
+  against captured real stdout strings — both the hit and the miss shapes.
+- **Real-process tests are allowed** where they're read-only and cheap
+  (`tests/command_tracker.rs` spawns a `sleep` child and reads its /proc/ps
+  entry). Mind the fork→execve race: poll briefly instead of reading once.
+- **Verify locally** with `cargo test --manifest-path src-tauri/Cargo.toml`
+  before committing. A backend change without a matching test addition (new
+  test file, or new cases in the module's existing file) is incomplete.
+
 ---
 
 ## 4. Rules for AI Contributors
@@ -441,6 +499,12 @@ path to the logger.
     `README.md` (English) and `README_zh.md` (Simplified Chinese). Any change
     to one — features, dependencies, structure, wording — MUST be mirrored in
     the other in the same change. Never update only one.
+14. You must follow [editorconfig](./.editorconfig) to make sure the code style
+    is maintained.
+15. **Backend changes ship with tests** in `src-tauri/tests/` — a new command,
+    parser, or behavior change is incomplete without test coverage, and CI
+    runs the full suite on every push. See §3.7 for the conventions (pure-fn
+    extraction, self-skipping platform tests, no env mutation).
 
 ---
 

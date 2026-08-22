@@ -69,19 +69,24 @@ impl CliState {
     }
 }
 
+/// Drop the macOS LaunchServices `-psn_*` process-serial-number flag
+/// (injected when a `.app` is launched from Finder/Dock), which clap would
+/// otherwise reject as an unknown option. Pure — takes the args explicitly so
+/// tests can drive it with fixture argv lists.
+pub fn without_psn_args(args: impl IntoIterator<Item = OsString>) -> Vec<OsString> {
+    args.into_iter()
+        .filter(|a| !a.to_string_lossy().starts_with("-psn_"))
+        .collect()
+}
+
 /// Parse the process's command-line arguments. Filters out the macOS
-/// LaunchServices `-psn_*` process-serial-number flag (injected when a `.app`
-/// is launched from Finder/Dock), which clap would otherwise reject as an
-/// unknown option.
+/// LaunchServices `-psn_*` flag (see [`without_psn_args`]).
 ///
 /// On `--help` / `--version` / a parse error, `e.exit()` prints the
 /// appropriate message and exits the process with the right status code — no
 /// panic, so this never bypasses the log framework for a *recoverable* failure.
 pub fn parse_cli() -> CliArgs {
-    let filtered: Vec<OsString> = std::env::args_os()
-        .filter(|a| !a.to_string_lossy().starts_with("-psn_"))
-        .collect();
-    match CliArgs::try_parse_from(filtered) {
+    match CliArgs::try_parse_from(without_psn_args(std::env::args_os())) {
         Ok(args) => args,
         Err(e) => e.exit(),
     }

@@ -639,4 +639,3 @@ pub fn stop_proxy_sync(
     }
     Ok(())
 }
-

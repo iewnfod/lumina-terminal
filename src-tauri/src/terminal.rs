@@ -13,6 +13,53 @@ use crate::state::{
     SharedChild, TerminalEntry, TerminalState,
 };
 
+/// One flush pass of the reader thread's streaming-UTF-8 decode: emit the
+/// longest valid UTF-8 prefix of `pending`, then drop a leading malformed
+/// sequence (the OOM safety net). An incomplete trailing multi-byte character
+/// is kept for the next read; nothing valid is ever dropped. Pure (no channel
+/// or state access) — extracted so the split-character and malformed paths are
+/// testable in tests/terminal.rs.
+pub fn flush_utf8_pass(pending: &mut Vec<u8>) -> String {
+    if pending.is_empty() {
+        return String::new();
+    }
+    // Decode the longest valid UTF-8 prefix. Two failure shapes:
+    //   1. Trailing INCOMPLETE multi-byte sequence (split across a read
+    //      boundary): `error_len` is None — the sequence just needs more
+    //      bytes. Keep the tail for the next read; drain only the valid part.
+    //   2. A truly MALFORMED sequence (lone continuation byte, overlong
+    //      encoding, 0xFF, etc.): `error_len` is Some(n). Those n bytes can
+    //      never start a valid sequence, so we must DROP them — otherwise
+    //      `valid_up_to()` returns 0 forever, flush becomes a no-op, and
+    //      `pending` grows unbounded until OOM. (Real PTY output is virtually
+    //      always valid UTF-8, but a torn read can leave a stray byte at the
+    //      front; this is the safety net that keeps the buffer bounded.)
+    let (valid_len, malformed_len) = match std::str::from_utf8(pending) {
+        Ok(_) => (pending.len(), 0),
+        Err(e) => (e.valid_up_to(), e.error_len().unwrap_or(0)),
+    };
+    let mut out = String::new();
+    if valid_len > 0 {
+        out = std::str::from_utf8(&pending[..valid_len])
+            .expect("valid UTF-8 prefix verified above")
+            .to_string();
+        pending.drain(..valid_len);
+    }
+    // Drop a malformed sequence so it can't stall the buffer. Only fire when
+    // error_len was Some(n) — a None error_len means the tail is a
+    // valid-but-incomplete multi-byte char that must be kept.
+    if malformed_len > 0 {
+        log::warn!(
+            "flush_utf8_pass: dropping {} malformed UTF-8 byte(s) at offset {} to unblock pending (len={})",
+            malformed_len,
+            valid_len,
+            pending.len()
+        );
+        pending.drain(..malformed_len);
+    }
+    out
+}
+
 #[tauri::command]
 pub fn start_terminal(
     app: AppHandle,
@@ -280,65 +327,36 @@ pub fn start_terminal(
         // read-only MCP server. Same capture pattern as the output channel.
         let recent_output_reader = recent_output.clone();
         let flush = |pending: &mut Vec<u8>| {
-            if pending.is_empty() {
+            // Decode + drain step is `flush_utf8_pass` (shared, unit-tested);
+            // this closure adds the side effects: mirror into the bounded
+            // recent-output tail, then forward over the (swappable) channel.
+            let s = flush_utf8_pass(pending);
+            if s.is_empty() {
                 return;
             }
-            // Decode the longest valid UTF-8 prefix. Two failure shapes:
-            //   1. Trailing INCOMPLETE multi-byte sequence (split across a read
-            //      boundary): `error_len` is None — the sequence just needs
-            //      more bytes. Keep the tail for the next read; drain only the
-            //      valid part.
-            //   2. A truly MALFORMED sequence (lone continuation byte, overlong
-            //      encoding, 0xFF, etc.): `error_len` is Some(n). Those n bytes
-            //      can never start a valid sequence, so we must DROP them —
-            //      otherwise `valid_up_to()` returns 0 forever, flush becomes a
-            //      no-op, and `pending` grows unbounded until OOM.
-            //      (Real PTY output is virtually always valid UTF-8, but a torn
-            //      read can leave a stray byte at the front; this is the safety
-            //      net that keeps the buffer bounded.)
-            let (valid_len, malformed_len) = match std::str::from_utf8(pending) {
-                Ok(_) => (pending.len(), 0),
-                Err(e) => (e.valid_up_to(), e.error_len().unwrap_or(0)),
-            };
-            if valid_len > 0 {
-                let s = std::str::from_utf8(&pending[..valid_len])
-                    .expect("valid UTF-8 prefix verified above")
-                    .to_string();
-                // Mirror the decoded chunk into the bounded recent-output tail
-                // for the read-only MCP server's `get_recent_output`. Done
-                // before `s` is moved into the channel send below. try_lock so
-                // the reader never blocks if an MCP tool happens to be reading;
-                // a skipped mirror just means one fewer chunk in the tail
-                // (caught up on the next flush).
-                if let Ok(mut recent) = recent_output_reader.try_lock() {
-                    recent.push_str(&s);
-                }
-                // Hold the channel lock only long enough to send. If no window
-                // is attached (`None`, e.g. mid-tear-off), drop the bytes but
-                // keep draining the PTY so the child never blocks on a full
-                // pipe.
-                let channel_guard = output_channel_reader.lock().unwrap_or_else(|e| {
-                    log::error!("Failed to lock output channel for terminal {}: {}", id_reader, e);
-                    panic!("Failed to lock output channel: {}", e);
-                });
-                if let Some(ch) = channel_guard.as_ref() {
-                    if let Err(e) = ch.send(s) {
-                        log::warn!("Terminal {} output channel send failed: {}", id_reader, e);
-                    }
-                }
-                drop(channel_guard);
-                pending.drain(..valid_len);
+            // Mirror the decoded chunk into the bounded recent-output tail
+            // for the read-only MCP server's `get_recent_output`. Done
+            // before `s` is moved into the channel send below. try_lock so
+            // the reader never blocks if an MCP tool happens to be reading;
+            // a skipped mirror just means one fewer chunk in the tail
+            // (caught up on the next flush).
+            if let Ok(mut recent) = recent_output_reader.try_lock() {
+                recent.push_str(&s);
             }
-            // Drop a malformed sequence so it can't stall the buffer. Only fire
-            // when error_len was Some(n) — a None error_len means the tail is a
-            // valid-but-incomplete multi-byte char that must be kept.
-            if malformed_len > 0 {
-                log::warn!(
-                    "Terminal {} flush: dropping {} malformed UTF-8 byte(s) at offset {} to unblock pending (len={})",
-                    id_reader, malformed_len, valid_len, pending.len()
-                );
-                pending.drain(..malformed_len);
+            // Hold the channel lock only long enough to send. If no window
+            // is attached (`None`, e.g. mid-tear-off), drop the bytes but
+            // keep draining the PTY so the child never blocks on a full
+            // pipe.
+            let channel_guard = output_channel_reader.lock().unwrap_or_else(|e| {
+                log::error!("Failed to lock output channel for terminal {}: {}", id_reader, e);
+                panic!("Failed to lock output channel: {}", e);
+            });
+            if let Some(ch) = channel_guard.as_ref() {
+                if let Err(e) = ch.send(s) {
+                    log::warn!("Terminal {} output channel send failed: {}", id_reader, e);
+                }
             }
+            drop(channel_guard);
         };
 
         loop {
@@ -735,7 +753,7 @@ pub fn report_command_finished(
 
 /// Resolve a process's current working directory (platform-specific).
 #[cfg(target_os = "linux")]
-pub(crate) fn process_cwd(pid: u32) -> Option<String> {
+pub fn process_cwd(pid: u32) -> Option<String> {
     // `/proc/<pid>/cwd` is a symlink to the process cwd; `read_link` gives the
     // target as an absolute path without shelling out.
     std::fs::read_link(format!("/proc/{}/cwd", pid))
@@ -745,7 +763,7 @@ pub(crate) fn process_cwd(pid: u32) -> Option<String> {
 
 /// Resolve a process's current working directory (platform-specific).
 #[cfg(all(unix, not(target_os = "linux")))]
-pub(crate) fn process_cwd(pid: u32) -> Option<String> {
+pub fn process_cwd(pid: u32) -> Option<String> {
     // macOS/BSD have no /proc. `lsof -a -d cwd -p <pid> -Fn` prints the cwd as
     // an `n`-prefixed line; same-user processes are queryable without special
     // privileges.
@@ -767,7 +785,7 @@ pub(crate) fn process_cwd(pid: u32) -> Option<String> {
 
 /// Resolve a process's current working directory (platform-specific).
 #[cfg(windows)]
-pub(crate) fn process_cwd(_pid: u32) -> Option<String> {
+pub fn process_cwd(_pid: u32) -> Option<String> {
     // Windows has no documented public API for another process's cwd (the
     // NtQueryInformationProcess trick is undocumented and needs PROCESS_QUERY
     // rights). Return None so the frontend falls back to the profile cwd.

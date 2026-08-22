@@ -221,7 +221,9 @@ fn tab_detail(state: &TerminalState, id: &str) -> Option<TabDetail> {
 /// repositioning (progress bars, full-screen TUIs) may include stale or
 /// repeated text. Good enough for the common case — reading a build / error
 /// log tail — which is what the MCP server is for.
-fn strip_ansi(input: &str) -> String {
+///
+/// Pure — `pub` so the integration tests can drive it directly.
+pub fn strip_ansi(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 0;

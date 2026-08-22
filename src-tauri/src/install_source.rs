@@ -13,6 +13,40 @@ pub struct InstallSource {
     pub package: String,
 }
 
+/// Parse `pacman -Qo <path>` stdout: `"<path> is owned by <pkg> <ver>"` → pkg.
+/// Pure — extracted so tests can drive it with captured sample output.
+pub fn pacman_owner_package(stdout: &str) -> Option<&str> {
+    stdout
+        .split("is owned by")
+        .nth(1)
+        .and_then(|x| x.split_whitespace().next())
+}
+
+/// Parse `dpkg -S <path>` stdout: `"<pkg>: <path>"` → pkg. Arch-qualified
+/// packages (`pkg:amd64: path`) keep only the name before the first colon.
+/// Pure — see [`pacman_owner_package`].
+pub fn dpkg_owner_package(stdout: &str) -> Option<&str> {
+    let pkg = stdout.split(':').next().unwrap_or("").trim();
+    if pkg.is_empty() {
+        None
+    } else {
+        Some(pkg)
+    }
+}
+
+/// Parse `rpm -qf --queryformat=%{NAME} <path>` stdout → pkg. `rpm` prints
+/// "not installed" / "not owned by any package" on a miss; guard against both
+/// (and empty output) in case a distro customizes the exit code. Pure — see
+/// [`pacman_owner_package`].
+pub fn rpm_owner_package(stdout: &str) -> Option<&str> {
+    let pkg = stdout.trim();
+    if pkg.is_empty() || pkg.starts_with("not") {
+        None
+    } else {
+        Some(pkg)
+    }
+}
+
 /// Detect whether the running binary is owned by a system package manager.
 ///
 /// On Linux, resolves the current executable with `current_exe()` and asks each
@@ -41,12 +75,7 @@ pub fn install_source() -> Option<InstallSource> {
         // pacman: "<path> is owned by lumina-terminal-bin 0.1.6-1"
         if let Ok(out) = Command::new("pacman").args(["-Qo", &path]).output() {
             if out.status.success() {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                if let Some(pkg) = stdout
-                    .split("is owned by")
-                    .nth(1)
-                    .and_then(|x| x.split_whitespace().next())
-                {
+                if let Some(pkg) = pacman_owner_package(&String::from_utf8_lossy(&out.stdout)) {
                     log::info!("install_source: managed by pacman ({})", pkg);
                     return Some(InstallSource {
                         manager: "pacman".into(),
@@ -59,16 +88,12 @@ pub fn install_source() -> Option<InstallSource> {
         // dpkg: "lumina-terminal: /usr/bin/lumina-terminal"
         if let Ok(out) = Command::new("dpkg").args(["-S", &path]).output() {
             if out.status.success() {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                if let Some(pkg) = stdout.split(':').next() {
-                    let pkg = pkg.trim();
-                    if !pkg.is_empty() {
-                        log::info!("install_source: managed by dpkg ({})", pkg);
-                        return Some(InstallSource {
-                            manager: "dpkg".into(),
-                            package: pkg.into(),
-                        });
-                    }
+                if let Some(pkg) = dpkg_owner_package(&String::from_utf8_lossy(&out.stdout)) {
+                    log::info!("install_source: managed by dpkg ({})", pkg);
+                    return Some(InstallSource {
+                        manager: "dpkg".into(),
+                        package: pkg.into(),
+                    });
                 }
             }
         }
@@ -79,15 +104,11 @@ pub fn install_source() -> Option<InstallSource> {
             .output()
         {
             if out.status.success() {
-                let pkg = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                // rpm prints "not installed" / "not owned by any package" on a
-                // miss, but those go to stderr with a non-zero status — guard
-                // anyway in case a distro customizes the exit code.
-                if !pkg.is_empty() && !pkg.starts_with("not") {
+                if let Some(pkg) = rpm_owner_package(&String::from_utf8_lossy(&out.stdout)) {
                     log::info!("install_source: managed by rpm ({})", pkg);
                     return Some(InstallSource {
                         manager: "rpm".into(),
-                        package: pkg,
+                        package: pkg.into(),
                     });
                 }
             }

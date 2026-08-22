@@ -22,7 +22,7 @@ pub struct CommandInfo {
 /// `CommandInfo.privileged` flag is true for elevated commands (sudo/su/doas/
 /// pkexec, or a process whose effective uid is 0).
 #[cfg(unix)]
-pub(crate) fn foreground_command(state: &TerminalState, id: &str) -> Option<CommandInfo> {
+pub fn foreground_command(state: &TerminalState, id: &str) -> Option<CommandInfo> {
     let (shell_pid, fg_pgid) = {
         let terminals = state.terminals.try_lock().ok()?;
         let entry = terminals.get(id)?;
@@ -44,13 +44,17 @@ pub(crate) fn foreground_command(state: &TerminalState, id: &str) -> Option<Comm
 const PRIVILEGED_COMMANDS: &[&str] = &["sudo", "su", "doas", "pkexec", "gsudo", "runuser"];
 
 /// True if the command basename is a known privilege-escalation wrapper.
+/// Pure — `pub` so the integration tests can drive it directly.
 #[cfg(unix)]
-fn is_privileged_name(basename: &str) -> bool {
+pub fn is_privileged_name(basename: &str) -> bool {
     PRIVILEGED_COMMANDS.iter().any(|&p| p == basename)
 }
 
+/// Resolve argv[0..] into a `CommandInfo` for one pid: reads
+/// `/proc/<pid>/cmdline` on Linux, `ps -o args=` elsewhere. Reads REAL process
+/// state, so tests spawn a live child to point it at.
 #[cfg(unix)]
-fn proc_command_info(pid: u32) -> Option<CommandInfo> {
+pub fn proc_command_info(pid: u32) -> Option<CommandInfo> {
     #[cfg(target_os = "linux")]
     {
         // `/proc/<pid>/cmdline` is NUL-separated argv. We join argv[0..] into a
@@ -106,8 +110,9 @@ fn proc_command_info(pid: u32) -> Option<CommandInfo> {
 }
 
 /// Return the final path component of `s` (e.g. "/usr/bin/npm" -> "npm").
+/// Pure — `pub` so the integration tests can drive it directly.
 #[cfg(unix)]
-fn basename(s: &str) -> &str {
+pub fn basename(s: &str) -> &str {
     s.rsplit('/').next().unwrap_or(s)
 }
 
@@ -115,7 +120,7 @@ fn basename(s: &str) -> &str {
 /// 0 (root). This catches binaries with the setuid bit, `sudoedit`, or any
 /// process that ended up privileged without argv[0] naming a wrapper.
 #[cfg(target_os = "linux")]
-fn proc_euid_is_root(pid: u32) -> bool {
+pub fn proc_euid_is_root(pid: u32) -> bool {
     let path = format!("/proc/{}/status", pid);
     let status = match std::fs::read_to_string(&path) {
         Ok(s) => s,
