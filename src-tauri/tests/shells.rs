@@ -5,6 +5,14 @@
 
 use lumina_terminal_lib::shells::scan_path_for;
 
+/// Host-platform PATH separator. Tests joining real temp paths must use it:
+/// Windows paths carry a drive-letter colon (`C:\...`), so splitting on `:`
+/// there would shred the directories instead of listing them.
+#[cfg(windows)]
+const SEP: char = ';';
+#[cfg(not(windows))]
+const SEP: char = ':';
+
 /// A temp dir unique to this test process, holding fake shell "binaries"
 /// (regular files — the scan only checks `is_file`).
 fn temp_shell_dir(tag: &str, names: &[&str]) -> std::path::PathBuf {
@@ -20,7 +28,7 @@ fn temp_shell_dir(tag: &str, names: &[&str]) -> std::path::PathBuf {
 fn discovers_candidates_across_dirs() {
     let a = temp_shell_dir("multi-a", &["bash", "zsh"]);
     let b = temp_shell_dir("multi-b", &["fish"]);
-    let path_value = format!("{}:{}", a.display(), b.display());
+    let path_value = format!("{}{SEP}{}", a.display(), b.display());
 
     let mut found = Vec::new();
     scan_path_for(&path_value, ':', &["bash", "zsh", "fish", "nu"], &mut found);
@@ -35,7 +43,7 @@ fn discovers_candidates_across_dirs() {
 #[test]
 fn repeated_dirs_are_deduped() {
     let a = temp_shell_dir("dedup", &["bash"]);
-    let path_value = format!("{}:{}", a.display(), a.display());
+    let path_value = format!("{}{SEP}{}", a.display(), a.display());
 
     let mut found = Vec::new();
     scan_path_for(&path_value, ':', &["bash"], &mut found);
@@ -47,7 +55,7 @@ fn same_name_in_different_dirs_yields_both() {
     // Two different bash installs are different shells — both stay.
     let a = temp_shell_dir("two-a", &["bash"]);
     let b = temp_shell_dir("two-b", &["bash"]);
-    let path_value = format!("{}:{}", a.display(), b.display());
+    let path_value = format!("{}{SEP}{}", a.display(), b.display());
 
     let mut found = Vec::new();
     scan_path_for(&path_value, ':', &["bash"], &mut found);
@@ -61,7 +69,7 @@ fn nonexistent_dirs_and_absent_names_yield_nothing() {
     assert!(found.is_empty());
 
     let a = temp_shell_dir("miss", &["zsh"]);
-    scan_path_for(&a.to_string_lossy(), ':', &["bash"], &mut found);
+    scan_path_for(&a.to_string_lossy(), SEP, &["bash"], &mut found);
     assert!(found.is_empty());
 }
 
