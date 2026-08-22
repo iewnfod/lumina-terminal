@@ -57,6 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * Chunked output batching — smoothly handles large text dumps without blocking the UI
 * Drag and drop files into the terminal to insert their paths; auto-resize on window/container changes
 * **MCP server (experimental)** — optionally expose terminal state (open tabs, running command, cwd, recent output) to local AI clients over a read-only loopback endpoint, via [rmcp](https://github.com/modelcontextprotocol/rust-sdk). Enable in Settings → Developer.
+* **Auto proxy sync** — detect system proxy changes (GNOME `gsettings` / KDE `kioslaverc` / macOS `scutil` / Windows registry) and keep `http_proxy` / `HTTPS_PROXY` / `all_proxy` / `no_proxy` in sync inside already-running bash/zsh/fish tabs, applied silently by the shell-integration prompt hook — no restart, no visible keystrokes. Manually exported proxies are never touched. Toggle in Settings → General.
 
 ### User Interface
 * **Command Palette** (`Ctrl+Shift+P` / `Cmd+Shift+P`) — search and execute commands with keyboard navigation

@@ -5,6 +5,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {useGlobalConfig} from "./hooks/config.tsx";
 import {useMcpServerLifecycle} from "./hooks/useMcpServer.ts";
+import {useProxySync} from "./hooks/useProxySync.ts";
 import {useI18n} from "./hooks/i18n.tsx";
 import WelcomePage from "./pages/WelcomePage.tsx";
 import TitleBar from "./components/TitleBar.tsx";
@@ -45,6 +46,10 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // server keeps running even when settings is closed — and (later) when only
     // the tray remains. See hooks/useMcpServer.ts.
     useMcpServerLifecycle();
+    // System-proxy watcher follows the same app lifecycle (not the settings
+    // panel), keeping proxy env vars in sync inside running shells. See
+    // hooks/useProxySync.ts.
+    useProxySync();
     const t = useI18n();
 
     // Terminal lifecycle: tab list, profiles, active id, tear-off + merge.

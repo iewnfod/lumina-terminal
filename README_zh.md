@@ -57,6 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 * 分块批量输出 — 流畅处理大文本输出，不阻塞 UI
 * 拖放文件到终端即可插入文件路径；窗口/容器变化时自动调整尺寸
 * **MCP 服务器（实验性）** — 可选地通过只读回环端点向本地 AI 客户端暴露终端状态(打开的标签页、运行中的命令、当前目录、最近输出),基于 [rmcp](https://github.com/modelcontextprotocol/rust-sdk) 实现。在「设置 → 开发者」中开启。
+* **自动同步代理** — 检测系统代理变化（GNOME `gsettings` / KDE `kioslaverc` / macOS `scutil` / Windows 注册表），让正在运行的 bash/zsh/fish 标签页内的 `http_proxy` / `HTTPS_PROXY` / `all_proxy` / `no_proxy` 自动跟随——由 shell 集成的提示符钩子静默应用，无需重启、无可见按键。用户手动 export 的代理不受影响。在「设置 → 通用」中开关。
 
 ### 用户界面
 * **命令面板**（`Ctrl+Shift+P` / `Cmd+Shift+P`）— 搜索并执行命令，支持键盘导航

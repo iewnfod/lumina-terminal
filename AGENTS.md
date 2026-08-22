@@ -62,6 +62,8 @@ src/
 │   ├── terminalApi.ts       # invoke wrappers: writeToTerminal, resizeTerminal, ...
 │   ├── mcpApi.ts            # startMcpServer/stopMcpServer invoke wrappers (log-on-reject) — the
 │   │                        #   read-only MCP server domain API (sibling to terminalApi.ts)
+│   ├── proxyApi.ts          # startProxySync/stopProxySync invoke wrappers (log-on-reject) — the
+│   │                        #   system-proxy watcher domain API (sibling to terminalApi.ts)
 │   ├── cliApi.ts            # getCliArgs() wrapper — reads parsed launch flags (log-on-reject)
 │   ├── shellIcon.ts         # getShellType(profile) → "bash"|"zsh"|"fish"|"nu"|"pwsh"|"ssh"|"default"
 │   ├── bindings.ts          # parseBindings, matchBinding, loadBindings, useKeyboardBindings,
@@ -104,6 +106,10 @@ src/
 │   │                        #   (called once at the app root, so the server follows the app lifecycle,
 │   │                        #   not the settings panel); useMcpEndpoint() reactively reads the running
 │   │                        #   server's URL+token (module-level singleton via useSyncExternalStore)
+│   ├── useProxySync.ts      # useProxySync() — drives the system-proxy watcher from config.autoProxy
+│   │                        #   (default on). Same app-lifecycle pattern as useMcpServerLifecycle;
+│   │                        #   disabling stops the watcher and deletes the hooks' env-file so
+│   │                        #   running shells drop (only) the values Lumina injected
 │   ├── useCliArgs.ts        # useCliArgs() — cached get_cli_args; Alacritty-style launch flags,
 │   │                        #   consumed by useTerminalManager's seed effect to shape the main
 │   │                        #   window's first tab (--profile/--command/--working-directory/--hold/--title)
@@ -187,6 +193,18 @@ src-tauri/src/
 │                  #   with streaming-UTF-8 decoding + two-mode burst coalescing;
 │                  #   reattach_terminal atomically swaps the channel for tab tear-off
 ├── command_tracker.rs # CommandInfo type + foreground_command() /proc + ps + privileged-name logic
+├── shell_integration.rs # bash/zsh/fish OSC-1337 injection (precmd/preexec hooks for exit codes
+│                  #   and command text) + the per-shell proxy-sync hooks whose env-file
+│                  #   (proxy.env, same dir) is written by proxy.rs; hook sources are
+│                  #   generated per launch with the env-file path baked in (real-shell
+│                  #   lifecycle tests in tests/shell_hooks.rs)
+├── proxy.rs        # System-proxy auto injection: ProxySnapshot + per-source parsers
+│                  #   (gsettings list-recursively / KDE kioslaverc / scutil --proxy /
+│                  #   reg query — pure & unit-tested) + the polling watcher thread and
+│                  #   start/stop_proxy_sync commands. Publishes the shell hooks' env-file
+│                  #   (KEY=value lines, absence = unset) atomically on change only; PAC
+│                  #   modes are reported off (env vars cannot express them). Parsers are
+│                  #   tested in tests/proxy.rs
 ├── mcp.rs         # Read-only MCP (Model Context Protocol) server: rmcp tool handlers
 │                  #   (list_tabs/get_active_tab/get_tab/get_foreground_command/get_recent_output/
 │                  #   get_terminal_cwd) reusing TerminalState + command_tracker + the per-tab

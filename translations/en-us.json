@@ -220,5 +220,7 @@
     "Always on top is not supported on Wayland": "Always on top is not supported on Wayland",
     "Remembering window position is not supported on Wayland": "Remembering window position is not supported on Wayland",
     "IME Duplicate Input Fix": "IME Duplicate Input Fix",
-    "Prevent duplicated IME input on Linux; turn off if IME input feels slow": "Prevent duplicated IME input on Linux; turn off if IME input feels slow"
+    "Prevent duplicated IME input on Linux; turn off if IME input feels slow": "Prevent duplicated IME input on Linux; turn off if IME input feels slow",
+    "Auto Proxy Sync": "Auto Proxy Sync",
+    "Keep proxy environment variables in sync with the system proxy in running terminals (bash/zsh/fish)": "Keep proxy environment variables in sync with the system proxy in running terminals (bash/zsh/fish)"
 }

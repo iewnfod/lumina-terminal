@@ -87,6 +87,14 @@ export interface GlobalConfig {
      * recently opened first). An uncommon setting — no UI; edit config.json to
      * change. 0/undefined/unset → show all. */
     emptyStateMaxProfiles?: number;
+    /** When true (default), watch the system proxy (GNOME gsettings / KDE
+     *  kioslaverc / macOS scutil / Windows registry) and keep proxy env vars
+     *  (http_proxy, HTTPS_PROXY, …) in sync inside every running bash/zsh/fish
+     *  tab — applied silently by the shell-integration precmd hook before each
+     *  prompt, with no restart. Only values Lumina injected are ever unset;
+     *  manually exported proxies are left alone. Shells without integration
+     *  (nu/pwsh/SSH) are not touched. */
+    autoProxy?: boolean;
     /** When true, run a read-only MCP (Model Context Protocol) HTTP server on
      *  127.0.0.1 so a local AI client can see open tabs, the running command,
      *  the live cwd, and recent terminal output. Off by default. The server

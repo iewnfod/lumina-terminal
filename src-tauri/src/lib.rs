@@ -4,7 +4,11 @@ mod file_manager;
 mod fonts;
 mod install_source;
 mod mcp;
-mod shell_integration;
+// Public so the integration tests in tests/ can exercise the pure detection
+// parsers and the generated shell-hook sources (the app crate is not consumed
+// as a library by anything else).
+pub mod proxy;
+pub mod shell_integration;
 mod shells;
 mod ssh;
 mod state;
@@ -17,6 +21,7 @@ use crate::file_manager::*;
 use crate::fonts::*;
 use crate::install_source::*;
 use crate::mcp::*;
+use crate::proxy::*;
 use crate::shells::*;
 use crate::ssh::*;
 use crate::state::TerminalState;
@@ -165,6 +170,7 @@ pub fn run() {
         .manage(state)
         .manage(cli_state)
         .manage(McpServerHandle::default())
+        .manage(ProxySyncHandle::default())
         .setup(|app| {
             // `app` is only used on macOS to build the native menu bar; on other
             // platforms it's intentionally unused, so allow it.
@@ -188,6 +194,8 @@ pub fn run() {
             report_command_finished,
             start_mcp_server,
             stop_mcp_server,
+            start_proxy_sync,
+            stop_proxy_sync,
             find_shells,
             path_exist,
             read_file,

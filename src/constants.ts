@@ -181,6 +181,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     sessionSaveMode: "ask",
     sessionSaveScrollback: false,
     loadDefaultProfileOnStartup: true,
+    autoProxy: true,
     enableMcp: false,
 };
 

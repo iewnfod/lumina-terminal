@@ -27,6 +27,7 @@ interface GeneralDraft {
     sessionSaveMode: "never" | "always" | "ask";
     sessionSaveScrollback: boolean;
     loadDefaultProfileOnStartup: boolean;
+    autoProxy: boolean;
 }
 
 /** Theme-mode options shown in the Select below. Kept here (near the only
@@ -66,6 +67,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         sessionSaveMode: config.sessionSaveMode ?? "ask",
         sessionSaveScrollback: config.sessionSaveScrollback ?? false,
         loadDefaultProfileOnStartup: config.loadDefaultProfileOnStartup !== false,
+        autoProxy: config.autoProxy !== false,
     };
 
     const {draft, setDraft, isDirty, save} = useSettingsDraft<GeneralDraft>(
@@ -87,6 +89,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 sessionSaveMode: d.sessionSaveMode,
                 sessionSaveScrollback: d.sessionSaveScrollback,
                 loadDefaultProfileOnStartup: d.loadDefaultProfileOnStartup,
+                autoProxy: d.autoProxy,
             };
             // Default-profile change rewrites the profiles array (only one may
             // be default at a time), so apply it here rather than via a flat
@@ -99,7 +102,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
     );
 
     return (
@@ -488,6 +491,27 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                             <Switch
                                 isSelected={draft.inheritWorkingDirectory}
                                 onChange={(v) => setDraft((prev) => ({...prev, inheritWorkingDirectory: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+
+                        {/* Auto Proxy Sync: watch the system proxy and keep
+                            proxy env vars in sync inside running bash/zsh/fish
+                            tabs (applied by the shell-integration precmd hook,
+                            no restart). Only Lumina-injected values are ever
+                            unset — manual exports are never touched. */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className="cursor-pointer">{t["Auto Proxy Sync"]}</Label>}
+                            description={t["Keep proxy environment variables in sync with the system proxy in running terminals (bash/zsh/fish)"]}
+                            onClick={() => setDraft((prev) => ({...prev, autoProxy: !prev.autoProxy}))}
+                        >
+                            <Switch
+                                isSelected={draft.autoProxy}
+                                onChange={(v) => setDraft((prev) => ({...prev, autoProxy: v}))}
                             >
                                 <Switch.Control>
                                     <Switch.Thumb />
