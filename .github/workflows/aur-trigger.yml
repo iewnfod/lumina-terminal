@@ -5,7 +5,15 @@ name: Trigger AUR publish (fallback)
 # that `release` events impose on `repository_dispatch` calls (release-triggered
 # runs get permissions stripped — `gh api POST /dispatches` then 403s).
 #
-# `workflow_run` runs with normal permissions, so `actions: write` here works.
+# `workflow_run` runs with normal permissions. Note the dispatch endpoint
+# (`POST /repos/{repo}/dispatches`) is covered by `contents: write`, NOT
+# `actions: write` (see the "Contents" row of GitHub's App permissions table
+# at docs.github.com/rest/authentication/permissions-required-for-github-apps)
+# — with only `actions: write` it 403s with "Resource not accessible by
+# integration". A GITHUB_TOKEN-fired repository_dispatch still triggers the
+# downstream workflow (repository_dispatch is one of the two documented
+# exceptions to the "GITHUB_TOKEN events don't spawn runs" rule), so no PAT
+# is needed.
 #
 # Triggered by: Release workflow completing with success.
 # The AUR workflow (aur.yml) listens on `repository_dispatch: publish-aur` and
@@ -22,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      actions: write
+      contents: write
     steps:
       - name: Trigger Publish to AUR workflow
         env:
