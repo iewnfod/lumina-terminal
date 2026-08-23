@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import Markdown from "../components/Markdown.tsx";
 import TechStackModal from "../components/TechStackModal.tsx";
+import ExternalLink from "../components/ui/ExternalLink.tsx";
 
 interface AboutPageProps {
 	theme: ITheme | null;
@@ -210,15 +211,13 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                         style={{ borderBottom: `1px solid ${colors.borderColor}` }}
                     >
                         <span className="text-muted">{t["Author"]}</span>
-                        <a
+                        <ExternalLink
                             href="https://iewnfod.com"
-                            target="_blank"
-                            rel="noopener noreferrer"
                             className="hover:underline"
                             style={{ color: fg }}
                         >
                             Iewnfod
-                        </a>
+                        </ExternalLink>
                     </div>
 
                     {/* Contributors */}
@@ -227,16 +226,14 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                         style={{ borderBottom: `1px solid ${colors.borderColor}` }}
                     >
                         <span className="text-muted">{t["Contributors"]}</span>
-                        <a
+                        <ExternalLink
                             href="https://github.com/iewnfod/lumina-terminal/graphs/contributors"
-                            target="_blank"
-                            rel="noopener noreferrer"
                             className="flex items-center gap-1.5 hover:underline"
                             style={{ color: fg }}
                         >
                             <GithubMark size={14} />
                             {t["View Contributors"]}
-                        </a>
+                        </ExternalLink>
                     </div>
 
                     {/* GitHub Repo */}
@@ -245,16 +242,14 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                         style={{ borderBottom: `1px solid ${colors.borderColor}` }}
                     >
                         <span className="text-muted">{t["Repository"]}</span>
-                        <a
+                        <ExternalLink
                             href="https://github.com/iewnfod/lumina-terminal"
-                            target="_blank"
-                            rel="noopener noreferrer"
                             className="flex items-center gap-1.5 hover:underline text-sm"
                             style={{ color: fg }}
                         >
                             <GithubMark size={14} />
                             iewnfod/lumina-terminal
-                        </a>
+                        </ExternalLink>
                     </div>
 
                     {/* License */}
@@ -263,15 +258,13 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                         style={{ borderBottom: `1px solid ${colors.borderColor}` }}
                     >
                         <span className="text-muted">{t["License"]}</span>
-                        <a
+                        <ExternalLink
                             href="https://opensource.org/licenses/MPL-2.0"
-                            target="_blank"
-                            rel="noopener noreferrer"
                             className="hover:underline"
                             style={{ color: fg }}
                         >
                             MPL-2.0
-                        </a>
+                        </ExternalLink>
                     </div>
 
                     {/* Technologies — opens the full, grouped list in a modal */}

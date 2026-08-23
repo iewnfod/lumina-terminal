@@ -188,6 +188,8 @@
     "Copied": "已复制",
     "Mock Update State": "模拟更新状态",
     "Simulate an update-check result for testing the update UI": "模拟更新检查结果，用于测试更新界面",
+    "Mock Install Source": "模拟安装来源",
+    "Force a package-managed install for testing the update hint": "模拟包管理器安装，用于测试更新提示",
     "None": "无",
     "Available": "有新版本",
     "Up to Date": "最新版",

@@ -3,7 +3,7 @@
 //! must parse to `None`.
 
 use lumina_terminal_lib::install_source::{
-    dpkg_owner_package, pacman_owner_package, rpm_owner_package,
+    dpkg_owner_package, pacman_owner_package, query_with_c_locale, rpm_owner_package,
 };
 
 #[test]
@@ -52,4 +52,22 @@ fn rpm_miss_shapes_are_none() {
     assert_eq!(rpm_owner_package("not owned by any package"), None);
     assert_eq!(rpm_owner_package(""), None);
     assert_eq!(rpm_owner_package("  \n"), None);
+}
+
+/// Read-only e2e on a pacman-host: the REAL `pacman -Qo` output, spawned the
+/// way `install_source` does, must still parse under a localized user locale
+/// (under zh_CN the raw line reads "… 由 pacman x.y-z 所拥有", which the
+/// English parser cannot split — exactly the regression this guards).
+/// Self-skipping elsewhere so it stays deterministic on any machine.
+#[test]
+fn pacman_query_parses_under_any_user_locale() {
+    let out = match query_with_c_locale("pacman", &["-Qo", "/usr/bin/pacman"]) {
+        Ok(out) if out.status.success() => out,
+        _ => {
+            eprintln!("skipping e2e: pacman not available/owning its binary");
+            return;
+        }
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(pacman_owner_package(&stdout), Some("pacman"));
 }

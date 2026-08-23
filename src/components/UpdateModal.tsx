@@ -1,5 +1,5 @@
 import { Modal, Button } from "@heroui/react";
-import { Download, LoaderCircle, AlertCircle, Copy, Check, ExternalLink } from "lucide-react";
+import { Download, LoaderCircle, AlertCircle, Copy, Check, ExternalLink as ExternalLinkIcon } from "lucide-react";
 import { ITheme } from "@xterm/xterm";
 import { useState } from "react";
 import { useI18n } from "../hooks/i18n.tsx";
@@ -7,6 +7,7 @@ import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import type { DownloadProgress, UpdateInfo, UpdateStatus } from "../lib/updater.ts";
 import type { InstallSource } from "../hooks/useInstallSource.ts";
 import Markdown from "./Markdown.tsx";
+import ExternalLink from "./ui/ExternalLink.tsx";
 
 interface UpdateModalProps {
 	isOpen: boolean;
@@ -179,16 +180,14 @@ export default function UpdateModal({
 										</div>
 									</div>
 								) : (
-									<a
+									<ExternalLink
 										href="https://github.com/iewnfod/lumina-terminal/releases/latest"
-										target="_blank"
-										rel="noopener noreferrer"
 										className="flex items-center gap-1.5 text-xs hover:underline"
 										style={{ color: fg }}
 									>
-										<ExternalLink size={14} />
+										<ExternalLinkIcon size={14} />
 										{t["Download from GitHub Releases"]}
-									</a>
+									</ExternalLink>
 								)}
 							</>
 						) : (

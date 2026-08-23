@@ -24,7 +24,7 @@ import {useOutputMode} from "../hooks/useOutputMode.ts";
 import { info, debug, error } from "@tauri-apps/plugin-log";
 import {getCurrentWebview} from "@tauri-apps/api/webview";
 import {WebLinksAddon} from "@xterm/addon-web-links";
-import {openUrl} from "@tauri-apps/plugin-opener";
+import {openExternal} from "../lib/openerApi.ts";
 import {ImageAddon} from "@xterm/addon-image";
 import {SerializeAddon} from "@xterm/addon-serialize";
 import {SearchAddon} from "@xterm/addon-search";
@@ -301,7 +301,7 @@ export default function Term(props : TermProps) {
 
         const webLinksAddon = new WebLinksAddon((event, uri) => {
             if ((event.metaKey && isMacOS()) || event.ctrlKey) {
-                openUrl(uri).then();
+                openExternal(uri);
             }
         });
         term.current.loadAddon(webLinksAddon);

@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type RefObject} from "react";
-import {motion} from "framer-motion";
+import {AnimatePresence, motion} from "framer-motion";
 import { Plus, X, Settings, Info, Sparkles } from "lucide-react";
 import Icon from "../assets/icon.svg";
 import { isMacOS } from "../lib/platform.ts";
@@ -687,26 +687,35 @@ export default function TabBar(props: TabBarProps) {
                     is available. Hidden when the sidebar is collapsed (no room).
                     Wears the brand gradient (cinnabar→lavender, from the app icon)
                     via the --color-brand-gradient-soft token as a subtle accent so
-                    it stands out from the neutral tab chrome. */}
-                {!collapsed && updateVersion && (
-                    <div
-                        className="my-1 rounded-[var(--radius-sm)] overflow-hidden"
-                        style={{background: "var(--color-brand-gradient-soft)"}}
-                    >
-                        <motion.button
+                    it stands out from the neutral tab chrome. One motion element
+                    carries the whole banner — spring enter/exit AND the
+                    whileHoverTap scale — so the gradient frame and its content
+                    scale together, same as a tab row. */}
+                <AnimatePresence>
+                    {!collapsed && updateVersion && (
+                        <motion.div
+                            initial={{opacity: 0, y: 8}}
+                            animate={{opacity: 1, y: 0}}
+                            exit={{opacity: 0, y: 8}}
+                            transition={springSoft}
                             {...whileHoverTap}
-                            className="lum-tab-update flex flex-row items-center gap-2 w-full px-3 py-2 cursor-pointer rounded-[var(--radius-sm)] transition-colors duration-[var(--duration-base)] bg-white/40 hover:bg-white/20"
-                            style={{color: foregroundColor}}
+                            className="my-1 rounded-[var(--radius-sm)] overflow-hidden cursor-pointer"
+                            style={{background: "var(--color-brand-gradient-soft)"}}
                             onClick={onUpdateClick}
                             title={t["New version available: v{version}"].replace("{version}", updateVersion)}
                         >
-                            <Sparkles size={14} className="shrink-0" style={{color: "var(--color-brand-lavender)"}} />
-                            <span className="text-xs truncate">
-                                {t["New version available: v{version}"].replace("{version}", updateVersion)}
-                            </span>
-                        </motion.button>
-                    </div>
-                )}
+                            <div
+                                className="lum-tab-update flex flex-row items-center gap-2 w-full px-3 py-2 rounded-[var(--radius-sm)] transition-colors duration-[var(--duration-base)] bg-white/40 hover:bg-white/20"
+                                style={{color: foregroundColor}}
+                            >
+                                <Sparkles size={14} className="shrink-0" style={{color: "var(--color-brand-lavender)"}} />
+                                <span className="text-xs truncate">
+                                    {t["New version available: v{version}"].replace("{version}", updateVersion)}
+                                </span>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 <motion.button
                     {...whileHoverTap}

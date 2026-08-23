@@ -47,10 +47,66 @@ pub fn rpm_owner_package(stdout: &str) -> Option<&str> {
     }
 }
 
+/// Run a package-manager query with the C locale forced on the child only.
+///
+/// pacman localizes its `pacman -Qo` hit line — under zh_CN it prints
+/// `"<path> 由 <pkg> <ver> 所拥有"` — which the English-shaped parsers above
+/// cannot split, so a non-English user locale silently broke detection.
+/// Forcing `LC_ALL`/`LANG`/`LANGUAGE=C` keeps stdout parseable regardless of
+/// the user's locale. dpkg/rpm hit lines aren't localized today; they go
+/// through the same helper for uniformity and future-proofing.
+pub fn query_with_c_locale(
+    program: &str,
+    args: &[&str],
+) -> std::io::Result<std::process::Output> {
+    std::process::Command::new(program)
+        .args(args)
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env("LANGUAGE", "C")
+        .output()
+}
+
+/// Ask one package manager whether it owns `args`' target and map its stdout
+/// to the owning package. Every miss is logged so a `None` from
+/// [`install_source`] is always diagnosable from the log file: manager absent
+/// or failed to run (`debug`), reported not-owned (`debug`, with its stderr),
+/// or exited 0 with stdout the parser couldn't split (`warn` — the locale-shape
+/// regression class).
+#[cfg(target_os = "linux")]
+fn owning_package(
+    manager: &str,
+    args: &[&str],
+    parse: impl Fn(&str) -> Option<&str>,
+) -> Option<String> {
+    let out = match query_with_c_locale(manager, args) {
+        Ok(out) => out,
+        Err(e) => {
+            log::debug!("install_source: {manager} not runnable ({e})");
+            return None;
+        }
+    };
+    if !out.status.success() {
+        log::debug!(
+            "install_source: {manager} reports not owned: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    match parse(&stdout) {
+        Some(pkg) => Some(pkg.to_string()),
+        None => {
+            log::warn!("install_source: {manager} exited 0 but stdout didn't parse: {stdout}");
+            None
+        }
+    }
+}
+
 /// Detect whether the running binary is owned by a system package manager.
 ///
 /// On Linux, resolves the current executable with `current_exe()` and asks each
-/// package manager whether it owns that path:
+/// package manager (via [`query_with_c_locale`]) whether it owns that path:
 ///   - `pacman -Qo <path>` → "<path> is owned by <pkg> <ver>"
 ///   - `dpkg -S <path>`    → "<pkg>: <path>"
 ///   - `rpm -qf <path>`    → "<pkg>"
@@ -58,6 +114,8 @@ pub fn rpm_owner_package(stdout: &str) -> Option<&str> {
 /// Returns the first hit (pacman → dpkg → rpm order). AppImage mounts
 /// (`/tmp/.mount_...`), manual extracts, and every non-Linux platform return
 /// `None`, so the in-app updater keeps working where it is actually supported.
+/// The resolved path and every per-manager miss are logged, so a dev build
+/// running from `target/` explains its own `None` in the log.
 #[tauri::command]
 pub fn install_source() -> Option<InstallSource> {
     #[cfg(not(target_os = "linux"))]
@@ -67,55 +125,42 @@ pub fn install_source() -> Option<InstallSource> {
 
     #[cfg(target_os = "linux")]
     {
-        use std::process::Command;
-
-        let exe = std::env::current_exe().ok()?;
+        let exe = match std::env::current_exe() {
+            Ok(exe) => exe,
+            Err(e) => {
+                log::warn!("install_source: cannot resolve current_exe ({e})");
+                return None;
+            }
+        };
         let path = exe.to_string_lossy().to_string();
+        log::debug!("install_source: checking package ownership of {path}");
 
-        // pacman: "<path> is owned by lumina-terminal-bin 0.1.6-1"
-        if let Ok(out) = Command::new("pacman").args(["-Qo", &path]).output() {
-            if out.status.success() {
-                if let Some(pkg) = pacman_owner_package(&String::from_utf8_lossy(&out.stdout)) {
-                    log::info!("install_source: managed by pacman ({})", pkg);
-                    return Some(InstallSource {
-                        manager: "pacman".into(),
-                        package: pkg.into(),
-                    });
-                }
-            }
+        if let Some(pkg) = owning_package("pacman", &["-Qo", &path], pacman_owner_package) {
+            log::info!("install_source: managed by pacman ({pkg})");
+            return Some(InstallSource {
+                manager: "pacman".into(),
+                package: pkg,
+            });
         }
 
-        // dpkg: "lumina-terminal: /usr/bin/lumina-terminal"
-        if let Ok(out) = Command::new("dpkg").args(["-S", &path]).output() {
-            if out.status.success() {
-                if let Some(pkg) = dpkg_owner_package(&String::from_utf8_lossy(&out.stdout)) {
-                    log::info!("install_source: managed by dpkg ({})", pkg);
-                    return Some(InstallSource {
-                        manager: "dpkg".into(),
-                        package: pkg.into(),
-                    });
-                }
-            }
+        if let Some(pkg) = owning_package("dpkg", &["-S", &path], dpkg_owner_package) {
+            log::info!("install_source: managed by dpkg ({pkg})");
+            return Some(InstallSource {
+                manager: "dpkg".into(),
+                package: pkg,
+            });
         }
 
-        // rpm: query just the owning package name.
-        if let Ok(out) = Command::new("rpm")
-            .args(["-qf", "--queryformat", "%{NAME}", &path])
-            .output()
-        {
-            if out.status.success() {
-                if let Some(pkg) = rpm_owner_package(&String::from_utf8_lossy(&out.stdout)) {
-                    log::info!("install_source: managed by rpm ({})", pkg);
-                    return Some(InstallSource {
-                        manager: "rpm".into(),
-                        package: pkg.into(),
-                    });
-                }
-            }
+        if let Some(pkg) = owning_package("rpm", &["-qf", "--queryformat", "%{NAME}", &path], rpm_owner_package) {
+            log::info!("install_source: managed by rpm ({pkg})");
+            return Some(InstallSource {
+                manager: "rpm".into(),
+                package: pkg,
+            });
         }
 
-        log::debug!(
-            "install_source: not owned by any package manager (in-app updater OK)"
+        log::info!(
+            "install_source: {path} is not owned by any package manager (in-app updater OK)"
         );
         None
     }

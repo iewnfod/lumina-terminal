@@ -1,11 +1,10 @@
 import type {CSSProperties} from "react";
 import {motion} from "framer-motion";
 import {Button, Modal} from "@heroui/react";
-import {openUrl} from "@tauri-apps/plugin-opener";
-import {error} from "@tauri-apps/plugin-log";
 import {useI18n} from "../hooks/i18n.tsx";
 import {useSurfaceColors} from "../hooks/surfaceColors.ts";
 import {whileHoverTap} from "../lib/motion.ts";
+import {openExternal} from "../lib/openerApi.ts";
 import {categoryLabel, type TechGroup} from "../lib/techStack.ts";
 
 interface TechStackModalProps {
@@ -81,9 +80,7 @@ export default function TechStackModal({
                                             rel="noopener noreferrer"
                                             onClick={(e) => {
                                                 e.preventDefault();
-                                                openUrl(item.url).catch((err) =>
-                                                    error(`Failed to open tech link ${item.url}: ${err}`).catch(() => {}),
-                                                );
+                                                openExternal(item.url);
                                             }}
                                             {...whileHoverTap}
                                             className="group relative flex flex-col gap-0.5 p-2.5 rounded-[var(--radius-md)] border bg-[var(--lum-card-bg)] border-[var(--lum-card-border)] hover:bg-[var(--lum-card-bg-hover)] hover:z-10 transition-colors duration-[var(--duration-fast)] ease-[var(--ease-glass)]"

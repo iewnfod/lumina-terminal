@@ -65,6 +65,9 @@ src/
 │   ├── proxyApi.ts          # startProxySync/stopProxySync invoke wrappers (log-on-reject) — the
 │   │                        #   system-proxy watcher domain API (sibling to terminalApi.ts)
 │   ├── cliApi.ts            # getCliArgs() wrapper — reads parsed launch flags (log-on-reject)
+│   ├── openerApi.ts         # openExternal — opener-plugin URL wrapper (log-on-reject); the one
+│   │                        #   way external links reach the system browser (plain target="_blank"
+│   │                        #   anchors are dead in the Tauri webview)
 │   ├── appIcon.ts           # Command→tab-icon mapping: resolveAppFromCommand (wrapper-skipping)
 │   │                        #   + getAppIcon(line, userRules?) — user rules (config commandIcons,
 │   │                        #   plain basename or regex-vs-whole-line) run before the built-in
@@ -145,7 +148,9 @@ src/
 │   │   ├── SettingsShell.tsx    # Settings page frame (scroll body + optional footer slot)
 │   │   ├── SettingRow.tsx       # field / toggle / action / info row — kills the settings spacing drift
 │   │   ├── SectionTitle.tsx     # <h2> heading + optional subtitle (consistent mb)
-│   │   └── SaveFooter.tsx       # Save (disabled-when-clean) + unsaved hint + trailing action slot
+│   │   ├── SaveFooter.tsx       # Save (disabled-when-clean) + unsaved hint + trailing action slot
+│   │   └── ExternalLink.tsx     # <a> that opens via lib/openerApi.ts — every plain external
+│   │                            #   link goes through this (motion anchors call openExternal)
 │   ├── Term.tsx             # Single xterm instance: addons, PTY lifecycle, edge bg polling
 │   ├── SearchBar.tsx        # In-terminal search overlay (Ctrl+F): drives the headless
 │   │                        #   @xterm/addon-search via a glass top slide-down bar (case /

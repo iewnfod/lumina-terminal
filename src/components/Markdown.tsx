@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
+import ExternalLink from "./ui/ExternalLink.tsx";
 
 /**
  * Shared Markdown renderer for release notes / changelogs.
@@ -40,14 +41,11 @@ const components: Components = {
 	),
 	p: ({ children }) => <p className="my-1.5 leading-relaxed">{children}</p>,
 	a: ({ children, href }) => (
-		<a
-			href={href}
-			target="_blank"
-			rel="noopener noreferrer"
-			className="underline hover:opacity-80"
-		>
+		// ExternalLink routes the click through the opener plugin — a plain
+		// target="_blank" anchor is dead inside the Tauri webview.
+		<ExternalLink href={href ?? "#"} className="underline hover:opacity-80">
 			{children}
-		</a>
+		</ExternalLink>
 	),
 	ul: ({ children }) => (
 		<ul className="list-disc pl-5 my-1.5 space-y-0.5">{children}</ul>

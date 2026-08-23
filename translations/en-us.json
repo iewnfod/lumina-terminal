@@ -188,6 +188,8 @@
     "Copied": "Copied",
     "Mock Update State": "Mock Update State",
     "Simulate an update-check result for testing the update UI": "Simulate an update-check result for testing the update UI",
+    "Mock Install Source": "Mock Install Source",
+    "Force a package-managed install for testing the update hint": "Force a package-managed install for testing the update hint",
     "None": "None",
     "Available": "Available",
     "Up to Date": "Up to Date",

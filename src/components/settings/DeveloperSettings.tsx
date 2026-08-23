@@ -7,6 +7,7 @@ import {Bug, Clipboard, FolderOpen} from "lucide-react";
 import {info, warn, error} from "@tauri-apps/plugin-log";
 import {useGlobalConfig} from "../../hooks/config.tsx";
 import {useMcpStatus} from "../../hooks/useMcpServer.ts";
+import {invalidateInstallSourceCache} from "../../hooks/useInstallSource.ts";
 import {MCP_DEFAULT_PORT} from "../../constants.ts";
 import SettingsShell from "../ui/SettingsShell.tsx";
 import SettingRow from "../ui/SettingRow.tsx";
@@ -15,6 +16,11 @@ import SectionTitle from "../ui/SectionTitle.tsx";
 // localStorage key + values kept in sync with the dev mock in lib/updater.ts.
 const MOCK_KEY = "LUMINA_MOCK_UPDATE";
 type MockValue = "available" | "upToDate" | "error" | "";
+
+// localStorage key + values kept in sync with the dev mock in
+// hooks/useInstallSource.ts.
+const MOCK_INSTALL_KEY = "LUMINA_MOCK_INSTALL_SOURCE";
+type MockInstallValue = "pacman" | "dpkg" | "rpm" | "";
 
 export default function DeveloperSettings() {
     const t = useI18n();
@@ -28,6 +34,8 @@ export default function DeveloperSettings() {
     const [isDebug, setIsDebug] = useState(false);
     // Mock update state — read right from localStorage, no real data involved.
     const [mockUpdate, setMockUpdate] = useState<MockValue>("");
+    // Mock install source — same localStorage-driven pattern as mockUpdate.
+    const [mockInstallSource, setMockInstallSource] = useState<MockInstallValue>("");
 
     useEffect(() => {
         getConfigFilePath().then(setConfigPath).catch((e) => {
@@ -43,6 +51,7 @@ export default function DeveloperSettings() {
             setIsDebug(false);
         });
         setMockUpdate((localStorage.getItem(MOCK_KEY) ?? "") as MockValue);
+        setMockInstallSource((localStorage.getItem(MOCK_INSTALL_KEY) ?? "") as MockInstallValue);
     }, []);
 
     const applyMock = (value: MockValue) => {
@@ -52,6 +61,18 @@ export default function DeveloperSettings() {
         } else {
             localStorage.setItem(MOCK_KEY, value);
         }
+    };
+
+    const applyMockInstallSource = (value: MockInstallValue) => {
+        setMockInstallSource(value);
+        if (value === "") {
+            localStorage.removeItem(MOCK_INSTALL_KEY);
+        } else {
+            localStorage.setItem(MOCK_INSTALL_KEY, value);
+        }
+        // Re-run detection now (mock included) so the picker applies live —
+        // the source is otherwise cached for the whole session.
+        invalidateInstallSourceCache();
     };
 
     const copyMcpUrl = () => {
@@ -242,6 +263,48 @@ export default function DeveloperSettings() {
                                         </ListBox.Item>
                                         <ListBox.Item id="error" key="error" textValue="error">
                                             {t["Error"]}
+                                        </ListBox.Item>
+                                    </ListBox>
+                                </Select.Popover>
+                            </Select>
+                        </div>
+                    </SettingRow>
+                )}
+
+                {/* Mock Install Source — dev-only, drives the install-source
+                    mock purely via localStorage (see hooks/useInstallSource.ts
+                    DEV MOCK) and invalidates the cached result so it applies
+                    immediately. */}
+                {import.meta.env.DEV && (
+                    <SettingRow
+                        variant="action"
+                        label={<Label>{t["Mock Install Source"]}</Label>}
+                        description={t["Force a package-managed install for testing the update hint"]}
+                    >
+                        <div className="w-40 shrink-0">
+                            <Select
+                                selectedKey={mockInstallSource || "none"}
+                                onSelectionChange={(key) => {
+                                    applyMockInstallSource((key === "none" ? "" : key) as MockInstallValue);
+                                }}
+                            >
+                                <Select.Trigger>
+                                    <Select.Value />
+                                    <Select.Indicator />
+                                </Select.Trigger>
+                                <Select.Popover>
+                                    <ListBox>
+                                        <ListBox.Item id="none" key="none" textValue="none">
+                                            {t["None"]}
+                                        </ListBox.Item>
+                                        <ListBox.Item id="pacman" key="pacman" textValue="pacman">
+                                            pacman
+                                        </ListBox.Item>
+                                        <ListBox.Item id="dpkg" key="dpkg" textValue="dpkg">
+                                            dpkg
+                                        </ListBox.Item>
+                                        <ListBox.Item id="rpm" key="rpm" textValue="rpm">
+                                            rpm
                                         </ListBox.Item>
                                     </ListBox>
                                 </Select.Popover>
