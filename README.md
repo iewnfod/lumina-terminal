@@ -69,7 +69,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 
 ### Keyboard Shortcuts
 * Fully customizable keybindings stored in the config file. Defaults:
-  * `Ctrl/Cmd+T` — New tab · `Ctrl/Cmd+W` — Close tab
+  * `Ctrl/Cmd+T` — New tab · `Ctrl/Cmd+W` — Close tab (closes the app from the empty state)
   * `Ctrl/Cmd+Shift+L` — Tear off tab · `Ctrl/Cmd+F` — Find
   * `Ctrl/Cmd+,` — Settings · `Ctrl/Cmd+Shift+P` — Command palette
   * `Ctrl/Cmd+1–9` — Switch to tab by index

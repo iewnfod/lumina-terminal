@@ -209,6 +209,15 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         switch (action) {
             case "closeTab":
                 if (currentId) mgr.closeTerminal(currentId);
+                else {
+                    // Empty state: no tab to act on, so the close-tab binding
+                    // closes the window — same path as the title-bar X button,
+                    // so the session-persistence close handler still runs.
+                    info("Close-tab binding in empty state: closing window");
+                    getCurrentWindow().close().catch((e) =>
+                        error(`Failed to close window from empty state: ${e}`).catch(() => {})
+                    );
+                }
                 break;
             case "newTab": {
                 mgr.newTerminal(findProfile(args?.profileName));

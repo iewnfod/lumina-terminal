@@ -69,7 +69,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/inst
 
 ### 键盘快捷键
 * 完全可自定义的快捷键配置，保存在配置文件中。默认快捷键：
-  * `Ctrl/Cmd+T` 新建标签页 · `Ctrl/Cmd+W` 关闭标签页
+  * `Ctrl/Cmd+T` 新建标签页 · `Ctrl/Cmd+W` 关闭标签页（空状态下关闭应用）
   * `Ctrl/Cmd+Shift+L` 撕离标签页 · `Ctrl/Cmd+F` 查找
   * `Ctrl/Cmd+,` 打开设置 · `Ctrl/Cmd+Shift+P` 命令面板
   * `Ctrl/Cmd+1–9` 按序号切换标签页

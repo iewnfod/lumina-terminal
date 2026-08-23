@@ -128,7 +128,11 @@ export function useSessionPersistence(refs: PersistenceRefs) {
 
                 let decision: "save" | "nosave";
                 let remember = false;
-                if (mode === "always") {
+                if (allIds.length === 0) {
+                    // No tabs open: both dialog choices would come down to
+                    // "clear the session", so skip the prompt entirely.
+                    decision = "nosave";
+                } else if (mode === "always") {
                     decision = "save";
                 } else if (mode === "ask") {
                     // Open the dialog, await the user's choice. preventDefault
