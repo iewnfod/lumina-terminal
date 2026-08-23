@@ -63,7 +63,7 @@ The release workflow (`.github/workflows/release.yml`) passes these into
 
 1. Bump the version (keeps `package.json`, `Cargo.toml`, `tauri.conf.json` in sync):
    ```bash
-   ./bump-version.sh 0.2.0
+   ./scripts/bump-version.sh 0.2.0
    ```
 2. Commit, tag, and push:
    ```bash

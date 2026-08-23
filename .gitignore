@@ -27,6 +27,9 @@ dist-ssr
 .reasonix/
 reasonix.toml
 
+# 发布脚本生成的临时 Release Note(正式内容以 GitHub Release 为准)
+notes.md
+
 # Tauri updater signing key (NEVER commit; keep private & in GitHub Secrets)
 lumina-updater.key
 lumina-updater.key.pub

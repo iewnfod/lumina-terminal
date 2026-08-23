@@ -2,9 +2,9 @@
 #
 # install.sh — Lumina Terminal one-shot installer
 #
-#   curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scripts/install.sh | bash
 #   # or to skip the confirmation prompt:
-#   curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/install.sh | bash -s -- -y
+#   curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scripts/install.sh | bash -s -- -y
 #
 # Usage: install.sh [-y] [--help]
 #   -y, --yes   Skip the confirmation prompt (assume yes)

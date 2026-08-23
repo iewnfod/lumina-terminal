@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 #
-# bump-version.sh — bump the Lumina Terminal version in all three places it
-# must stay in sync: src-tauri/Cargo.toml, package.json, src-tauri/tauri.conf.json
+# bump-version.sh — bump the Lumina Terminal version everywhere it must stay
+# in sync: src-tauri/Cargo.toml, package.json, src-tauri/tauri.conf.json, and
+# src-tauri/Cargo.lock. The lock is synced by running cargo test after the
+# edits (a plain edit never touches the lock), which also gates the bump on a
+# green test suite.
 #
 # Usage:
-#   ./bump-version.sh <new-version>      # e.g. ./bump-version.sh 0.2.0
-#   ./bump-version.sh --show             # print the current version
-#   ./bump-version.sh --check            # exit non-zero if the three disagree
+#   ./scripts/bump-version.sh <new-version>      # e.g. ./scripts/bump-version.sh 0.2.0
+#   ./scripts/bump-version.sh --show             # print the current version
+#   ./scripts/bump-version.sh --check            # exit non-zero if the three disagree
 #
 # The version has no leading "v" (that's a git-tag convention).
 
@@ -15,12 +18,15 @@ set -euo pipefail
 PKG_JSON="package.json"
 CARGO_TOML="src-tauri/Cargo.toml"
 TAURI_CONF="src-tauri/tauri.conf.json"
+CARGO_LOCK="src-tauri/Cargo.lock"
+CARGO_PKG_NAME="lumina-terminal"
 
 # Resolve repo root so the script works from any subdirectory.
 root="$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
 PKG_JSON="$root/$PKG_JSON"
 CARGO_TOML="$root/$CARGO_TOML"
 TAURI_CONF="$root/$TAURI_CONF"
+CARGO_LOCK="$root/$CARGO_LOCK"
 
 # ---- color helpers (tty only) ----------------------------------------------
 if [[ -t 1 ]]; then
@@ -39,6 +45,8 @@ die()  { printf "%s✗%s %s%s%s\n" "$C_RED" "$C_RESET" "$C_RED" "$*" "$C_RESET" 
 read_pkg_version()   { sed -n 's/^  "version": "\(.*\)",$/\1/p'         "$PKG_JSON"   | head -n1; }
 read_cargo_version() { sed -n 's/^version = "\(.*\)"$/\1/p'             "$CARGO_TOML" | head -n1; }
 read_tauri_version() { sed -n 's/^    "version": "\(.*\)",$/\1/p'       "$TAURI_CONF" | head -n1; }
+# The lock lists every crate as a [[package]] stanza: name line, then version.
+read_lock_version()  { sed -n "/^name = \"$CARGO_PKG_NAME\"\$/{n;s/^version = \"\\(.*\\)\"\$/\\1/p;}" "$CARGO_LOCK"; }
 
 current_version() {
 	local v_pkg v_cargo v_tauri
@@ -77,10 +85,10 @@ Bump the version in ${BOLD}package.json${C_RESET}, ${BOLD}src-tauri/Cargo.toml${
 and ${BOLD}src-tauri/tauri.conf.json${C_RESET} in one shot (they must stay in sync).
 
 Examples:
-  ./bump-version.sh 0.2.0
-  ./bump-version.sh 1.0.0-rc1
-  ./bump-version.sh --show     # print current version
-  ./bump-version.sh --check    # verify the three files agree
+  ./scripts/bump-version.sh 0.2.0
+  ./scripts/bump-version.sh 1.0.0-rc1
+  ./scripts/bump-version.sh --show     # print current version
+  ./scripts/bump-version.sh --check    # verify the three files agree
 EOF
 }
 
@@ -89,7 +97,13 @@ case "${1:-}" in
 	"") die "Missing version argument. Run: bump-version.sh --help";;
 	-h|--help) usage; exit 0;;
 	--show) current_version; exit 0;;
-	--check) current_version >/dev/null && ok "All three files agree: $(current_version)"; exit 0;;
+	--check)
+		cur="$(current_version)"
+		v_lock="$(read_lock_version)"
+		[[ -n "$v_lock" && "$v_lock" == "$cur" ]] \
+			|| die "Cargo.lock reports '${v_lock:-not found}' but the manifest files report '$cur'.
+Re-run the bump — cargo test re-syncs the lock."
+		ok "All four files agree: $cur"; exit 0;;
 esac
 
 new="$1"
@@ -115,10 +129,23 @@ v_pkg="$(read_pkg_version)"; v_cargo="$(read_cargo_version)"; v_tauri="$(read_ta
   src-tauri/Cargo.toml     : $v_cargo
   src-tauri/tauri.conf.json: $v_tauri"
 
-ok "Updated all three files to ${BOLD}$new${C_RESET}:"
+# Run the test suite: cargo re-resolves Cargo.lock on the way in (picking up
+# the new version for this crate), and a red suite must block the release.
+command -v cargo >/dev/null 2>&1 \
+	|| die "cargo not found — cannot sync Cargo.lock. Install Rust, or run the tests manually."
+log "Running cargo test (syncs Cargo.lock + gates the bump)..."
+cargo test --quiet --manifest-path "$root/src-tauri/Cargo.toml" \
+	|| die "cargo test failed — the bump is not ready to release."
+
+v_lock="$(read_lock_version)"
+[[ "$v_lock" == "$new" ]] \
+	|| die "Cargo.lock still reports '${v_lock:-not found}' — expected '$new'."
+
+ok "Updated version to ${BOLD}$new${C_RESET} in:"
 echo "  package.json"
 echo "  src-tauri/Cargo.toml"
 echo "  src-tauri/tauri.conf.json"
+echo "  src-tauri/Cargo.lock (via cargo test)"
 echo
 log "Next: commit, tag, and publish a release:"
 printf "  git commit -am \"update: v%s\"\n  git tag v%s\n  git push origin master v%s\n" "$new" "$new" "$new"

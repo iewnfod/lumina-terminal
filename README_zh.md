@@ -18,7 +18,7 @@ paru -S lumina-terminal-bin
 ```
 * 其他 Linux / macOS：使用脚本安装
 ```shell
-curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scripts/install.sh | bash
 ```
 * Windows：从[发布页](https://github.com/iewnfod/lumina-terminal/releases)下载安装包
 
