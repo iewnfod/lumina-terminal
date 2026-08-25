@@ -677,8 +677,9 @@ export default function Term(props : TermProps) {
         };
     }, [id, isActive]);
 
-    // Poll the outermost ring of the buffer. When it is a uniform explicit
-    // color (a fullscreen TUI's own bg), sync the xterm-owned layers (.xterm
+    // Poll the outermost ring of the buffer. When one explicit color
+    // dominates it (a fullscreen TUI's own bg; a few edge-touching
+    // stragglers are tolerated per config edgeBackgroundCoverage), sync the xterm-owned layers (.xterm
     // and .xterm-viewport, which otherwise paint theme.background over the
     // sub-cell gap to the right/bottom of the canvas) and fill this surface's
     // own padding region with it, so the terminal interior has no seams
@@ -691,6 +692,10 @@ export default function Term(props : TermProps) {
     onEdgeRef.current = props.onEdgeBackgroundChange;
     const colorSpreadRef = useRef(config.enableColorSpread !== false);
     colorSpreadRef.current = config.enableColorSpread !== false;
+    // Required edge-cell coverage for a color to count as the TUI background
+    // (config edgeBackgroundCoverage; lib/edgeBackground.ts sanitizes it).
+    const edgeCoverageRef = useRef(config.edgeBackgroundCoverage);
+    edgeCoverageRef.current = config.edgeBackgroundCoverage;
     // Forced bg (theme mode system/light/dark). When set, the canvas takes
     // this color and TUI edge sampling is suppressed so a light TUI can't
     // override a "always dark" window.
@@ -778,7 +783,7 @@ export default function Term(props : TermProps) {
                 }
                 return;
             }
-            const next = sampleEdgeBackground(term.current);
+            const next = sampleEdgeBackground(term.current, edgeCoverageRef.current);
             // Always keep xterm's own layers + this surface's padding in sync
             // with the edge color so the terminal interior has no seams,
             // regardless of the spread setting.

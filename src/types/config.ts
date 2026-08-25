@@ -38,6 +38,14 @@ export interface GlobalConfig {
      *  across the whole window chrome. When false, the app keeps the terminal
      *  theme's background and the sampling/polling is disabled. */
     enableColorSpread?: boolean;
+    /** Minimum share of the sampled edge cells one color must cover to be
+     *  treated as the terminal/TUI background by the edge sampling
+     *  (lib/edgeBackground.ts) — the remaining cells are edge-touching
+     *  characters and are ignored. Default 0.9; 1 restores the strict
+     *  all-cells-uniform behavior. Values outside (0,1] or non-numbers fall
+     *  back to the default. An uncommon setting — no UI; edit config.json
+     *  to change. */
+    edgeBackgroundCoverage?: number;
     /** How the app's light/dark appearance is decided. This controls only the
      *  light/dark *rendering* of chrome (text, icons, glass, overlays); the
      *  background *color* still follows the terminal / fullscreen TUI.
