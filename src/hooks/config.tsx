@@ -1,5 +1,5 @@
 import {createContext, ReactNode, useContext, useEffect, useState} from "react";
-import {GlobalConfig} from "../types/config.ts";
+import {Binding, GlobalConfig} from "../types/config.ts";
 import {LazyStore} from "@tauri-apps/plugin-store";
 import {TerminalProfile} from "../types/terminal.ts";
 import {getCurrentWindow} from "@tauri-apps/api/window";
@@ -21,6 +21,27 @@ interface GlobalConfigContextType {
 
 export const GlobalConfigContext = createContext<GlobalConfigContextType | null>(null);
 
+/**
+ * One-time migration for the removed `copyWithCtrl` toggle: users who had it
+ * enabled get an explicit `copy` binding on plain Ctrl+C, preserving their
+ * "Ctrl+C copies" behavior now that copy is a normal user-bindable action
+ * (default Ctrl/Cmd+Shift+C). The legacy flag is stripped so the migration
+ * runs exactly once. Idempotent by construction — safe to call on every load.
+ */
+function migrateLegacyCopyWithCtrl(config: GlobalConfig): GlobalConfig {
+    if (config.copyWithCtrl !== true) return config;
+    const bindings: Binding[] = config.bindings ? [...config.bindings] : [];
+    const alreadyBound = bindings.some(
+        (b) => b.action === "copy" && b.key.toLowerCase() === "c" && b.with.includes("ctrl"),
+    );
+    if (!alreadyBound) {
+        bindings.push({key: "c", with: ["ctrl"], action: "copy"});
+    }
+    const {copyWithCtrl: _legacy, ...rest} = config;
+    info("Migrated legacy copyWithCtrl=true into a copy binding on Ctrl+C");
+    return {...rest, bindings};
+}
+
 export function useGlobalConfig() {
     const context = useContext(GlobalConfigContext);
     if (!context) {
@@ -41,6 +62,7 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
             if (savedConfig) {
                 loadedConfig = { ...loadedConfig, ...savedConfig };
             }
+            loadedConfig = migrateLegacyCopyWithCtrl(loadedConfig);
             setConfig(loadedConfig);
             store.set("config", loadedConfig).then();
             info(`Config loaded: language=${loadedConfig.language}, profiles=${loadedConfig.profiles.length}`);

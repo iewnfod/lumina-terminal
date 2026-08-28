@@ -247,6 +247,13 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                 // Search is handled inside each Term; on a non-terminal tab there
                 // is no terminal to search, so this is a no-op here.
                 break;
+            case "copy":
+                // Copy is dispatched inside loadBindings against the live
+                // xterm selection; there is none on a non-terminal tab.
+                break;
+            case "selectAll":
+                // Same as search/copy: only meaningful inside a Term.
+                break;
         }
     }, [currentId, mgr, findProfile, openSettings, tabBarVisible, updateConfig]);
     useKeyboardBindings(parsedBindings, handleNonTerminalAction, appKeyHandlerActive);
@@ -255,10 +262,6 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (matchBinding(e, parsedBindings)) {
-                e.preventDefault();
-            }
-            // Prevent Ctrl+Shift+C from opening DevTools "Inspect Element"
-            if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "c") {
                 e.preventDefault();
             }
         };

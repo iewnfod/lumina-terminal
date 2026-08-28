@@ -118,8 +118,6 @@ export function loadBindings(
     term: Terminal,
     bindings: Binding[],
     onAction: (action: Actions, args?: Record<string, string>) => void,
-    copyWithCtrl: boolean = false,
-    onWrite?: (data: string) => void,
 ) {
     const held = new Set<string>();
 
@@ -136,25 +134,6 @@ export function loadBindings(
         if (event.type !== "keydown") return true;
 
         debug(`XTerm Custom Key with key ${event.key} and type ${event.type}`);
-
-        // Copy handling for Ctrl+C / Ctrl+Shift+C on non-macOS.
-        // Default: Ctrl+Shift+C copies the selection, Ctrl+C sends SIGINT.
-        // When copyWithCtrl is enabled the two are swapped (Ctrl+C copies).
-        if (!isMacOS() && event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "c") {
-            const shouldCopy = copyWithCtrl ? !event.shiftKey : event.shiftKey;
-            if (shouldCopy) {
-                const selection = term.getSelection();
-                if (selection) {
-                    navigator.clipboard.writeText(selection).catch((e) => error(`Clipboard write failed: ${e}`).catch(() => {}));
-                }
-                return false;
-            } else if (copyWithCtrl && event.shiftKey) {
-                // Swapped mode: Ctrl+Shift+C sends SIGINT instead.
-                onWrite?.("\x03");
-                return false;
-            }
-            // Default mode, plain Ctrl+C: fall through so xterm emits ETX (SIGINT) naturally.
-        }
 
         for (const binding of bindings) {
             if (keyMatches(binding.key, event.key)) {
@@ -183,6 +162,18 @@ export function loadBindings(
                     }
                 }
                 if (flag) {
+                    // The copy action is dispatched here rather than through
+                    // onAction: whether the key may be swallowed depends on
+                    // the live selection. With a selection it goes to the
+                    // clipboard; without one the binding is skipped so the
+                    // key falls through to the shell — plain Ctrl+C stays
+                    // SIGINT even when copy is bound to it.
+                    if (binding.action === "copy") {
+                        const selection = term.getSelection();
+                        if (!selection) continue;
+                        navigator.clipboard.writeText(selection).catch((e) => error(`Clipboard write failed: ${e}`).catch(() => {}));
+                        return false;
+                    }
                     const sig = keySignature(binding.key, binding.with);
                     if (held.has(sig)) return false;
                     held.add(sig);

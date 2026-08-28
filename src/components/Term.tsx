@@ -165,6 +165,11 @@ export default function Term(props : TermProps) {
             case "search":
                 setSearchOpen((o) => !o);
                 break;
+            case "selectAll":
+                term.current?.selectAll();
+                break;
+            // copy is dispatched inside loadBindings (it needs the live
+            // selection to decide fall-through) and never reaches this switch.
         }
     };
 
@@ -388,8 +393,6 @@ export default function Term(props : TermProps) {
         // Load keybindings right after terminal is ready
         loadBindings(term.current, bindings, (action, args) => {
             handleActionsRef.current(action, args);
-        }, config.copyWithCtrl ?? false, (data) => {
-            writeToTerminal(ptyId, data).then();
         });
         info(`Bindings loaded for terminal with id ${id}`);
 
@@ -632,18 +635,16 @@ export default function Term(props : TermProps) {
         };
     }, [id, props.reattach, reportCommand]);
 
-    // Hot-reload keybindings + copyWithCtrl when the config changes (e.g. after the user edits
+    // Hot-reload keybindings when the config changes (e.g. after the user edits
     // a shortcut in Settings). attachCustomKeyEventHandler replaces the previous handler, so
     // already-open terminals pick up the new bindings live without needing a tab restart.
     useEffect(() => {
         if (!isInitialized.current || !term.current) return;
         loadBindings(term.current, bindings, (action, args) => {
             handleActionsRef.current(action, args);
-        }, config.copyWithCtrl ?? false, (data) => {
-            writeToTerminal(id, data).then();
         });
         debug(`Bindings hot-reloaded for terminal ${id}`);
-    }, [bindings, config.copyWithCtrl, id]);
+    }, [bindings, id]);
 
     // Auto-focus xterm when this tab becomes active
     useEffect(() => {

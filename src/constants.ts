@@ -164,13 +164,25 @@ export const DEFAULT_BINDINGS: Binding[] = [
         with: ["CtrlOrCommand"],
         action: "search",
     },
+    // Copy the current selection. With no selection the key falls through to
+    // the shell (lib/bindings.ts), so plain Ctrl+C stays SIGINT-safe even when
+    // the user rebinds copy onto it.
+    {
+        key: "C",
+        with: ["CtrlOrCommand", "shift"],
+        action: "copy",
+    },
+    {
+        key: "A",
+        with: ["CtrlOrCommand", "shift"],
+        action: "selectAll",
+    },
 ];
 
 export const DEFAULT_CONFIG: GlobalConfig = {
     language: 'en-us',
     profiles: [],
     showTabBar: false,
-    copyWithCtrl: false,
     enableColorSpread: false,
     themeMode: "terminal",
     autoUpdateOnStartup: true,

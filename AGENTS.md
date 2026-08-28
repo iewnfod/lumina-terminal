@@ -78,7 +78,10 @@ src/
 │   │                        #   icon ids — the custom command-icon domain API (sibling to terminalApi.ts)
 │   ├── shellIcon.ts         # getShellType(profile) → "bash"|"zsh"|"fish"|"nu"|"pwsh"|"ssh"|"default"
 │   ├── bindings.ts          # parseBindings, matchBinding, loadBindings, useKeyboardBindings,
-│   │                        #   exported actionSignature / keySignature
+│   │                        #   exported actionSignature / keySignature. loadBindings dispatches
+│   │                        #   the `copy` action itself (needs the live selection: with one it
+│   │                        #   writes the clipboard, without it the key falls through to the
+│   │                        #   shell so bound-to-Ctrl+C copy keeps SIGINT)
 │   ├── edgeBackground.ts    # sampleEdgeBackground (xterm buffer edge inspection)
 │   ├── tearoff.ts           # Tab tear-off: label mint/store/consume + WebviewWindow spawn
 │   ├── session.ts           # Terminal-session persistence: SavedTab/SavedSession types +

@@ -71,9 +71,10 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scri
 * 完全可自定义的快捷键配置，保存在配置文件中。默认快捷键：
   * `Ctrl/Cmd+T` 新建标签页 · `Ctrl/Cmd+W` 关闭标签页（空状态下关闭应用）
   * `Ctrl/Cmd+Shift+L` 撕离标签页 · `Ctrl/Cmd+F` 查找
+  * `Ctrl/Cmd+Shift+C` 复制选中内容 · `Ctrl/Cmd+Shift+A` 全选
   * `Ctrl/Cmd+,` 打开设置 · `Ctrl/Cmd+Shift+P` 命令面板
   * `Ctrl/Cmd+1–9` 按序号切换标签页
-* `Ctrl+C` / `Ctrl+Shift+C` 互换（非 macOS）— `Ctrl+C` 复制选区，`Ctrl+Shift+C` 发送中断信号
+* 没有选区时复制动作会放行按键直达 shell，因此即使把 `Ctrl+C` 绑定为复制，空选区时仍发送 SIGINT
 
 ### 配置文件
 * 多个命名配置文件，各自独立设置 Shell、尺寸、字体、主题和启动命令（如 `vim`、`opencode`，命令退出时标签页关闭；SSH 配置文件会传给远程主机）

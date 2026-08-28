@@ -1,7 +1,7 @@
 import {TerminalProfile, TerminalRenderOptions} from "./terminal.ts";
 import {Languages} from "../hooks/i18n.tsx";
 
-export type Actions = "newTab" | "openConfigFile" | "closeTab" | "openCommandPalette" | "openSettings" | "toTab" | "toggleSidebar" | "tearOffTab" | "search";
+export type Actions = "newTab" | "openConfigFile" | "closeTab" | "openCommandPalette" | "openSettings" | "toTab" | "toggleSidebar" | "tearOffTab" | "search" | "copy" | "selectAll";
 export type WithKeys = "ctrl" | "shift" | "alt" | "command" | "CtrlOrCommand";
 
 export interface Binding {
@@ -33,6 +33,10 @@ export interface GlobalConfig {
     showTabBar?: boolean;
     bindings?: Binding[];
     closeWindowOnLastTab?: boolean;
+    /** @deprecated Legacy fixed Ctrl+C copy swap, replaced by the user-bindable
+     *  `copy` action (default Ctrl/Cmd+Shift+C). Still read once by the
+     *  one-time migration in hooks/config.tsx, which converts `true` into an
+     *  explicit `copy` binding on plain Ctrl+C and strips this flag. */
     copyWithCtrl?: boolean;
     /** When true (default), a fullscreen TUI's uniform edge background "spreads"
      *  across the whole window chrome. When false, the app keeps the terminal

@@ -71,9 +71,10 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scri
 * Fully customizable keybindings stored in the config file. Defaults:
   * `Ctrl/Cmd+T` — New tab · `Ctrl/Cmd+W` — Close tab (closes the app from the empty state)
   * `Ctrl/Cmd+Shift+L` — Tear off tab · `Ctrl/Cmd+F` — Find
+  * `Ctrl/Cmd+Shift+C` — Copy selection · `Ctrl/Cmd+Shift+A` — Select all
   * `Ctrl/Cmd+,` — Settings · `Ctrl/Cmd+Shift+P` — Command palette
   * `Ctrl/Cmd+1–9` — Switch to tab by index
-* `Ctrl+C` / `Ctrl+Shift+C` swap (non-macOS) — copy with `Ctrl+C`, send SIGINT with `Ctrl+Shift+C`
+* Copy falls through to the shell when nothing is selected, so even `Ctrl+C` can be bound to copy and still sends SIGINT on an empty selection
 
 ### Profiles
 * Multiple named profiles with per-profile shell, dimensions, font, theme, and startup command (e.g. `vim`, `opencode` — tab closes on exit; passed to the remote host for SSH profiles)

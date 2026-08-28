@@ -3,7 +3,6 @@ import {languageNames, useI18n} from "../../hooks/i18n.tsx";
 import {useMemo} from "react";
 import {info} from "@tauri-apps/plugin-log";
 import {Label, ListBox, Select, Switch, Tooltip} from "@heroui/react";
-import {isMacOS} from "../../lib/platform.ts";
 import {useIsWayland} from "../../hooks/useIsWayland.ts";
 import {useSettingsDraft} from "../../hooks/useSettingsDraft.ts";
 import SettingsShell from "../ui/SettingsShell.tsx";
@@ -16,7 +15,6 @@ interface GeneralDraft {
     showTabBar: boolean;
     closeWindowOnLastTab: boolean;
     defaultProfile: string;
-    copyWithCtrl: boolean;
     themeMode: "system" | "terminal" | "light" | "dark";
     enableColorSpread: boolean;
     autoUpdateOnStartup: boolean;
@@ -56,7 +54,6 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         showTabBar: config.showTabBar ?? false,
         closeWindowOnLastTab: config.closeWindowOnLastTab !== false,
         defaultProfile: currentDefault,
-        copyWithCtrl: config.copyWithCtrl ?? false,
         themeMode: config.themeMode ?? "terminal",
         enableColorSpread: config.enableColorSpread !== false,
         autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
@@ -78,7 +75,6 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 language: d.language,
                 showTabBar: d.showTabBar,
                 closeWindowOnLastTab: d.closeWindowOnLastTab,
-                copyWithCtrl: d.copyWithCtrl,
                 themeMode: d.themeMode,
                 enableColorSpread: d.enableColorSpread,
                 autoUpdateOnStartup: d.autoUpdateOnStartup,
@@ -102,7 +98,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.copyWithCtrl, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
     );
 
     return (
@@ -459,25 +455,6 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 <section>
                     <SectionTitle variant="subsection">{t["Behavior"]}</SectionTitle>
                     <div className="flex flex-col gap-5">
-                        {/* Copy with Ctrl+C (non-macOS only) */}
-                        {!isMacOS() && (
-                            <SettingRow
-                                variant="toggle"
-                                label={<Label className="cursor-pointer">{t["Copy with Ctrl+C"]}</Label>}
-                                description={t["Swap Ctrl+C and Ctrl+Shift+C for copy and interrupt on non-macOS systems"]}
-                                onClick={() => setDraft((prev) => ({...prev, copyWithCtrl: !prev.copyWithCtrl}))}
-                            >
-                                <Switch
-                                    isSelected={draft.copyWithCtrl}
-                                    onChange={(v) => setDraft((prev) => ({...prev, copyWithCtrl: v}))}
-                                >
-                                    <Switch.Control>
-                                        <Switch.Thumb />
-                                    </Switch.Control>
-                                </Switch>
-                            </SettingRow>
-                        )}
-
                         {/* Inherit Working Directory: new tabs start in the
                             active terminal's current directory instead of the
                             profile default, so users can hop between
