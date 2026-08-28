@@ -177,6 +177,14 @@ export const DEFAULT_BINDINGS: Binding[] = [
         with: ["CtrlOrCommand", "shift"],
         action: "selectAll",
     },
+    // Paste the clipboard into the terminal. Plain Ctrl+V is deliberately NOT
+    // bound: it stays unintercepted (quoted-insert in readline, and the
+    // browser-native paste event keeps working as it always has).
+    {
+        key: "V",
+        with: ["CtrlOrCommand", "shift"],
+        action: "paste",
+    },
 ];
 
 export const DEFAULT_CONFIG: GlobalConfig = {

@@ -1,7 +1,7 @@
 import {TerminalProfile, TerminalRenderOptions} from "./terminal.ts";
 import {Languages} from "../hooks/i18n.tsx";
 
-export type Actions = "newTab" | "openConfigFile" | "closeTab" | "openCommandPalette" | "openSettings" | "toTab" | "toggleSidebar" | "tearOffTab" | "search" | "copy" | "selectAll";
+export type Actions = "newTab" | "openConfigFile" | "closeTab" | "openCommandPalette" | "openSettings" | "toTab" | "toggleSidebar" | "tearOffTab" | "search" | "copy" | "selectAll" | "paste";
 export type WithKeys = "ctrl" | "shift" | "alt" | "command" | "CtrlOrCommand";
 
 export interface Binding {

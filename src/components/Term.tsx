@@ -25,6 +25,7 @@ import { info, debug, error } from "@tauri-apps/plugin-log";
 import {getCurrentWebview} from "@tauri-apps/api/webview";
 import {WebLinksAddon} from "@xterm/addon-web-links";
 import {openExternal} from "../lib/openerApi.ts";
+import {readClipboardText} from "../lib/clipboardApi.ts";
 import {ImageAddon} from "@xterm/addon-image";
 import {SerializeAddon} from "@xterm/addon-serialize";
 import {SearchAddon} from "@xterm/addon-search";
@@ -167,6 +168,15 @@ export default function Term(props : TermProps) {
                 break;
             case "selectAll":
                 term.current?.selectAll();
+                break;
+            case "paste":
+                // Route through xterm's paste() so bracketed-paste mode is
+                // honored; term.onData forwards the bytes to the PTY.
+                readClipboardText().then((text) => {
+                    if (text) term.current?.paste(text);
+                }).catch((e) => {
+                    error(`Paste failed: ${e}`).catch(() => {});
+                });
                 break;
             // copy is dispatched inside loadBindings (it needs the live
             // selection to decide fall-through) and never reaches this switch.

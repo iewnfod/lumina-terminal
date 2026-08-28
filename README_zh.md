@@ -72,6 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scri
   * `Ctrl/Cmd+T` 新建标签页 · `Ctrl/Cmd+W` 关闭标签页（空状态下关闭应用）
   * `Ctrl/Cmd+Shift+L` 撕离标签页 · `Ctrl/Cmd+F` 查找
   * `Ctrl/Cmd+Shift+C` 复制选中内容 · `Ctrl/Cmd+Shift+A` 全选
+  * `Ctrl/Cmd+Shift+V` 粘贴（原生 `Ctrl/Cmd+V` 粘贴同样可用）
   * `Ctrl/Cmd+,` 打开设置 · `Ctrl/Cmd+Shift+P` 命令面板
   * `Ctrl/Cmd+1–9` 按序号切换标签页
 * 没有选区时复制动作会放行按键直达 shell，因此即使把 `Ctrl+C` 绑定为复制，空选区时仍发送 SIGINT

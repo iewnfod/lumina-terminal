@@ -15,6 +15,7 @@ export const ALL_ACTIONS: Actions[] = [
     "search",
     "copy",
     "selectAll",
+    "paste",
 ];
 
 /** The i18n dictionary shape the label helper needs. Decoupled from the React
@@ -62,9 +63,11 @@ export function actionLabel(
         case "search":
             return t["Find in Terminal"];
         case "copy":
-            return t["Copy Selection"];
+            return t["Copy"];
         case "selectAll":
             return t["Select All"];
+        case "paste":
+            return t["Paste"];
         case "toTab": {
             const idx = args?.index;
             if (idx === "last") return `${t["Switch to Tab"]}: ${t["Last tab"]}`;

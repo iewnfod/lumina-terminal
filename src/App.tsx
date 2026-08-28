@@ -254,6 +254,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
             case "selectAll":
                 // Same as search/copy: only meaningful inside a Term.
                 break;
+            case "paste":
+                // Same: paste targets the terminal PTY via term.paste().
+                break;
         }
     }, [currentId, mgr, findProfile, openSettings, tabBarVisible, updateConfig]);
     useKeyboardBindings(parsedBindings, handleNonTerminalAction, appKeyHandlerActive);

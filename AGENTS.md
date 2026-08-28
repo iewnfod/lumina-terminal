@@ -65,6 +65,9 @@ src/
 │   ├── proxyApi.ts          # startProxySync/stopProxySync invoke wrappers (log-on-reject) — the
 │   │                        #   system-proxy watcher domain API (sibling to terminalApi.ts)
 │   ├── cliApi.ts            # getCliArgs() wrapper — reads parsed launch flags (log-on-reject)
+│   ├── clipboardApi.ts      # readClipboardText() — clipboard-plugin read wrapper (log-on-degrade);
+│   │                        #   the only clipboard READ path (navigator.clipboard.readText is
+│   │                        #   unusable in the Tauri webviews); writes stay on navigator.clipboard
 │   ├── openerApi.ts         # openExternal — opener-plugin URL wrapper (log-on-reject); the one
 │   │                        #   way external links reach the system browser (plain target="_blank"
 │   │                        #   anchors are dead in the Tauri webview)

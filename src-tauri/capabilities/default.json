@@ -41,6 +41,7 @@
     "core:window:allow-set-always-on-top",
     "log:default",
     "updater:default",
-    "process:default"
+    "process:default",
+    "clipboard-manager:allow-read-text"
   ]
 }
