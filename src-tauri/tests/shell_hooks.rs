@@ -4,7 +4,9 @@
 //! file → user manual override survives a proxy-off transition → re-apply with
 //! a new value → unset only what the hook itself injected.
 
-use lumina_terminal_lib::shell_integration::{proxy_hook_bash, proxy_hook_fish, proxy_hook_zsh};
+use lumina_terminal_lib::shell_integration::{
+    bash_interactive_argv, proxy_hook_bash, proxy_hook_fish, proxy_hook_zsh,
+};
 use std::process::Command;
 
 /// Unique temp dir for one test's env-file, so parallel tests don't clash.
@@ -85,6 +87,32 @@ fn run_hook_scenario(shell: &str, hook: &str, scenario: &str, env_file: &std::pa
     assert!(
         stdout.trim() == "HOOK-OK",
         "{shell} hook scenario failed\nstdout: {stdout}\nstderr: {stderr}\nscript:\n{script}"
+    );
+}
+
+#[test]
+fn bash_interactive_argv_starts_shell() {
+    if !shell_runs("bash") {
+        eprintln!("skipping bash argv test: bash not available");
+        return;
+    }
+    // The argv apply_interactive builds for bash must start an interactive
+    // shell that sources the init file. Regression guard for bash 5.3's
+    // option parser: a long option following a short one (`-i --init-file X`)
+    // made bash die with `--: invalid option` (exit 2), closing the tab — and
+    // the window, when it held the last one — right after startup.
+    let dir = std::env::temp_dir().join(format!("lumina-bash-argv-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let init = dir.join("lumina.bash");
+    std::fs::write(&init, "printf 'INIT-SOURCED\\n'\n").expect("write init file");
+    let argv = bash_interactive_argv(&init.to_string_lossy());
+    let out = Command::new("bash").args(&argv).output().expect("spawn bash");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stdout.contains("INIT-SOURCED"),
+        "bash did not source the init file (argv: {argv:?})\nstatus: {}\nstdout: {stdout}\nstderr: {stderr}",
+        out.status
     );
 }
 

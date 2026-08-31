@@ -24,8 +24,8 @@ use std::path::PathBuf;
 use portable_pty::CommandBuilder;
 use tauri::{AppHandle, Manager};
 
-/// Bash init script, sourced via `bash -i --init-file <this>`.
-const BASH_INIT: &str = r#"# Lumina shell integration (bash). Sourced via `bash -i --init-file <this>`.
+/// Bash init script, sourced via `bash --init-file <this> -i`.
+const BASH_INIT: &str = r#"# Lumina shell integration (bash). Sourced via `bash --init-file <this> -i`.
 # A login shell ignores --init-file, so Lumina drops -l and we simulate the
 # login sequence here (the same files bash -l reads), then the interactive rc,
 # then a precmd hook reporting the previous command's exit code. No preexec
@@ -68,6 +68,17 @@ const FISH_PREEXEC: &str = r#"function __lumina_preexec --on-event fish_preexec;
 /// fish precmd hook (passed via `fish -C`).
 const FISH_PRECMD: &str = r#"function __lumina_precmd --on-event fish_prompt; printf '\033]1337;CurrentCommandExit=%s\007' $status; end"#;
 
+/// Argv (after the bash executable) for the interactive shell Lumina spawns.
+/// Order is load-bearing: bash documents that multi-character options must
+/// appear BEFORE single-character ones, and bash 5.3 enforces it —
+/// `-i --init-file <path>` dies with `bash: --: invalid option` (exit 2),
+/// which closed the tab (and with it the window) right after startup on
+/// every bash 5.3 system. Long-option-first parses on all bash versions.
+/// Public for the real-shell test in tests/shell_hooks.rs.
+pub fn bash_interactive_argv(init_path: &str) -> Vec<String> {
+    vec!["--init-file".into(), init_path.to_string(), "-i".into()]
+}
+
 /// Resolve (creating) the per-app shell-integration dir under app data. Shared
 /// with `proxy.rs`, which drops the proxy env-file next to the init scripts so
 /// the hooks (whose paths are baked into those scripts) can read it.
@@ -104,8 +115,7 @@ pub fn apply_interactive(c: &mut CommandBuilder, shell_base: &str, app: &AppHand
             if write_script(&path, &init).is_ok() {
                 // Drop -l: a login shell ignores --init-file, and the init
                 // file simulates the login sequence itself.
-                c.args(["-i", "--init-file"]);
-                c.arg(path.to_string_lossy().into_owned());
+                c.args(&bash_interactive_argv(&path.to_string_lossy()));
                 return;
             }
         }
