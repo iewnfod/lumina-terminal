@@ -36,6 +36,7 @@ import {useWindowGeometry} from "./hooks/useWindowGeometry.ts";
 import {useEmptyStateWindowSize} from "./hooks/useEmptyStateWindowSize.ts";
 import {useTerminalManager} from "./hooks/useTerminalManager.ts";
 import {useCommandPaletteActions} from "./hooks/useCommandPaletteActions.tsx";
+import {useCliArgs} from "./hooks/useCliArgs.ts";
 import {reportCommandFinished} from "./lib/terminalApi.ts";
 
 const OPEN_ABOUT_EVENT = "lumina-open-about";
@@ -112,7 +113,14 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         () => visibleRed(effectiveTheme?.red, effectiveTheme?.brightRed, effectiveBg),
         [effectiveTheme?.red, effectiveTheme?.brightRed, effectiveBg],
     );
-    const tabBarVisible = config.showTabBar ?? false;
+    // Sidebar visibility. The setting drives it, unless a one-shot CLI
+    // override (--sidebar show|hide) is active: `sidebarOverride` is local
+    // state, so the flag NEVER writes config.json. Any explicit change
+    // (toggle button / binding / palette / settings page) drops the override
+    // and persists as usual. The CLI value itself is resolved further down,
+    // after `isMainWindow` (cliArgs is process-global; without the gate,
+    // tear-off windows would inherit the override).
+    const [sidebarOverride, setSidebarOverride] = useState<boolean | null>(null);
     const parsedBindings = useMemo(() => parseBindings(config.bindings), [config.bindings]);
     // Per-tab "open search" triggers, registered by each Term (mirrors the
     // serialize-fns map in useTerminalManager). The command palette's
@@ -149,6 +157,33 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // for tear-off windows (they're positioned by createTearoffWindow).
     const isMainWindow = getCurrentWindow().label === "main";
     useWindowGeometry(isMainWindow);
+    // Resolve the sidebar override chain: explicit toggle (local override) →
+    // one-shot CLI flag (main window only) → the persisted setting.
+    const cliArgs = useCliArgs();
+    const cliSidebar = isMainWindow ? cliArgs?.sidebar : undefined;
+    const tabBarVisible = sidebarOverride
+        ?? (cliSidebar === "show" ? true : cliSidebar === "hide" ? false : null)
+        ?? (config.showTabBar ?? false);
+    // The single write path for sidebar visibility: every toggle (binding,
+    // title-bar button, in-term action, command palette) goes through here so
+    // an active CLI override is always dropped before persisting.
+    const setTabBarVisible = useCallback((visible: boolean) => {
+        setSidebarOverride(null);
+        updateConfig({showTabBar: visible});
+    }, [updateConfig]);
+    const toggleTabBar = useCallback(() => {
+        setTabBarVisible(!tabBarVisible);
+    }, [tabBarVisible, setTabBarVisible]);
+    // Also drop the override when the setting is changed through the settings
+    // page (the toggles above clear it directly — writing the same value
+    // again wouldn't be observed by this effect).
+    const showTabBarRef = useRef(config.showTabBar);
+    useEffect(() => {
+        if (showTabBarRef.current !== config.showTabBar) {
+            showTabBarRef.current = config.showTabBar;
+            setSidebarOverride(null);
+        }
+    }, [config.showTabBar]);
     // When the app starts with no terminal (empty state), no Term ever mounts
     // to size the window — so size it to the default profile here, sharing the
     // same once-per-session lock Term uses (whichever runs first wins).
@@ -230,7 +265,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                 setIsCommandPaletteOpen(true);
                 break;
             case "toggleSidebar":
-                updateConfig({ showTabBar: !tabBarVisible });
+                setTabBarVisible(!tabBarVisible);
                 break;
             case "toTab":
                 if (args?.index !== undefined) {
@@ -258,7 +293,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                 // Same: paste targets the terminal PTY via term.paste().
                 break;
         }
-    }, [currentId, mgr, findProfile, openSettings, tabBarVisible, updateConfig]);
+    }, [currentId, mgr, findProfile, openSettings, tabBarVisible, setTabBarVisible]);
     useKeyboardBindings(parsedBindings, handleNonTerminalAction, appKeyHandlerActive);
 
     // Global: prevent browser defaults for configured shortcuts
@@ -289,6 +324,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         openAbout,
         openSearch,
         updateConfig,
+        toggleTabBar,
     });
 
     // Close command palette when Escape is pressed while it's open
@@ -389,7 +425,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                         theme={effectiveTheme}
                         bgSpread={isSpread}
                         tabBarVisible={tabBarVisible}
-                        onToggleTabBar={() => updateConfig({ showTabBar: !tabBarVisible })}
+                        onToggleTabBar={toggleTabBar}
                         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
                         onOpenSettings={openSettings}
                         isMaximized={isMaximized}
@@ -487,7 +523,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
                                     onOpenSettings={openSettings}
                                     onToTab={mgr.toTab}
-                                    onToggleSidebar={() => updateConfig({ showTabBar: !tabBarVisible })}
+                                    onToggleSidebar={toggleTabBar}
                                     onTearOff={() => mgr.tearOffTab(id)}
                                     onRegisterSearch={(open) => {
                                         openSearchFns.current.set(id, open);

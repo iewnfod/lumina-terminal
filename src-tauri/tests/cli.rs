@@ -4,7 +4,7 @@
 //! `--hold`, plus the macOS `-psn_*` LaunchServices filter `parse_cli` applies
 //! before parsing.
 
-use lumina_terminal_lib::cli::{try_parse_cli, without_psn_args, CliArgs};
+use lumina_terminal_lib::cli::{try_parse_cli, without_psn_args, CliArgs, SidebarVisibility};
 use std::ffi::OsString;
 
 /// Parse with a fake argv[0] prepended, mirroring real process args. Goes
@@ -147,6 +147,34 @@ fn all_overrides_parse_together() {
     assert!(cli.hold);
     assert_eq!(cli.profile.as_deref(), Some("dev"));
     assert!(cli.command.is_empty());
+}
+
+#[test]
+fn sidebar_flag_parses_without_touching_other_args() {
+    // Standalone: the setting drives unless the flag overrides it.
+    let cli = parse(&["--sidebar", "hide"]).expect("parse");
+    assert_eq!(cli.sidebar, Some(SidebarVisibility::Hide));
+    assert!(cli.command.is_empty());
+    assert_eq!(cli.title, None);
+
+    let cli = parse(&["--sidebar=show"]).expect("parse");
+    assert_eq!(cli.sidebar, Some(SidebarVisibility::Show));
+
+    assert_eq!(parse(&[]).expect("parse").sidebar, None);
+
+    // Unknown values are rejected.
+    assert!(parse(&["--sidebar", "bogus"]).is_err());
+    assert!(parse(&["--sidebar"]).is_err());
+
+    // After -e it still parses as a flag (window-shaping stop token).
+    let cli = parse(&["-e", "nvim", "--sidebar", "hide"]).expect("parse");
+    assert_eq!(cli.command, vec!["nvim"]);
+    assert_eq!(cli.sidebar, Some(SidebarVisibility::Hide));
+
+    // Inside the -- verbatim region it stays command data.
+    let cli = parse(&["-e", "--", "tool", "--sidebar", "hide"]).expect("parse");
+    assert_eq!(cli.command, vec!["tool", "--sidebar", "hide"]);
+    assert_eq!(cli.sidebar, None);
 }
 
 #[test]

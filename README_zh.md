@@ -89,7 +89,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scri
 
 ## 命令行参数
 
-Lumina 支持类似 Alacritty 的启动参数（外加 Lumina 特有的 `--profile`）。只要传入了其中任意一个参数，就会**只打开一个标签页**应用这些覆盖配置，并跳过会话恢复。
+Lumina 支持类似 Alacritty 的启动参数（外加 Lumina 特有的 `--profile` 和 `--sidebar`）。传入任一**标签塑形**参数（`-e`、`--working-directory`、`-T`、`--hold`、`--profile`）时，会**只打开一个标签页**应用这些覆盖配置并跳过会话恢复；`--sidebar` 仅覆盖本次启动的侧边栏可见性，不影响标签页初始化。
 
 | 参数 | 说明 |
 |------|------|
@@ -98,6 +98,7 @@ Lumina 支持类似 Alacritty 的启动参数（外加 Lumina 特有的 `--profi
 | `-T, --title <TITLE>` | 设置窗口标题。 |
 | `--hold` | 命令退出后保持终端打开（冻结输出、只读）。 |
 | `--profile <NAME>` | 按名称打开某个配置文件；其它参数在其基础上叠加。找不到时回退到默认配置文件。*（Lumina 特有）* |
+| `--sidebar <SHOW\|HIDE>` | 仅本次启动显示/隐藏侧边栏，忽略设置但**不覆盖**它（首次显式切换后覆盖即失效）。*（Lumina 特有）* |
 | `--version` / `--help` | 打印版本 / 用法并退出（不启动窗口）。 |
 
 ```shell
@@ -108,6 +109,7 @@ lumina-terminal --working-directory ~/projects -e npm run dev
 lumina-terminal --profile work                  # 打开 "work" 配置文件
 lumina-terminal --hold --profile dev -e cargo build
 lumina-terminal -T "build log"                  # 设置窗口标题
+lumina-terminal --sidebar hide                  # 本次启动隐藏侧边栏（不改设置）
 ```
 
 ## 性能

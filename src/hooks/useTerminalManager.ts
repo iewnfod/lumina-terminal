@@ -552,7 +552,9 @@ export function useTerminalManager(): TerminalManager {
                 // open a SINGLE tab built from them and skip session restore —
                 // the user explicitly asked for a specific launch. No args at
                 // all falls through to the normal session-restore / default
-                // path below, preserving today's behavior.
+                // path below, preserving today's behavior. (--sidebar is
+                // deliberately excluded: it's a chrome-only override that App
+                // applies without shaping the initial tab.)
                 const hasLaunchArgs =
                     cliArgs.command.length > 0 ||
                     !!cliArgs.workingDirectory ||

@@ -89,7 +89,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scri
 
 ## Command-line options
 
-Lumina accepts Alacritty-style launch flags (with a Lumina-specific `--profile`). When any of these is given, a **single tab** is opened with the overrides and session restore is skipped.
+Lumina accepts Alacritty-style launch flags (with Lumina-specific `--profile` and `--sidebar`). When a tab-shaping flag (`-e`, `--working-directory`, `-T`, `--hold`, `--profile`) is given, a **single tab** is opened with the overrides and session restore is skipped; `--sidebar` only overrides the sidebar for this launch and does not affect tab seeding.
 
 | Flag | Description |
 |------|-------------|
@@ -98,6 +98,7 @@ Lumina accepts Alacritty-style launch flags (with a Lumina-specific `--profile`)
 | `-T, --title <TITLE>` | Set the window title. |
 | `--hold` | Keep the terminal open (frozen, read-only) after the command exits. |
 | `--profile <NAME>` | Open a configured profile by name; other flags layer on top. Falls back to the default if not found. *(Lumina-specific)* |
+| `--sidebar <SHOW\|HIDE>` | Show/hide the sidebar for this launch only, ignoring the setting **without overwriting it** (the first explicit toggle drops the override). *(Lumina-specific)* |
 | `--version` / `--help` | Print version / usage and exit (no window). |
 
 ```shell
@@ -108,6 +109,7 @@ lumina-terminal --working-directory ~/projects -e npm run dev
 lumina-terminal --profile work                  # open the "work" profile
 lumina-terminal --hold --profile dev -e cargo build
 lumina-terminal -T "build log"                  # set the window title
+lumina-terminal --sidebar hide                  # hide the sidebar this launch (setting untouched)
 ```
 
 ## Performance

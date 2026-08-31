@@ -41,6 +41,9 @@ next stable xterm release containing both ships.
 ```
 src/
 ├── App.tsx                  # Root: composes chrome (TabBar/TitleBar/Term) + non-terminal key dispatch.
+│                            #   Sidebar visibility chain lives here: explicit toggle (local override)
+│                            #   → one-shot CLI --sidebar (main window only) → the showTabBar setting;
+│                            #   setTabBarVisible is the single write path (drops any CLI override).
 │                            #   Tab lifecycle/state live in useTerminalManager; geometry in useWindowGeometry.
 ├── main.tsx                 # ReactDOM entry; wraps App in GlobalConfigProvider
 ├── constants.ts             # Default config, default bindings, tab-id sentinels
@@ -130,6 +133,8 @@ src/
 │   ├── useCliArgs.ts        # useCliArgs() — cached get_cli_args; Alacritty-style launch flags,
 │   │                        #   consumed by useTerminalManager's seed effect to shape the main
 │   │                        #   window's first tab (--profile/--command/--working-directory/--hold/--title)
+│   │                        #   and by App for the one-shot --sidebar show|hide visibility override
+│   │                        #   (local state, never persisted; first explicit toggle drops it)
 │   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
 │   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
 │   ├── useTerminalManager.ts# useTerminalManager() — tab list/profiles/active id + create/close/reorder/
@@ -212,7 +217,8 @@ src-tauri/src/
 ├── lib.rs         # Tauri builder: plugins, state, invoke_handler registration; parse_cli() at top
 │                  #   of run() (handles --help/--version + exits before the window spawns)
 ├── cli.rs         # clap-based launch-flag parsing (Alacritty-style): CliArgs (-e/--command,
-│                  #   --working-directory, -T/--title, --hold, --profile), CliState, parse_cli
+│                  #   --working-directory, -T/--title, --hold, --profile, --sidebar show|hide),
+│                  #   CliState, parse_cli
 │                  #   (filters macOS -psn_*), get_cli_args command — args are surfaced to the
 │                  #   frontend, which decides how they shape the initial tab. `-e` gets a
 │                  #   pre-clap argv split (split_command_region, tested via try_parse_cli):

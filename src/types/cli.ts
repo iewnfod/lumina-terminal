@@ -19,4 +19,9 @@ export interface CliArgs {
     hold: boolean;
     /** Name of a configured profile to open (`--profile`, Lumina-specific). */
     profile?: string;
+    /** One-shot sidebar visibility for this launch (`--sidebar`,
+     *  Lumina-specific). Overrides the `showTabBar` setting WITHOUT
+     *  persisting — App holds it as local state until the first explicit
+     *  toggle. "show" | "hide"; undefined = follow the setting. */
+    sidebar?: "show" | "hide";
 }

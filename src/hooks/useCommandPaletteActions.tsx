@@ -26,12 +26,15 @@ export function useCommandPaletteActions(opts: {
     openSettings: () => void;
     openAbout: () => void;
     openSearch: () => void;
-    updateConfig: (patch: {showTabBar?: boolean; closeWindowOnLastTab?: boolean}) => void;
+    updateConfig: (patch: {closeWindowOnLastTab?: boolean}) => void;
+    /** Single sidebar-toggle path from App (drops any active CLI override
+     *  before persisting) — never toggle showTabBar via updateConfig here. */
+    toggleTabBar: () => void;
 }): CommandAction[] {
     const {
         profiles, currentId, terminals, parsedBindings, tabBarVisible,
         closeWindowOnLastTab, t,
-        newTerminal, closeTerminal, tearOffTab, openSettings, openAbout, openSearch, updateConfig,
+        newTerminal, closeTerminal, tearOffTab, openSettings, openAbout, openSearch, updateConfig, toggleTabBar,
     } = opts;
 
     return useMemo(() => {
@@ -112,7 +115,7 @@ export function useCommandPaletteActions(opts: {
             ),
             category: t["View"],
             keywords: ["tab bar", "标签栏", "sidebar", "toggle", "hide", "show", "隐藏", "显示"],
-            onSelect: () => updateConfig({ showTabBar: !tabBarVisible }),
+            onSelect: () => toggleTabBar(),
         });
 
         // Toggle close window on last tab
@@ -162,7 +165,7 @@ export function useCommandPaletteActions(opts: {
         });
 
         return actions;
-    }, [profiles, currentId, terminals, tabBarVisible, closeWindowOnLastTab, parsedBindings, t, newTerminal, closeTerminal, tearOffTab, openSettings, openAbout, openSearch, updateConfig]);
+    }, [profiles, currentId, terminals, tabBarVisible, closeWindowOnLastTab, parsedBindings, t, newTerminal, closeTerminal, tearOffTab, openSettings, openAbout, openSearch, updateConfig, toggleTabBar]);
 }
 
 /** Re-export so callers can name-import the action type alongside the hook. */

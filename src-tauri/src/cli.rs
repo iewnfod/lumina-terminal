@@ -9,7 +9,7 @@
 //!
 //! `-e` / `--command` semantics: the tokens after it are the command, EXCEPT
 //! that Lumina's own window-shaping flags (`-T/--title`, `--hold`,
-//! `--working-directory`, `--profile`) still parse as flags — so
+//! `--working-directory`, `--profile`, `--sidebar`) still parse as flags — so
 //! `lumina-terminal -e nvim -T nvim` runs nvim with the window titled "nvim".
 //! Unknown dash tokens (e.g. `grep -n`), repeated `-e` tokens (e.g.
 //! `grep -e pat`) and `--help`/`--version` stay command data, preserving the
@@ -38,9 +38,9 @@ use tauri::State;
 pub struct CliArgs {
     /// Command and args to run on startup (passed to the configured shell).
     /// Captured after `-e` until one of Lumina's window-shaping flags
-    /// (`-T/--title`, `--hold`, `--working-directory`, `--profile`) or `--`
-    /// (verbatim escape hatch) appears — see [`split_command_region`].
-    /// Empty = none.
+    /// (`-T/--title`, `--hold`, `--working-directory`, `--profile`,
+    /// `--sidebar`) or `--` (verbatim escape hatch) appears — see
+    /// [`split_command_region`]. Empty = none.
     #[arg(
         short = 'e',
         long = "command",
@@ -72,6 +72,20 @@ pub struct CliArgs {
     /// on top of the chosen profile; falls back to the default if not found.
     #[arg(long = "profile", value_name = "NAME")]
     pub profile: Option<String>,
+
+    /// Show/hide the sidebar at startup for this launch only (Lumina-specific):
+    /// it overrides the `showTabBar` setting WITHOUT persisting — the frontend
+    /// holds it as local state and drops it on the first explicit toggle.
+    #[arg(long = "sidebar", value_enum, value_name = "SHOW|HIDE")]
+    pub sidebar: Option<SidebarVisibility>,
+}
+
+/// One-shot startup visibility for the sidebar (`--sidebar show|hide`).
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SidebarVisibility {
+    Show,
+    Hide,
 }
 
 /// Holds the parsed CLI args for the lifetime of the app, so the frontend can
@@ -108,11 +122,14 @@ pub fn without_psn_args(args: impl IntoIterator<Item = OsString>) -> Vec<OsStrin
 /// its tokens) and `--help`/`--version` (so `-e curl --help` runs curl's help
 /// in the terminal instead of printing Lumina's and exiting).
 fn ends_command_capture(token: &str) -> bool {
-    matches!(token, "-T" | "--title" | "--hold" | "--working-directory" | "--profile")
-        || (token.starts_with("-T") && token.len() > 2)
+    matches!(
+        token,
+        "-T" | "--title" | "--hold" | "--working-directory" | "--profile" | "--sidebar"
+    ) || (token.starts_with("-T") && token.len() > 2)
         || token.starts_with("--title=")
         || token.starts_with("--working-directory=")
         || token.starts_with("--profile=")
+        || token.starts_with("--sidebar=")
 }
 
 /// The first command token for an `-e`-style token that carries its value
