@@ -2650,7 +2650,7 @@ dependencies = [
 
 [[package]]
 name = "lumina-terminal"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "axum",
  "base64 0.22.1",
