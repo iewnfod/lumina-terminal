@@ -93,7 +93,7 @@ Lumina 支持类似 Alacritty 的启动参数（外加 Lumina 特有的 `--profi
 
 | 参数 | 说明 |
 |------|------|
-| `-e, --command <COMMAND>...` | 启动时运行的命令及参数（必须是**最后一个**参数 —— 其后的所有内容都视为命令）。通过配置文件的 shell 执行；除非给定 `--hold`，命令退出后标签页关闭。 |
+| `-e, --command <COMMAND>...` | 启动时运行的命令及参数。通过配置文件的 shell 执行；除非给定 `--hold`，命令退出后标签页关闭。其后的参数属于命令，**但** Lumina 自己的参数（`-T/--title`、`--hold`、`--working-directory`、`--profile`）仍按参数解析 —— 因此 `-e nvim -T nvim` 会运行 nvim 并把窗口标题设为 "nvim"。使用 `--` 可让其后的所有内容原样传给命令（如 `-e -- ssh -T host`）。 |
 | `--working-directory <DIR>` | 在此目录启动 shell。 |
 | `-T, --title <TITLE>` | 设置窗口标题。 |
 | `--hold` | 命令退出后保持终端打开（冻结输出、只读）。 |
@@ -102,6 +102,7 @@ Lumina 支持类似 Alacritty 的启动参数（外加 Lumina 特有的 `--profi
 
 ```shell
 lumina-terminal -e nvim                         # 运行 nvim；:q 后关闭
+lumina-terminal -e nvim -T nvim                 # 运行 nvim，窗口标题设为 "nvim"
 lumina-terminal --hold -e ls -la                # 运行 ls -la 并保留输出
 lumina-terminal --working-directory ~/projects -e npm run dev
 lumina-terminal --profile work                  # 打开 "work" 配置文件

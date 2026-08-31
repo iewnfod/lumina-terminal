@@ -1,4 +1,4 @@
-//! Command-line argument parsing for the launcher (Alacritty-style).
+//! Command-line argument parsing for the launcher.
 //!
 //! Parsed once at startup (see `lib::run`) before the Tauri window is built, so
 //! `--help` / `--version` can print and exit without ever spawning a window.
@@ -7,13 +7,21 @@
 //! initial tab in the seed effect (keeping all UI logic in the frontend, per
 //! the project's layering rules).
 //!
-//! `--command` / `-e` combines `trailing_var_arg` with `allow_hyphen_values`,
-//! so it must be the final flag — every argument after it (including
-//! dash-shaped ones like `-n` or `--hold`) is captured verbatim as part of the
-//! command, matching Alacritty's `-e` semantics. `trailing_var_arg` alone does
-//! NOT do this for options: without `allow_hyphen_values`, a known flag after
-//! the command is parsed as a flag and an unknown dash-token is a parse error
-//! (regression-tested in tests/cli.rs).
+//! `-e` / `--command` semantics: the tokens after it are the command, EXCEPT
+//! that Lumina's own window-shaping flags (`-T/--title`, `--hold`,
+//! `--working-directory`, `--profile`) still parse as flags — so
+//! `lumina-terminal -e nvim -T nvim` runs nvim with the window titled "nvim".
+//! Unknown dash tokens (e.g. `grep -n`), repeated `-e` tokens (e.g.
+//! `grep -e pat`) and `--help`/`--version` stay command data, preserving the
+//! Alacritty-style verbatim capture. `--` switches to fully verbatim mode:
+//! every token after it belongs to the command even if it spells a Lumina flag
+//! (the escape hatch for commands that use the same spellings, e.g.
+//! `lumina-terminal -e -- ssh -T host`).
+//!
+//! clap alone cannot express this (with `allow_hyphen_values` it swallows the
+//! flags; without it, an unknown dash token is a parse error), so
+//! [`split_command_region`] carves the command region out of argv BEFORE clap
+//! runs and the captured tokens are injected into the parsed result.
 
 use std::ffi::OsString;
 use std::sync::Mutex;
@@ -29,8 +37,10 @@ use tauri::State;
 #[serde(rename_all = "camelCase")]
 pub struct CliArgs {
     /// Command and args to run on startup (passed to the configured shell).
-    /// Must be the final flag: everything after it is captured verbatim,
-    /// including tokens that look like flags (`-e grep -n x`). Empty = none.
+    /// Captured after `-e` until one of Lumina's window-shaping flags
+    /// (`-T/--title`, `--hold`, `--working-directory`, `--profile`) or `--`
+    /// (verbatim escape hatch) appears — see [`split_command_region`].
+    /// Empty = none.
     #[arg(
         short = 'e',
         long = "command",
@@ -39,6 +49,11 @@ pub struct CliArgs {
         allow_hyphen_values = true,
         value_name = "COMMAND"
     )]
+    // The clap attributes above are only the FALLBACK semantics (raw
+    // Alacritty-style swallow). In the normal path `split_command_region`
+    // removes the whole `-e …` region from argv before clap runs, so clap
+    // never applies them; they stay as a safety net for any `-e` form the
+    // splitter misses (fail-old rather than fail-error).
     pub command: Vec<String>,
 
     /// Start the shell in this working directory.
@@ -85,6 +100,113 @@ pub fn without_psn_args(args: impl IntoIterator<Item = OsString>) -> Vec<OsStrin
         .collect()
 }
 
+/// Token forms of the window-shaping flags that END the `-e` command capture:
+/// exact (`-T`, `--title`, `--hold`, `--working-directory`, `--profile`),
+/// `=value` (`--title=x`), and short-attached (`-Ttitle`, `-T=title`).
+///
+/// Deliberately excludes `-e`/`--command` itself (so `grep -e PATTERN` keeps
+/// its tokens) and `--help`/`--version` (so `-e curl --help` runs curl's help
+/// in the terminal instead of printing Lumina's and exiting).
+fn ends_command_capture(token: &str) -> bool {
+    matches!(token, "-T" | "--title" | "--hold" | "--working-directory" | "--profile")
+        || (token.starts_with("-T") && token.len() > 2)
+        || token.starts_with("--title=")
+        || token.starts_with("--working-directory=")
+        || token.starts_with("--profile=")
+}
+
+/// The first command token for an `-e`-style token that carries its value
+/// attached: `--command=v`, `-e<value>`, `-e=<value>`. `None` for the plain
+/// `-e` / `--command` spellings (the value comes from the NEXT argv token).
+fn attached_command_value(token: &str) -> Option<String> {
+    if let Some(v) = token.strip_prefix("--command=") {
+        return Some(v.to_string());
+    }
+    if token.starts_with("-e") && token.len() > 2 {
+        return Some(token[2..].trim_start_matches('=').to_string());
+    }
+    None
+}
+
+/// Carve the `-e`/`--command` region out of a full argv (argv[0] included).
+/// Returns `(command, argv)`: the captured command tokens, and the argv clap
+/// should parse (everything else, with the command region removed).
+///
+/// Capture rules, walking tokens after the first `-e`/`--command`:
+///   - a window-shaping flag ([`ends_command_capture`]) ends the capture;
+///     it and everything after it return to normal flag parsing;
+///   - `--` ends flag interception for the whole rest of the line: every
+///     following token is command data verbatim (escape hatch, e.g.
+///     `-e -- ssh -T host`);
+///   - anything else — unknown dash tokens (`grep -n`), repeated `-e` tokens
+///     (`grep -e pat`), `--help` — is command data, exactly like the old
+///     Alacritty-style verbatim capture.
+///
+/// When `-e` was given but nothing was captured (a bare `-e` at the end of
+/// the line), the start token is kept in the returned argv so clap still
+/// rejects it with "requires a value". Pure — takes argv explicitly so tests
+/// drive it with fixture lists.
+fn split_command_region(args: &[OsString]) -> (Vec<String>, Vec<OsString>) {
+    let mut argv: Vec<OsString> = Vec::with_capacity(args.len());
+    let mut command: Vec<String> = Vec::new();
+    let mut start_token: Option<OsString> = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        let token = args[i].clone();
+        let text = token.to_string_lossy().into_owned();
+
+        if start_token.is_none() {
+            if text == "-e" || text == "--command" {
+                start_token = Some(token);
+            } else if let Some(v) = attached_command_value(&text) {
+                start_token = Some(token);
+                command.push(v);
+            } else {
+                argv.push(token);
+            }
+        } else if text == "--" {
+            command.extend(
+                args[i + 1..]
+                    .iter()
+                    .map(|t| t.to_string_lossy().into_owned()),
+            );
+            break;
+        } else if ends_command_capture(&text) {
+            // Bare `-e` directly followed by one of our flags captured
+            // nothing: put the start token back so clap reports the missing
+            // value instead of silently parsing the flags alone.
+            if command.is_empty() {
+                argv.push(start_token.take().expect("start token set above"));
+            }
+            argv.extend_from_slice(&args[i..]);
+            break;
+        } else {
+            command.push(text);
+        }
+        i += 1;
+    }
+    // Natural end of argv with a bare `-e` that captured nothing — same
+    // keep-the-token rule as above (clap: "requires a value").
+    if let Some(t) = start_token {
+        if command.is_empty() {
+            argv.push(t);
+        }
+    }
+    (command, argv)
+}
+
+/// Parse the process's command-line arguments (see [`parse_cli`]).
+/// Pure over the given argv — the test entry point.
+pub fn try_parse_cli(argv: Vec<OsString>) -> Result<CliArgs, clap::Error> {
+    let (command, argv) = split_command_region(&argv);
+    let mut cli = CliArgs::try_parse_from(argv)?;
+    if !command.is_empty() {
+        cli.command = command;
+    }
+    Ok(cli)
+}
+
 /// Parse the process's command-line arguments. Filters out the macOS
 /// LaunchServices `-psn_*` flag (see [`without_psn_args`]).
 ///
@@ -92,7 +214,8 @@ pub fn without_psn_args(args: impl IntoIterator<Item = OsString>) -> Vec<OsStrin
 /// appropriate message and exits the process with the right status code — no
 /// panic, so this never bypasses the log framework for a *recoverable* failure.
 pub fn parse_cli() -> CliArgs {
-    match CliArgs::try_parse_from(without_psn_args(std::env::args_os())) {
+    let argv: Vec<OsString> = without_psn_args(std::env::args_os()).into_iter().collect();
+    match try_parse_cli(argv) {
         Ok(args) => args,
         Err(e) => e.exit(),
     }

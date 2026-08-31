@@ -93,7 +93,7 @@ Lumina accepts Alacritty-style launch flags (with a Lumina-specific `--profile`)
 
 | Flag | Description |
 |------|-------------|
-| `-e, --command <COMMAND>...` | Command + args to run on startup (must be the **last** flag — everything after it is the command). Runs through the profile's configured shell; the tab closes when the command exits unless `--hold` is given. |
+| `-e, --command <COMMAND>...` | Command + args to run on startup. Runs through the profile's configured shell; the tab closes when the command exits unless `--hold` is given. Tokens after it belong to the command, **except** Lumina's own flags (`-T/--title`, `--hold`, `--working-directory`, `--profile`), which still parse as flags — so `-e nvim -T nvim` runs nvim and titles the window "nvim". Use `--` to pass everything after it to the command verbatim (e.g. `-e -- ssh -T host`). |
 | `--working-directory <DIR>` | Start the shell in this directory. |
 | `-T, --title <TITLE>` | Set the window title. |
 | `--hold` | Keep the terminal open (frozen, read-only) after the command exits. |
@@ -102,6 +102,7 @@ Lumina accepts Alacritty-style launch flags (with a Lumina-specific `--profile`)
 
 ```shell
 lumina-terminal -e nvim                         # run nvim; closes on :q
+lumina-terminal -e nvim -T nvim                 # run nvim, title the window "nvim"
 lumina-terminal --hold -e ls -la                # run ls -la, keep the output
 lumina-terminal --working-directory ~/projects -e npm run dev
 lumina-terminal --profile work                  # open the "work" profile

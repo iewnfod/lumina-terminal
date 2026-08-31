@@ -214,7 +214,11 @@ src-tauri/src/
 ├── cli.rs         # clap-based launch-flag parsing (Alacritty-style): CliArgs (-e/--command,
 │                  #   --working-directory, -T/--title, --hold, --profile), CliState, parse_cli
 │                  #   (filters macOS -psn_*), get_cli_args command — args are surfaced to the
-│                  #   frontend, which decides how they shape the initial tab
+│                  #   frontend, which decides how they shape the initial tab. `-e` gets a
+│                  #   pre-clap argv split (split_command_region, tested via try_parse_cli):
+│                  #   tokens after it are the command EXCEPT Lumina's own window-shaping
+│                  #   flags, which still parse as flags (`-e nvim -T nvim` titles the window);
+│                  #   `--` switches to verbatim capture (escape hatch for `-e -- ssh -T h`)
 ├── state.rs       # TerminalState (HashMap of PTY pairs + writers + force_low_latency flags
 │                  #   + swappable output_channel for tab tear-off reattach)
 ├── terminal.rs    # start/reattach/kill/write/resize_terminal, set_output_mode commands;
@@ -264,7 +268,8 @@ tests/             # Backend integration tests (mandatory for backend work — s
 │                  #   `cargo test --manifest-path src-tauri/Cargo.toml`.
 ├── proxy.rs       # per-source proxy parsers + env-file render + real-gsettings e2e (self-skipping)
 ├── shell_hooks.rs # real bash/zsh/fish lifecycle of the generated proxy-sync hooks (self-skipping)
-├── cli.rs         # launch-flag parsing + the macOS -psn_* argv filter
+├── cli.rs         # launch-flag parsing + the macOS -psn_* argv filter + the `-e`
+│                  #   command-region split (flags-after-command, `--` escape hatch)
 ├── ssh_config.rs  # ~/.ssh/config content parsing: wildcards, keyword case, invalid port
 ├── shells.rs      # scan_path_for over controlled temp dirs: hits, dedup, separators
 ├── state.rs       # RecentOutput 64 KiB UTF-8-safe tail + capped exit/command stores

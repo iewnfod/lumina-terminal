@@ -1,17 +1,19 @@
-//! Launch-flag parsing (`src/cli.rs`): the Alacritty-style clap semantics
-//! (trailing `-e` capture, per-field overrides, `--hold`) plus the macOS
-//! `-psn_*` LaunchServices filter `parse_cli` applies before parsing.
+//! Launch-flag parsing (`src/cli.rs`): the `-e` command-region split (known
+//! window-shaping flags after `-e` still parse as flags, unknown dash tokens
+//! stay command data, `--` is the verbatim escape hatch), per-field overrides,
+//! `--hold`, plus the macOS `-psn_*` LaunchServices filter `parse_cli` applies
+//! before parsing.
 
-use clap::Parser;
-use lumina_terminal_lib::cli::{without_psn_args, CliArgs};
+use lumina_terminal_lib::cli::{try_parse_cli, without_psn_args, CliArgs};
 use std::ffi::OsString;
 
-/// Parse with a fake argv[0] prepended, mirroring real process args.
+/// Parse with a fake argv[0] prepended, mirroring real process args. Goes
+/// through `try_parse_cli` so the `-e` split runs exactly as `parse_cli` does.
 fn parse(args: &[&str]) -> Result<CliArgs, clap::Error> {
-    let argv: Vec<&str> = std::iter::once("lumina-terminal")
-        .chain(args.iter().copied())
+    let argv: Vec<OsString> = std::iter::once(OsString::from("lumina-terminal"))
+        .chain(args.iter().map(OsString::from))
         .collect();
-    CliArgs::try_parse_from(argv)
+    try_parse_cli(argv)
 }
 
 #[test]
@@ -37,26 +39,69 @@ fn long_command_flag_matches_short_e() {
 }
 
 #[test]
-fn trailing_var_arg_captures_all_plain_arguments() {
+fn plain_arguments_after_the_command_are_captured() {
     let cli = parse(&["-e", "echo", "hello world"]).expect("parse");
     assert_eq!(cli.command, vec!["echo", "hello world"]);
 }
 
 #[test]
+fn known_flags_after_the_command_parse_as_flags() {
+    // The motivating case: `-T` after `-e` shapes the window instead of being
+    // handed to the command (nvim has no `-T` and would exit instantly).
+    let cli = parse(&["-e", "nvim", "-T", "nvim"]).expect("parse");
+    assert_eq!(cli.command, vec!["nvim"]);
+    assert_eq!(cli.title.as_deref(), Some("nvim"));
+
+    let cli = parse(&["-e", "nvim", "--hold"]).expect("parse");
+    assert_eq!(cli.command, vec!["nvim"]);
+    assert!(cli.hold, "--hold after -e is the flag, not command data");
+
+    let cli = parse(&["-e", "cargo", "build", "--working-directory", "/tmp", "--profile", "dev"])
+        .expect("parse");
+    assert_eq!(cli.command, vec!["cargo", "build"]);
+    assert_eq!(cli.working_directory.as_deref(), Some("/tmp"));
+    assert_eq!(cli.profile.as_deref(), Some("dev"));
+
+    // `=value` and short-attached spellings end the capture too.
+    let cli = parse(&["-e", "nvim", "--title=nvim"]).expect("parse");
+    assert_eq!(cli.command, vec!["nvim"]);
+    assert_eq!(cli.title.as_deref(), Some("nvim"));
+
+    let cli = parse(&["-e", "nvim", "-Tnvim"]).expect("parse");
+    assert_eq!(cli.command, vec!["nvim"]);
+    assert_eq!(cli.title.as_deref(), Some("nvim"));
+}
+
+#[test]
 fn dash_tokens_after_the_command_are_captured_verbatim() {
-    // Alacritty `-e` semantics: once -e starts the command, EVERYTHING after
-    // belongs to it — other flags must be given before -e. This is what
-    // `allow_hyphen_values` buys over bare `trailing_var_arg` (which parsed
-    // a known flag as a flag and rejected unknown dash-tokens).
+    // Unknown dash tokens belong to the command (`allow_hyphen_values` would
+    // have made bare clap reject them; Alacritty-style capture keeps them).
     let cli = parse(&["-e", "grep", "-n", "pattern"]).expect("parse");
     assert_eq!(cli.command, vec!["grep", "-n", "pattern"]);
 
-    let cli = parse(&["-e", "vim", "--hold"]).expect("parse");
-    assert_eq!(cli.command, vec!["vim", "--hold"]);
-    assert!(!cli.hold, "--hold after -e is command data, not the flag");
-
     let cli = parse(&["-e", "sh", "-c", "echo hi"]).expect("parse");
     assert_eq!(cli.command, vec!["sh", "-c", "echo hi"]);
+
+    // A repeated `-e` is command data, not a new command start (grep -e).
+    let cli = parse(&["-e", "grep", "-e", "pattern", "file"]).expect("parse");
+    assert_eq!(cli.command, vec!["grep", "-e", "pattern", "file"]);
+
+    // `--help` after the command stays command data — `-e curl --help` should
+    // run curl's help in the terminal, not print Lumina's and exit.
+    let cli = parse(&["-e", "curl", "--help"]).expect("parse");
+    assert_eq!(cli.command, vec!["curl", "--help"]);
+}
+
+#[test]
+fn double_dash_makes_the_rest_verbatim_command_data() {
+    // Escape hatch for commands that use the same flag spellings as Lumina.
+    let cli = parse(&["-e", "--", "ssh", "-T", "user@host"]).expect("parse");
+    assert_eq!(cli.command, vec!["ssh", "-T", "user@host"]);
+    assert_eq!(cli.title, None);
+
+    let cli = parse(&["-e", "vim", "--", "--hold"]).expect("parse");
+    assert_eq!(cli.command, vec!["vim", "--hold"]);
+    assert!(!cli.hold, "-- after -e switches to verbatim capture");
 }
 
 #[test]
@@ -72,6 +117,17 @@ fn flags_before_the_command_still_parse_as_flags() {
 fn command_equals_form_still_works() {
     let cli = parse(&["--command=htop"]).expect("parse");
     assert_eq!(cli.command, vec!["htop"]);
+}
+
+#[test]
+fn attached_short_command_form_still_works() {
+    let cli = parse(&["-ehtop"]).expect("parse");
+    assert_eq!(cli.command, vec!["htop"]);
+
+    // Attached form + a trailing flag: the flag still parses.
+    let cli = parse(&["-envim", "-T", "nvim"]).expect("parse");
+    assert_eq!(cli.command, vec!["nvim"]);
+    assert_eq!(cli.title.as_deref(), Some("nvim"));
 }
 
 #[test]
@@ -102,6 +158,9 @@ fn unknown_flag_is_rejected() {
 fn flag_missing_value_is_rejected() {
     assert!(parse(&["--profile"]).is_err());
     assert!(parse(&["-T"]).is_err());
+    // A bare trailing `-e` captured nothing: clap must still reject it.
+    assert!(parse(&["-e"]).is_err());
+    assert!(parse(&["-T", "t", "-e"]).is_err());
 }
 
 #[test]
@@ -137,6 +196,6 @@ fn filtered_psn_argv_parses_cleanly() {
         "-psn_0_987654321".into(),
         "--hold".into(),
     ];
-    let cli = CliArgs::try_parse_from(without_psn_args(argv)).expect("filtered argv parses");
+    let cli = try_parse_cli(without_psn_args(argv)).expect("filtered argv parses");
     assert!(cli.hold);
 }
