@@ -32,6 +32,8 @@
 
 ### 🔧 Chores
 - CI、构建、发布流程变更
+
+**Full Changelog**: https://github.com/iewnfod/lumina-terminal/compare/${上个版本号}...${新的版本号}
 ```
 
 ## 写作规则
@@ -69,4 +71,6 @@
 ### 📚 Docs
 
 - Added community & publicity links to the README
+
+**Full Changelog**: https://github.com/iewnfod/lumina-terminal/compare/v0.2.1...v0.2.2
 ```
