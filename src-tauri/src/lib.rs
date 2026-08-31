@@ -11,6 +11,7 @@ pub mod command_tracker;
 pub mod file_manager;
 pub mod fonts;
 pub mod install_source;
+pub mod launchers;
 pub mod mcp;
 pub mod proxy;
 pub mod shell_integration;
@@ -26,6 +27,7 @@ use crate::command_icons::*;
 use crate::file_manager::*;
 use crate::fonts::*;
 use crate::install_source::*;
+use crate::launchers::*;
 use crate::mcp::*;
 use crate::proxy::*;
 use crate::shells::*;
@@ -206,6 +208,8 @@ pub fn run() {
             import_command_icon,
             prune_command_icons,
             list_command_icons,
+            sync_profile_launchers,
+            get_launcher_dir,
             find_shells,
             path_exist,
             read_file,

@@ -51,6 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scri
 * **Tear off tabs** — move a tab into its own window (`Ctrl+Shift+L` / `Cmd+Shift+L`) while keeping the running process and scrollback alive
 * **Find in terminal** (`Ctrl+F` / `Cmd+F`) — match-case / whole-word / regex with a live result counter, via [addon-search](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-search)
 * Configurable shell per profile — PowerShell, WSL, Git Bash, or any executable
+* **Wrap a profile as an app** — generate a desktop launcher (`.desktop` / `.app` / Start-Menu shortcut) that opens the profile in its own window: its own title, working directory and sidebar visibility, with the icon auto-derived from the startup command (or picked manually). Launchers regenerate on every settings save and orphaned ones prune themselves. Configure per profile in Settings → Profiles.
 * Optional [WebGL renderer](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) for GPU-accelerated rendering
 * [Unicode 11 width rules](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) + optional [grapheme-cluster](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode-graphemes) rendering for correct emoji/symbol widths
 * Optional [programming ligatures](https://github.com/princjef/font-ligatures) via the real OpenType GSUB table (Fira Code `www`/`//`, JetBrains Mono `==`, …)
@@ -173,6 +174,7 @@ See [**CONTRIBUTING.md**](./CONTRIBUTING.md) for the development setup, app-icon
 * [axum](https://github.com/tokio-rs/axum) — modular web framework (MCP Streamable HTTP endpoint)
 * [tokio](https://tokio.rs/) — async runtime
 * [log](https://docs.rs/log/latest/log/) — structured logging
+* [base64](https://docs.rs/base64/) — launcher icon PNG payload decoding
 
 ### Frontend
 * [TypeScript](https://www.typescriptlang.org/) — typed frontend language

@@ -242,5 +242,18 @@
     "Test command:": "测试命令：",
     "No match - the shell icon is used": "未命中 - 将显示 Shell 图标",
     "Matches rule": "命中规则",
-    "Built-in icon": "内置图标"
+    "Built-in icon": "内置图标",
+    "Wrap as App": "封装为应用",
+    "wrap as app description": "创建桌面启动器（.desktop / .app / 开始菜单快捷方式），在独立窗口中打开此配置。每次保存时自动重新生成。",
+    "Launcher Title": "启动器标题",
+    "Launcher Working Directory": "启动器工作目录",
+    "Launcher Sidebar": "启动器侧边栏",
+    "Show": "显示",
+    "Hide": "隐藏",
+    "Launcher Icon": "启动器图标",
+    "launcher icon description": "启动器在应用菜单、启动台和开始菜单中显示的图标。",
+    "Auto (follow the startup command)": "自动（跟随启动命令）",
+    "Launcher Location": "启动器位置",
+    "launcher location description": "生成的启动器文件所在目录。",
+    "Open Folder": "打开文件夹"
 }

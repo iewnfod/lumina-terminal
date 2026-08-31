@@ -51,7 +51,9 @@ src/
 │   ├── config.ts            # GlobalConfig, Binding, Actions, WithKeys
 │   ├── cli.ts               # CliArgs — parsed launch flags (mirrors src-tauri/src/cli.rs CliArgs)
 │   └── terminal.ts          # TerminalProfile (+ keepAfterExit: "exit"|"freeze"|"shell" — what
-│                            #   happens after startupCommand finishes), TerminalRenderOptions, SSHConfig
+│                            #   happens after startupCommand finishes) + ProfileLauncher (the
+│                            #   wrap-as-app section: title/workingDirectory/sidebar/icon; presence
+│                            #   enables it), TerminalRenderOptions, SSHConfig
 │
 ├── lib/                     # Pure, framework-agnostic logic (NO React)
 │   ├── platform.ts          # isMacOS() / isLinux()
@@ -82,6 +84,17 @@ src/
 │   ├── commandIconApi.ts    # importCommandIcon/pruneCommandIcons/listCommandIcons invoke wrappers
 │   │                        #   (log-on-reject) + cached asset-protocol URL resolution for custom:
 │   │                        #   icon ids — the custom command-icon domain API (sibling to terminalApi.ts)
+│   ├── launcherApi.ts       # Profile-launcher domain API (sibling to terminalApi.ts):
+│   │                        #   syncProfileLaunchers/getLauncherDir wrappers + launcherSpecsFromConfig
+│   │                        #   (config → spec derivation) + syncLaunchersFromConfig — the save/delete
+│   │                        #   hook ProfileSettings & SettingsPage call so launchers regenerate and
+│   │                        #   orphaned ones prune on every config change
+│   ├── launcherIcon.ts      # resolveLauncherIcon(profile, config) — launcher icon payload: explicit
+│   │                        #   profile.launcher.icon override, else auto-derive via getAppIcon;
+│   │                        #   built-in SVGs fetch + (off-Linux) canvas-rasterize to PNG base64,
+│   │                        #   custom ids pass through by stored file name
+│   ├── fileManagerApi.ts    # openInFileManager(path) — reveal-in-file-manager wrapper (log-on-reject);
+│   │                        #   the one frontend entry to backend open_in_file_manager
 │   ├── shellIcon.ts         # getShellType(profile) → "bash"|"zsh"|"fish"|"nu"|"pwsh"|"ssh"|"default"
 │   ├── bindings.ts          # parseBindings, matchBinding, loadBindings, useKeyboardBindings,
 │   │                        #   exported actionSignature / keySignature. loadBindings dispatches
@@ -190,7 +203,10 @@ src/
 │   └── settings/
 │       ├── GeneralSettings.tsx
 │       ├── GlobalProfileSettings.tsx
-│       ├── ProfileSettings.tsx
+│       ├── ProfileSettings.tsx    # Per-profile form + the "wrap as app" launcher section (toggle,
+│       │                       #   title/working-directory/sidebar/icon rows via IconPicker, reveal
+│       │                       #   button via lib/fileManagerApi.ts). Saving chains
+│       │                       #   syncLaunchersFromConfig so launchers regenerate on commit.
 │       ├── RenderSettings.tsx     # Shared render-option form (rows/cols/font/theme/webgl)
 │       ├── BindingsSettings.tsx
 │       ├── CommandIconSettings.tsx # User command→icon rules editor (config commandIcons): match
@@ -198,6 +214,9 @@ src/
 │       │                       #   + every stored imported SVG/PNG via list_command_icons) + live
 │       │                       #   test preview. Saving prunes unreferenced icon files (the only
 │       │                       #   cleanup moment) and re-lists.
+│       ├── IconPicker.tsx        # Shared icon picker grid (built-ins + custom: ids + import button,
+│       │                       #   optional leading "auto" choice) — used by CommandIconSettings
+│       │                       #   rows and the profile launcher section
 │       ├── DeveloperSettings.tsx
 │       ├── AddProfileModal.tsx
 │       ├── ShellSelector.tsx      # Shared shell picker (dropdown + custom path + browse)
@@ -264,6 +283,13 @@ src-tauri/src/
 ├── install_source.rs # install_source — pacman/dpkg/rpm package-ownership detection;
 │                  #   stdout parsers extracted pure (tested in tests/install_source.rs)
 ├── file_manager.rs # open_in_file_manager — xdg-open / open -R / explorer (per-OS)
+├── launchers.rs    # Profile "wrap as app" generation: sync_profile_launchers regenerates every
+│                  #   launcher (Linux .desktop / macOS .app bundle / Windows .lnk via one-shot
+│                  #   PowerShell WScript.Shell — no COM crates) from the frontend's full spec list
+│                  #   and prunes orphaned files, proving ownership before any delete (lumina-
+│                  #   prefix / bundle-id-in-plist / dedicated Start-Menu subdir). exe resolution
+│                  #   prefers $APPIMAGE on Linux (AppImage current_exe is a temp mount). PNG→
+│                  #   icns/ico wrapping is hand-rolled (no image deps). Tested in tests/launchers.rs
 ├── fonts.rs       # find_font — CSS font-family → font file bytes for ligature parsing;
 │                  #   first_concrete_family pure (tested in tests/fonts.rs)
 └── utils.rs       # path_exist, read_file (tiny fs helpers; tested in tests/utils.rs)
@@ -287,6 +313,10 @@ tests/             # Backend integration tests (mandatory for backend work — s
 ├── command_icons.rs # import (ext/size validation, hash-named dedup) + prune over temp dirs;
 │                  #   sanitize_stem / ext_of pure helpers
 ├── install_source.rs # pacman/dpkg/rpm stdout sample shapes (hit and miss)
+├── launchers.rs    # Exec escaping, plist/script/ps1 content, png_width, icns/ico byte wrapping,
+│                  #   sanitize helpers + sync over temp dirs for all three formats (generate,
+│                  #   idempotent re-run, prune, macOS bundle-ownership protection, custom-icon
+│                  #   resolution + traversal rejection)
 ├── fonts.rs       # CSS font-family → first concrete family extraction
 ├── utils.rs       # path_exist / read_file over real temp files
 └── file_manager.rs # nonexistent-path guard (rejected before any OS spawn)

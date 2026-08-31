@@ -1,6 +1,7 @@
 import {useI18n} from "../../hooks/i18n.tsx";
 import {useEffect, useState} from "react";
 import {getConfigFilePath} from "../../lib/configFile.ts";
+import {openInFileManager} from "../../lib/fileManagerApi.ts";
 import {invoke} from "@tauri-apps/api/core";
 import {Button, Input, Label, ListBox, Select, Switch} from "@heroui/react";
 import {Bug, Clipboard, FolderOpen} from "lucide-react";
@@ -103,8 +104,8 @@ export default function DeveloperSettings() {
                         className="shrink-0"
                         onPress={() => {
                             if (configPath) {
-                                invoke("open_in_file_manager", {path: configPath}).catch((e) => {
-                                    warn(`Failed to open config file: ${e}`).catch(() => {});
+                                openInFileManager(configPath).catch(() => {
+                                    // logged in the wrapper
                                 });
                             }
                         }}
@@ -126,8 +127,8 @@ export default function DeveloperSettings() {
                         className="shrink-0"
                         onPress={() => {
                             if (logDir) {
-                                invoke("open_in_file_manager", {path: logDir}).catch((e) => {
-                                    warn(`Failed to open log directory: ${e}`).catch(() => {});
+                                openInFileManager(logDir).catch(() => {
+                                    // logged in the wrapper
                                 });
                             }
                         }}

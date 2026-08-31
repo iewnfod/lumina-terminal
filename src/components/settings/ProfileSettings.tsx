@@ -1,14 +1,19 @@
-import {SSHConfig, TerminalProfile} from "../../types/terminal.ts";
+import {ProfileLauncher, SSHConfig, TerminalProfile} from "../../types/terminal.ts";
 import {useGlobalConfig} from "../../hooks/config.tsx";
 import {useI18n} from "../../hooks/i18n.tsx";
-import {useEffect, useMemo, useRef, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {info} from "@tauri-apps/plugin-log";
 import {open} from "@tauri-apps/plugin-dialog";
-import {Button, Input, Label, ListBox, Select} from "@heroui/react";
+import {Button, Input, Label, ListBox, Select, Switch} from "@heroui/react";
 import RenderSettings from "./RenderSettings.tsx";
 import ShellSelector from "./ShellSelector.tsx";
 import SshFields from "./SshFields.tsx";
-import {Trash2, Pencil} from "lucide-react";
+import IconPicker from "./IconPicker.tsx";
+import {Trash2, Pencil, FolderOpen} from "lucide-react";
+import {customIconId, isCustomIconId} from "../../lib/appIcon.ts";
+import {listCommandIcons} from "../../lib/commandIconApi.ts";
+import {getLauncherDir, syncLaunchersFromConfig} from "../../lib/launcherApi.ts";
+import {openInFileManager} from "../../lib/fileManagerApi.ts";
 import SettingsShell from "../ui/SettingsShell.tsx";
 import SettingRow from "../ui/SettingRow.tsx";
 import SaveFooter from "../ui/SaveFooter.tsx";
@@ -18,11 +23,14 @@ export default function ProfileSettings({
     onRequestDelete,
     onNameChange,
     borderColor,
+    dark,
 }: {
     profile?: TerminalProfile;
     onRequestDelete: () => void;
     onNameChange: (newName: string) => void;
     borderColor: string;
+    /** Whether the settings surface is dark (picks launcher icon variants). */
+    dark: boolean;
 }) {
     const {config, updateConfig} = useGlobalConfig();
     const t = useI18n();
@@ -65,6 +73,46 @@ export default function ProfileSettings({
     const [isEditingName, setIsEditingName] = useState(false);
     const nameInputRef = useRef<HTMLInputElement>(null);
 
+    // All stored custom icon files — the launcher icon picker's source of
+    // truth (same flow as the command-icon rules panel).
+    const [storedIcons, setStoredIcons] = useState<string[]>([]);
+    useEffect(() => {
+        listCommandIcons()
+            .then((names) => setStoredIcons(names))
+            .catch(() => {
+                // logged in the wrapper
+            });
+    }, []);
+
+    const updateLauncher = (updates: Partial<ProfileLauncher>) => {
+        setDraft((prev) =>
+            prev ? {...prev, launcher: {...prev.launcher, ...updates}} : null,
+        );
+    };
+
+    // Stored custom icons (as `custom:` ids) plus any the draft references.
+    const customIconIds = useMemo(() => {
+        const ids = [
+            ...storedIcons.map(customIconId),
+            ...(draft?.launcher?.icon && isCustomIconId(draft.launcher.icon)
+                ? [draft.launcher.icon]
+                : []),
+        ];
+        return [...new Set(ids)];
+    }, [storedIcons, draft?.launcher?.icon]);
+
+    const toggleLauncher = (enabled: boolean) => {
+        updateDraft({launcher: enabled ? {} : undefined});
+    };
+
+    const revealLauncherDir = useCallback(() => {
+        getLauncherDir()
+            .then((dir) => openInFileManager(dir))
+            .catch(() => {
+                // logged in the wrappers
+            });
+    }, []);
+
     // Auto-focus name input when entering edit mode
     useEffect(() => {
         if (isEditingName && nameInputRef.current) {
@@ -98,6 +146,14 @@ export default function ProfileSettings({
             keepAfterExit: draft.startupCommand?.trim() ? draft.keepAfterExit : undefined,
             type: draft.type ?? "local",
             ssh: draft.type === "remote" ? draft.ssh : undefined,
+            // Keep the launcher section lean: empty fields drop to defaults.
+            // Presence of the (possibly empty) object still enables it.
+            launcher: draft.launcher ? {
+                title: draft.launcher.title?.trim() || undefined,
+                workingDirectory: draft.launcher.workingDirectory?.trim() || undefined,
+                sidebar: draft.launcher.sidebar,
+                icon: draft.launcher.icon?.trim() || undefined,
+            } : undefined,
         }));
         const newName = trimmed.name;
         if (!newName) return;
@@ -111,6 +167,10 @@ export default function ProfileSettings({
             p.name === oldName ? trimmed : p,
         );
         updateConfig({profiles: newProfiles});
+        // Once the config is committed, regenerate the profile launchers
+        // (all of them, so renames/deletes elsewhere self-heal too). The
+        // empty spec list when nothing uses the feature prunes leftovers.
+        syncLaunchersFromConfig({profiles: newProfiles, commandIcons: config.commandIcons});
         if (newName !== oldName) {
             onNameChange(newName);
         }
@@ -301,6 +361,120 @@ export default function ProfileSettings({
                         onChange={updateSsh}
                         idPrefix="ssh"
                     />
+                )}
+
+                {/* Wrap as App — generate a desktop launcher that opens this
+                    profile in its own window. Regenerated on every save via
+                    lib/launcherApi.ts; see types/terminal.ts ProfileLauncher. */}
+                <SettingRow
+                    variant="toggle"
+                    label={<Label>{t["Wrap as App"]}</Label>}
+                    description={t["wrap as app description"]}
+                    onClick={() => toggleLauncher(!draft.launcher)}
+                >
+                    <Switch isSelected={!!draft.launcher} onChange={toggleLauncher}>
+                        <Switch.Control>
+                            <Switch.Thumb />
+                        </Switch.Control>
+                    </Switch>
+                </SettingRow>
+
+                {draft.launcher && (
+                    <div
+                        className="flex flex-col gap-4 rounded-[var(--radius-sm)] border p-3"
+                        style={{borderColor}}
+                    >
+                        <SettingRow label={<Label htmlFor="launcher-title">{t["Launcher Title"]}</Label>}>
+                            <Input
+                                id="launcher-title"
+                                value={draft.launcher.title ?? ""}
+                                onChange={(e) => updateLauncher({title: e.target.value || undefined})}
+                                className="max-w-sm"
+                                placeholder={draft.name}
+                            />
+                        </SettingRow>
+
+                        <SettingRow label={<Label htmlFor="launcher-working-directory">{t["Launcher Working Directory"]}</Label>}>
+                            <div className="flex flex-row gap-2 items-center">
+                                <Input
+                                    id="launcher-working-directory"
+                                    value={draft.launcher.workingDirectory ?? ""}
+                                    onChange={(e) => updateLauncher({workingDirectory: e.target.value || undefined})}
+                                    className="flex-1 max-w-sm"
+                                    placeholder={t["Default"]}
+                                />
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onPress={async () => {
+                                        const dir = await open({
+                                            multiple: false,
+                                            directory: true,
+                                        });
+                                        if (dir) updateLauncher({workingDirectory: dir});
+                                    }}
+                                >
+                                    {t["Select"]}
+                                </Button>
+                            </div>
+                        </SettingRow>
+
+                        <SettingRow label={<Label>{t["Launcher Sidebar"]}</Label>}>
+                            <Select
+                                selectedKey={draft.launcher.sidebar ?? "hide"}
+                                onSelectionChange={(key) => {
+                                    if (key) {
+                                        updateLauncher({sidebar: key as "show" | "hide"});
+                                    }
+                                }}
+                                className="max-w-sm"
+                            >
+                                <Select.Trigger>
+                                    <Select.Value />
+                                    <Select.Indicator />
+                                </Select.Trigger>
+                                <Select.Popover>
+                                    <ListBox>
+                                        <ListBox.Item id="hide" key="hide" textValue="hide">
+                                            {t["Hide"]}
+                                        </ListBox.Item>
+                                        <ListBox.Item id="show" key="show" textValue="show">
+                                            {t["Show"]}
+                                        </ListBox.Item>
+                                    </ListBox>
+                                </Select.Popover>
+                            </Select>
+                        </SettingRow>
+
+                        <SettingRow
+                            label={<Label>{t["Launcher Icon"]}</Label>}
+                            description={t["launcher icon description"]}
+                        >
+                            <IconPicker
+                                selected={draft.launcher.icon ?? ""}
+                                onPick={(id) => updateLauncher({icon: id || undefined})}
+                                dark={dark}
+                                customIconIds={customIconIds}
+                                onImported={(name) =>
+                                    setStoredIcons((prev) =>
+                                        prev.includes(name) ? prev : [...prev, name],
+                                    )
+                                }
+                                autoLabel={t["Auto (follow the startup command)"]}
+                            />
+                        </SettingRow>
+
+                        <SettingRow
+                            variant="action"
+                            label={<Label>{t["Launcher Location"]}</Label>}
+                            description={t["launcher location description"]}
+                        >
+                            <Button variant="outline" size="sm" onPress={revealLauncherDir}>
+                                <FolderOpen size={14} />
+                                {t["Open Folder"]}
+                            </Button>
+                        </SettingRow>
+                    </div>
                 )}
 
                 <RenderSettings draft={draft} updateDraft={updateDraft} idPrefix="profile" defaultExpanded={false} />

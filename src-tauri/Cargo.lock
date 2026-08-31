@@ -2653,6 +2653,7 @@ name = "lumina-terminal"
 version = "0.2.2"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "clap",
  "font-kit",
  "log",

@@ -40,7 +40,11 @@
             "icons/icon.icns",
             "icons/icon.ico"
         ],
-        "createUpdaterArtifacts": true
+        "createUpdaterArtifacts": true,
+        "resources": [
+            "icons/icon.png",
+            "icons/icon.icns"
+        ]
     },
     "plugins": {
         "updater": {

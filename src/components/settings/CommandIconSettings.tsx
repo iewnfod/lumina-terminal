@@ -1,8 +1,7 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {Button, Input, Label, Tooltip} from "@heroui/react";
 import {ImagePlus, Plus, Regex, Trash2} from "lucide-react";
-import {open} from "@tauri-apps/plugin-dialog";
-import {info, warn} from "@tauri-apps/plugin-log";
+import {info} from "@tauri-apps/plugin-log";
 import {useGlobalConfig} from "../../hooks/config.tsx";
 import {useI18n} from "../../hooks/i18n.tsx";
 import {CommandIconRule} from "../../types/config.ts";
@@ -15,11 +14,10 @@ import {
     ruleMatches,
 } from "../../lib/appIcon.ts";
 import {
-    importCommandIcon,
     listCommandIcons,
     pruneCommandIcons,
 } from "../../lib/commandIconApi.ts";
-import {APP_ICON_IDS} from "../../assets/app-icons/index.ts";
+import IconPicker from "./IconPicker.tsx";
 import AppIcon from "../AppIcon.tsx";
 import SettingsShell from "../ui/SettingsShell.tsx";
 import SectionTitle from "../ui/SectionTitle.tsx";
@@ -56,26 +54,6 @@ function RuleRow({
 }) {
     const t = useI18n();
     const [pickerOpen, setPickerOpen] = useState(false);
-    const [importing, setImporting] = useState(false);
-
-    const handleImport = useCallback(async () => {
-        setImporting(true);
-        try {
-            const picked = await open({
-                multiple: false,
-                filters: [{name: t["Icon images"], extensions: ["svg", "png"]}],
-            });
-            if (typeof picked !== "string") return;
-            const name = await importCommandIcon(picked);
-            onChange({icon: customIconId(name)});
-            onImported(name);
-            setPickerOpen(false);
-        } catch (e) {
-            warn(`Command icon import cancelled/failed: ${e}`).catch(() => {});
-        } finally {
-            setImporting(false);
-        }
-    }, [onChange, onImported, t]);
 
     return (
         <div
@@ -138,72 +116,20 @@ function RuleRow({
                 </p>
             )}
             {pickerOpen && (
-                <div className="flex flex-row flex-wrap items-center gap-1.5 pt-1">
-                    {APP_ICON_IDS.map((id) => (
-                        <IconChoice
-                            key={id}
-                            icon={id}
-                            dark={dark}
-                            selected={rule.icon === id}
-                            title={id}
-                            onPick={() => {
-                                onChange({icon: id});
-                                setPickerOpen(false);
-                            }}
-                        />
-                    ))}
-                    {customIconIds.map((id) => (
-                        <IconChoice
-                            key={id}
-                            icon={id}
-                            dark={dark}
-                            selected={rule.icon === id}
-                            title={id}
-                            onPick={() => {
-                                onChange({icon: id});
-                                setPickerOpen(false);
-                            }}
-                        />
-                    ))}
-                    <Button variant="outline" size="sm" onPress={handleImport} isDisabled={importing}>
-                        <ImagePlus size={14} />
-                        {t["Import image…"]}
-                    </Button>
+                <div className="pt-1">
+                    <IconPicker
+                        selected={rule.icon}
+                        onPick={(id) => {
+                            onChange({icon: id});
+                            setPickerOpen(false);
+                        }}
+                        dark={dark}
+                        customIconIds={customIconIds}
+                        onImported={onImported}
+                    />
                 </div>
             )}
         </div>
-    );
-}
-
-/** A single selectable icon thumbnail in the picker grid. */
-function IconChoice({
-    icon,
-    dark,
-    selected,
-    title,
-    onPick,
-}: {
-    icon: string;
-    dark: boolean;
-    selected: boolean;
-    title: string;
-    onPick: () => void;
-}) {
-    return (
-        <button
-            type="button"
-            title={title}
-            aria-label={title}
-            aria-pressed={selected}
-            onClick={onPick}
-            className="flex items-center justify-center w-8 h-8 rounded-[var(--radius-sm)] cursor-pointer transition-colors duration-[var(--duration-fast)] hover:bg-[var(--lum-choice-hover)]"
-            style={{
-                border: selected ? "1px solid rgba(128,128,128,0.4)" : "1px solid transparent",
-                ["--lum-choice-hover" as string]: "rgba(128,128,128,0.15)",
-            }}
-        >
-            <AppIcon app={icon} dark={dark} size={22} />
-        </button>
     );
 }
 

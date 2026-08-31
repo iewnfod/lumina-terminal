@@ -51,6 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scri
 * **撕离标签页** — 将标签页移到独立窗口（`Ctrl+Shift+L` / `Cmd+Shift+L`），同时保留运行中的进程和滚动历史
 * **终端内查找**（`Ctrl+F` / `Cmd+F`）— 支持区分大小写 / 全字匹配 / 正则，并显示实时结果计数，基于 [addon-search](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-search)
 * 每个配置文件可指定不同的 Shell — 支持 PowerShell、WSL、Git Bash 等任意可执行文件
+* **将配置文件封装为应用** — 生成桌面启动器（`.desktop` / `.app` / 开始菜单快捷方式），在独立窗口中打开该配置：独立的标题、工作目录与侧边栏可见性，图标默认按启动命令自动推导（也可手动指定）。启动器在每次保存设置时重新生成，孤立的启动器会自动清理。在 设置 → 配置文件 中按配置开启。
 * 可选的 [WebGL 渲染器](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-webgl) — GPU 加速渲染
 * [Unicode 11 宽度规则](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11) + 可选的[字形簇](https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode-graphemes)渲染，正确处理 emoji/符号宽度
 * 可选的[编程连体字](https://github.com/princjef/font-ligatures) — 通过字体真实的 OpenType GSUB 表实现（Fira Code 的 `www`、`//`，JetBrains Mono 的 `==` 等）
@@ -173,6 +174,7 @@ pnpm tauri dev
 * [axum](https://github.com/tokio-rs/axum) — 模块化 Web 框架(MCP Streamable HTTP 端点)
 * [tokio](https://tokio.rs/) — 异步运行时
 * [log](https://docs.rs/log/latest/log/) — 结构化日志
+* [base64](https://docs.rs/base64/) — 启动器图标 PNG 载荷解码
 
 ### 前端
 * [TypeScript](https://www.typescriptlang.org/) — 类型化前端语言

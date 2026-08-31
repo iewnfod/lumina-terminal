@@ -242,5 +242,18 @@
     "Test command:": "Test command:",
     "No match - the shell icon is used": "No match - the shell icon is used",
     "Matches rule": "Matches rule",
-    "Built-in icon": "Built-in icon"
+    "Built-in icon": "Built-in icon",
+    "Wrap as App": "Wrap as App",
+    "wrap as app description": "Create a desktop launcher (.desktop / .app / Start-Menu shortcut) that opens this profile in its own window. Regenerated on every save.",
+    "Launcher Title": "Launcher Title",
+    "Launcher Working Directory": "Launcher Working Directory",
+    "Launcher Sidebar": "Launcher Sidebar",
+    "Show": "Show",
+    "Hide": "Hide",
+    "Launcher Icon": "Launcher Icon",
+    "launcher icon description": "Shown by the launcher in app menus, Launchpad and the Start Menu.",
+    "Auto (follow the startup command)": "Auto (follow the startup command)",
+    "Launcher Location": "Launcher Location",
+    "launcher location description": "Where the generated launcher files live.",
+    "Open Folder": "Open Folder"
 }

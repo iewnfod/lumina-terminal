@@ -38,6 +38,26 @@ export interface TerminalRenderOptions extends ITerminalOptions {
     fontStyle?: FontStyle;
 }
 
+/** Per-profile "wrap as app" launcher configuration. The object's presence
+ *  on a profile enables the feature: on every config save the frontend asks
+ *  the backend (lib/launcherApi.ts → src-tauri/src/launchers.rs) to
+ *  (re)generate a desktop launcher — .desktop / .app / Start-Menu shortcut —
+ *  that opens the profile in its own window via the app's own CLI flags
+ *  (`--profile <name> -T <title> …`), and to prune launchers whose profile
+ *  disappeared. */
+export interface ProfileLauncher {
+    /** Window title + launcher display name; default = profile name. */
+    title?: string;
+    /** `--working-directory` override; default = the profile's cwd. */
+    workingDirectory?: string;
+    /** Sidebar visibility at launch; default "hide". */
+    sidebar?: "show" | "hide";
+    /** Icon override: a built-in app icon id or a `custom:<file>` reference
+     *  (lib/appIcon.ts ids). Default = auto-derive from the startup command,
+     *  falling back to the app's own icon. */
+    icon?: string;
+}
+
 export interface TerminalProfile extends TerminalRenderOptions {
     name: string;
     exePath: string;
@@ -63,6 +83,8 @@ export interface TerminalProfile extends TerminalRenderOptions {
     default?: boolean;
     type?: ProfileType;
     ssh?: SSHConfig;
+    /** Wrap-this-profile-as-an-app configuration; presence enables it. */
+    launcher?: ProfileLauncher;
 }
 
 /** Currently-running command in a terminal, for the tab subtitle. `null` means

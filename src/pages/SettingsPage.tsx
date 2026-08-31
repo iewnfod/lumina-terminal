@@ -21,6 +21,7 @@ import { useSurfaceColors } from "../hooks/surfaceColors.ts";
 import { useGlass } from "../hooks/useGlass.ts";
 import { glassSurface } from "../lib/glass.ts";
 import { isColorDark } from "../lib/color.ts";
+import { syncLaunchersFromConfig } from "../lib/launcherApi.ts";
 import { whileHoverTap, springSnappy } from "../lib/motion.ts";
 import { info, debug } from "@tauri-apps/plugin-log";
 import ProfileSettings from "../components/settings/ProfileSettings.tsx";
@@ -176,13 +177,16 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
             info(`Profile deleted: ${name}`);
             const newProfiles = config.profiles.filter((p) => p.name !== name);
             updateConfig({ profiles: newProfiles });
+            // The deleted profile's launcher file (if any) is pruned by the
+            // next sync — run it right away so it doesn't linger.
+            syncLaunchersFromConfig({profiles: newProfiles, commandIcons: config.commandIcons});
             if (selectedSection === name) {
                 lastSettingsSection = "general";
                 setSelectedSection("general");
             }
             setDeleteTarget(null);
         },
-        [config.profiles, updateConfig, selectedSection]
+        [config.profiles, config.commandIcons, updateConfig, selectedSection]
     );
 
     const handleAddProfile = useCallback(() => {
@@ -358,6 +362,7 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
                                 onRequestDelete={() => setDeleteTarget(selectedSection)}
                                 onNameChange={(newName) => handleSectionChange(newName)}
                                 borderColor={colors.borderColor}
+                                dark={isColorDark(bg)}
                             />
                         )}
                     </div>
