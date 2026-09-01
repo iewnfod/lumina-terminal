@@ -2656,6 +2656,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "font-kit",
+ "libc",
  "log",
  "portable-pty",
  "rmcp",

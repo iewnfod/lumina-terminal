@@ -40,6 +40,11 @@ axum = "0.8.9"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net"] }
 schemars = "1.2.2"
 
+[dev-dependencies]
+# tests/shell_hooks.rs spawns real shells; libc::setsid detaches them from the
+# controlling terminal so parallel test shells can't fight the parent terminal.
+libc = "0.2"
+
 [profile.release]
 opt-level = 3
 lto = true

@@ -9,6 +9,36 @@ use lumina_terminal_lib::shell_integration::{
 };
 use std::process::Command;
 
+/// A `Command` for a shell spawned by a test, detached from the controlling
+/// terminal via setsid (new session, no ctty). MANDATORY, not hygiene: these
+/// tests run in parallel threads, and a test shell that shares the parent's
+/// controlling terminal (notably the interactive `bash -i` of
+/// `bash_interactive_argv_starts_shell`) performs job-control ioctls on it.
+/// Several shells doing so concurrently fight over terminal ownership and the
+/// foreground process group — whatever ran cargo test, e.g. the user's shell
+/// inside Lumina — ends up SIGHUP'd mid-run (observed killing a
+/// `./scripts/release.sh` after its cargo-test step). setsid makes every
+/// tcsetpgrp/termios touch fail harmlessly (ENOTTY).
+#[cfg(unix)]
+fn isolated(shell: &str) -> Command {
+    use std::os::unix::process::CommandExt;
+    let mut c = Command::new(shell);
+    unsafe {
+        c.pre_exec(|| {
+            // Best effort: failing (already a group leader) just falls back to
+            // sharing the tty, which is only a hazard for the -i spawns.
+            libc::setsid();
+            Ok(())
+        });
+    }
+    c
+}
+
+#[cfg(not(unix))]
+fn isolated(shell: &str) -> Command {
+    Command::new(shell)
+}
+
 /// Unique temp dir for one test's env-file, so parallel tests don't clash.
 fn temp_env_file(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("lumina-proxy-hook-{}-{}", tag, std::process::id()));
@@ -17,7 +47,7 @@ fn temp_env_file(tag: &str) -> std::path::PathBuf {
 }
 
 fn shell_runs(name: &str) -> bool {
-    Command::new(name)
+    isolated(name)
         .arg("--version")
         .output()
         .map(|o| o.status.success())
@@ -75,7 +105,8 @@ fn run_hook_scenario(shell: &str, hook: &str, scenario: &str, env_file: &std::pa
         return;
     }
     let script = format!("{hook}\n{}", scenario.replace("{ENVF}", &env_file.to_string_lossy()));
-    let out = Command::new(shell)
+    let mut cmd = isolated(shell);
+    let out = cmd
         .args(["-c", &script])
         .env_remove("http_proxy")
         .env_remove("HTTP_PROXY")
@@ -106,7 +137,7 @@ fn bash_interactive_argv_starts_shell() {
     let init = dir.join("lumina.bash");
     std::fs::write(&init, "printf 'INIT-SOURCED\\n'\n").expect("write init file");
     let argv = bash_interactive_argv(&init.to_string_lossy());
-    let out = Command::new("bash").args(&argv).output().expect("spawn bash");
+    let out = isolated("bash").args(&argv).output().expect("spawn bash");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
