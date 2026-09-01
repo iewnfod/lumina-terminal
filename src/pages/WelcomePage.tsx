@@ -91,11 +91,14 @@ function Step2({onNext, onPrev} : {
     onPrev: () => void;
 }) {
     const t = useI18n();
+    // Render settings (rows/cols/font/…) are deliberately NOT set here: a
+    // value written into the profile would silently override the global
+    // render options forever after (parseProfile: profile wins), making later
+    // global-settings changes look broken. The wizard only captures identity
+    // (name/shell/SSH); everything render-related is configured in-app.
     const [profile, setProfile] = useState<TerminalProfile>({
         name: t["Untitled Profile"],
         exePath: "",
-        rows: 24,
-        cols: 80,
         type: "local",
     });
     const [exePathExist, setExePathExist] = useState<boolean>(false);
@@ -122,16 +125,8 @@ function Step2({onNext, onPrev} : {
         updateProfile({ name: value });
     };
 
-    const onRowChange = (value: string) => {
-        updateProfile({ rows: +value });
-    };
-
-    const onColumnChange = (value: string) => {
-        updateProfile({ cols: +value });
-    };
-
     const checkCanNext = useCallback(() => {
-        if (!profile.name || !profile.cols || !profile.rows) return false;
+        if (!profile.name) return false;
         if (profileType === "remote") {
             return !!(profile.ssh?.host);
         }
@@ -169,45 +164,8 @@ function Step2({onNext, onPrev} : {
 
             <Card.Content className="w-full">
                 <div className="flex flex-col items-start justify-start w-full gap-4">
-                    <div className="flex flex-row items-center justify-between w-full gap-4">
-                        <div className="flex flex-col gap-1 grow">
-                            <Label htmlFor="input-name" isRequired>{t["Profile Name"]}</Label>
-                            <Input
-                                id="input-name" value={profile.name} variant="secondary" required
-                                onChange={(e) => onNameChange(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                            <Label htmlFor="input-row" isRequired>{t["Rows"]}</Label>
-                            <Input
-                                id="input-row" value={profile.rows}
-                                variant="secondary" type="number" min={0} required
-                                onChange={(e) => onRowChange(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                            <Label htmlFor="input-col" isRequired>{t["Columns"]}</Label>
-                            <Input
-                                id="input-col" value={profile.cols}
-                                variant="secondary" type="number" min={0} required
-                                onChange={(e) => onColumnChange(e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    {profileType === "local" && (
-                    <div className="flex flex-col gap-1 w-full">
-                        <ShellSelector
-                            exePath={profile.exePath}
-                            onChange={onExePathChange}
-                            idPrefix="input"
-                        />
-                        <span className="px-1 text-sm text-danger whitespace-pre-wrap">
-                            {exePathExist ? " " : t["File not exist"]}
-                        </span>
-                    </div>
-                    )}
-
-                    {/* Profile Type */}
+                    {/* Profile Type — picked first: it decides which of the
+                        shell / SSH fields below even apply. */}
                     <div className="flex flex-col gap-1 w-full">
                         <Label>{t["Profile Type"]}</Label>
                         <Select
@@ -237,6 +195,26 @@ function Step2({onNext, onPrev} : {
                             </Select.Popover>
                         </Select>
                     </div>
+
+                    <div className="flex flex-col gap-1 w-full">
+                        <Label htmlFor="input-name" isRequired>{t["Profile Name"]}</Label>
+                        <Input
+                            id="input-name" value={profile.name} variant="secondary" required
+                            onChange={(e) => onNameChange(e.target.value)}
+                        />
+                    </div>
+                    {profileType === "local" && (
+                    <div className="flex flex-col gap-1 w-full">
+                        <ShellSelector
+                            exePath={profile.exePath}
+                            onChange={onExePathChange}
+                            idPrefix="input"
+                        />
+                        <span className="px-1 text-sm text-danger whitespace-pre-wrap">
+                            {exePathExist ? " " : t["File not exist"]}
+                        </span>
+                    </div>
+                    )}
 
                     {/* SSH Config Fields */}
                     {profileType === "remote" && (
