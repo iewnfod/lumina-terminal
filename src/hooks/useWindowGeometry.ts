@@ -17,7 +17,7 @@ import {useIsWayland} from "./useIsWayland.ts";
  * settings later does NOT re-jump the window.
  */
 export function useWindowGeometry(isMainWindow: boolean) {
-    const {config, updateConfig} = useGlobalConfig();
+    const {config, updateConfig, isLoading} = useGlobalConfig();
     const isWayland = useIsWayland();
 
     // True while the startup geometry restore is applying setPosition/setSize.
@@ -37,10 +37,11 @@ export function useWindowGeometry(isMainWindow: boolean) {
     useEffect(() => {
         if (!isMainWindow) return;
         if (restoredGeometryOnceRef.current) return;
-        // Wait until config has actually loaded (it loads in GlobalConfigProvider;
-        // we can't read isLoading here, but config fields beyond DEFAULT_CONFIG
-        // only become meaningful once the store read resolves. The config object
-        // identity changes on load, so depending on `config` is sufficient.)
+        // Must not run before the config store resolves: DEFAULT_CONFIG has
+        // both remember* toggles off, so acting on it would consume the
+        // once-guard above without restoring anything, and the re-run after
+        // load would bail on the guard — the saved geometry would never apply.
+        if (isLoading) return;
         restoredGeometryOnceRef.current = true;
 
         const wantPos = !isWayland && config.rememberWindowPosition && config.rememberedWindowPosition;
@@ -69,7 +70,7 @@ export function useWindowGeometry(isMainWindow: boolean) {
                 applyingRestoredGeometryRef.current = false;
             }, 200);
         });
-    }, [config, isMainWindow, isWayland]);
+    }, [config, isMainWindow, isWayland, isLoading]);
 
     // Runtime persistence: while either toggle is on, write position/size back
     // to config on move/resize. Skips writes during the startup restore
