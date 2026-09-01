@@ -53,18 +53,17 @@ export function useEmptyStateWindowSize(opts: {
             if (cancelled || isInitialWindowSizeApplied()) return;
             const container = containerRef.current;
             if (!container) return;
-            // Match Term's measurement exactly. Term passes its termRef (the
-            // terminal mount element), which sits INSIDE the profile padding, so
-            // profileWindowSize's chrome offset (inner - container) includes that
-            // padding. The empty-state container fills the whole content area
-            // (no padding inset), so subtract the profile padding to get the
-            // same effective container size — otherwise the window comes out
-            // smaller than a terminal's and a later-opened terminal would resize.
+            // The container fills the whole content area (no padding inset —
+            // no Term is mounted). A mounted Term's termRef would be this
+            // container minus the profile padding (parseProfilePadding, incl.
+            // paddingOffset, exactly as Term applies it). Pass that shrunk
+            // size so profileWindowSize's chrome offset (inner - container)
+            // comes out chrome + padding — identical to the Term path.
             const pad = parseProfilePadding(profile, paddingOffset);
             const w = container.clientWidth - pad.left - pad.right;
             const h = container.clientHeight - pad.top - pad.bottom;
             if (w <= 0 || h <= 0) return; // not laid out yet; a later render retries
-            const size = profileWindowSize(profile, paddingOffset, w, h);
+            const size = profileWindowSize(profile, w, h);
             markInitialWindowSizeApplied();
             info(`Empty state: sized main window to default profile "${profile.name}" (${size.width}x${size.height})`);
             getCurrentWindow().setSize(size).catch((e) =>

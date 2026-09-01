@@ -127,11 +127,10 @@ export default function Term(props : TermProps) {
         const container = termRef.current;
         return profileWindowSize(
             profile,
-            paddingOffset,
             container?.clientWidth ?? 0,
             container?.clientHeight ?? 0,
         );
-    }, [profile, paddingOffset]);
+    }, [profile]);
 
     const handleActions = (action: Actions, args?: Record<string, string>) => {
         info(`Term action: ${action}${args ? ` args=${JSON.stringify(args)}` : ""}`);
@@ -299,12 +298,19 @@ export default function Term(props : TermProps) {
         if (!isInitialWindowSizeApplied() && getCurrentWindow().label === "main" && !skipForRemembered) {
             markInitialWindowSizeApplied();
             const windowSize = getWindowSizeFromRowsAndColumns();
-            getCurrentWindow().setSize(windowSize).catch((e) => {
+            info(`Applying initial window size for terminal ${id}: ${windowSize.width}x${windowSize.height}`).catch(() => {});
+            getCurrentWindow().setSize(windowSize).then(() => {
+                info(`Applied initial window size for terminal ${id}: ${windowSize.width}x${windowSize.height}`).catch(() => {});
+            }).catch((e) => {
                 error(`Failed to apply initial window size for terminal ${id}: ${e}`).catch(() => {});
             });
         } else if (!isInitialWindowSizeApplied()) {
             // Mark as applied even when we skipped, so a later profile change
             // doesn't suddenly resize the window.
+            info(
+                `Skipped initial window sizing (marking applied): alreadyApplied=${isInitialWindowSizeApplied()} ` +
+                `window=${getCurrentWindow().label} skipForRemembered=${skipForRemembered}`,
+            ).catch(() => {});
             markInitialWindowSizeApplied();
         }
 
@@ -410,7 +416,19 @@ export default function Term(props : TermProps) {
             writeToTerminal(ptyId, data).then();
             markInteractive();
         });
+        // One-shot: what the first fit() actually settled on. Compared with the
+        // profile's configured rows/cols it tells us (from the log alone)
+        // whether a wrong window size came from bad cell measurement or from
+        // renderer-side rounding after the size was applied.
+        let loggedFirstFit = false;
         term.current.onResize(({cols, rows}) => {
+            if (!loggedFirstFit) {
+                loggedFirstFit = true;
+                info(
+                    `First fit for terminal ${id}: ${cols}x${rows} (configured ${profile.cols ?? 80}x${profile.rows ?? 24}) ` +
+                    `inner=${window.innerWidth}x${window.innerHeight} container=${termRef.current?.clientWidth ?? "?"}x${termRef.current?.clientHeight ?? "?"}`,
+                ).catch(() => {});
+            }
             resizeTerminal(ptyId, cols, rows).then();
             markInteractive();
         });

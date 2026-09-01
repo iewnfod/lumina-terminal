@@ -1,7 +1,7 @@
 import {Terminal} from "@xterm/xterm";
 import {LogicalSize} from "@tauri-apps/api/window";
+import {info} from "@tauri-apps/plugin-log";
 import {TerminalProfile} from "../types/terminal.ts";
-import {parseProfilePadding} from "./term.ts";
 
 /**
  * Compute the OS window size (logical px) needed to display a profile's
@@ -15,11 +15,12 @@ import {parseProfilePadding} from "./term.ts";
  *
  * Pure-ish logic (DOM + xterm, but no React) per the lib/ layering rule.
  * `containerClientWidth/Height` is the terminal mount element's inner size;
- * pass the same `<div>` Term opens xterm into so the chrome inset is accurate.
+ * pass the same `<div>` Term opens xterm into. That element sits INSIDE the
+ * profile padding, so the chrome inset (`inner - container`) already includes
+ * the padding — it must not be added again on top.
  */
 export function profileWindowSize(
     profile: TerminalProfile,
-    paddingOffset: number,
     containerClientWidth: number,
     containerClientHeight: number,
 ): LogicalSize {
@@ -42,22 +43,49 @@ export function profileWindowSize(
     }
     const renderDimensions = (dummyTerm as any)._core?._renderService?.dimensions;
     const charSizeService = (dummyTerm as any)._core?._charSizeService;
-    const charWidth = renderDimensions?.actualCellWidth || charSizeService?.width;
-    const charHeight = renderDimensions?.actualCellHeight || charSizeService?.height;
+    // The RENDERER's cell — not the raw char measurement — is what the fit
+    // addon divides the container by, and the DomRenderer derives it with
+    // upward rounding (canvas width via Math.round, height via Math.ceil at
+    // the device layer). Sizing with the raw fractional measurement made the
+    // container up to a cell too small, so fit() settled on (rows-1)/(cols-1)
+    // for any font whose metrics aren't integral at the given size/dpr.
+    // Reading the dummy's own dimensions uses the exact same rounding the
+    // real terminal will apply; the charSizeService values remain a fallback
+    // for the not-yet-measured window.
+    const charWidth = renderDimensions?.css?.cell?.width || charSizeService?.width || 0;
+    const charHeight = renderDimensions?.css?.cell?.height || charSizeService?.height || 0;
     dummyTerm.dispose();
     dummyDiv.remove();
 
     // Chrome inset: window inner size minus the terminal mount element's
-    // inner size (sidebar, title bar, padding). Measured against the live
-    // container so a 0-size container (not yet mounted) falls back to 0.
+    // inner size. termRef lives inside the padded Term surface, so this
+    // difference already carries the sidebar/title-bar chrome AND the profile
+    // padding — adding the padding again (the old bug) inflated the window by
+    // one padding per axis, which fit() converted into extra rows/cols.
+    // Measured against the live container so a 0-size container (not yet
+    // mounted) falls back to 0.
     const widthOffset = Math.max(0, window.innerWidth - containerClientWidth);
     const heightOffset = Math.max(0, window.innerHeight - containerClientHeight);
-    const padding = parseProfilePadding(profile, paddingOffset);
-    const pixelWidth = Math.floor(
+    // Ceil, never floor: the container must hold AT LEAST rows/cols cells —
+    // fit() floors available/cell, so a sub-cell deficit costs a whole row or
+    // column while a sub-cell surplus is absorbed as edge background.
+    const pixelWidth = Math.ceil(
         (profile.cols ?? 80) * charWidth,
-    ) + widthOffset + padding.left + padding.right;
-    const pixelHeight = Math.floor(
+    ) + widthOffset;
+    const pixelHeight = Math.ceil(
         (profile.rows ?? 24) * charHeight,
-    ) + heightOffset + padding.top + padding.bottom;
+    ) + heightOffset;
+    // Diagnostic: every input of the sizing decision on one line. Runs once
+    // per session (not a hot path), and a wrong window size is otherwise
+    // undiagnosable remotely — the raw cell metrics + offsets are what
+    // discriminate font-fallback / scaling / layout-timing failures.
+    info(
+        `profileWindowSize: profile=${profile.name ?? "?"} ` +
+        `font=${JSON.stringify(profile.fontFamily ?? "(default)")}/${profile.fontSize ?? "(default)"} ` +
+        `cell=${charWidth}x${charHeight} dpr=${window.devicePixelRatio} ` +
+        `inner=${window.innerWidth}x${window.innerHeight} container=${containerClientWidth}x${containerClientHeight} ` +
+        `offset=${widthOffset}x${heightOffset} ` +
+        `cols/rows=${profile.cols ?? 80}/${profile.rows ?? 24} -> ${pixelWidth}x${pixelHeight}`,
+    ).catch(() => {});
     return new LogicalSize({width: pixelWidth, height: pixelHeight});
 }
