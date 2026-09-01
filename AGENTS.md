@@ -588,6 +588,14 @@ whole suite with `cargo test` on all three desktop platforms alongside
     parser, or behavior change is incomplete without test coverage, and CI
     runs the full suite on every push. See §3.7 for the conventions (pure-fn
     extraction, self-skipping platform tests, no env mutation).
+16. **Keep the configuration reference in sync.** `docs/Configuration.md`
+    (English) and `docs/Configuration_zh.md` (Simplified Chinese) document
+    every user-editable config surface: `GlobalConfig`, `TerminalProfile`,
+    `TerminalRenderOptions` (incl. the xterm.js passthrough), `bindings`,
+    `commandIcons`, and `profiles[].launcher`. Any change to one of those —
+    a new field, a changed default, a new action/icon id — MUST update both
+    files in the same change, mirroring rule 13. They are plain GFM so they
+    can be pasted verbatim into the GitHub Wiki.
 
 ---
 

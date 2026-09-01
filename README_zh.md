@@ -5,7 +5,7 @@
   <h3 align="center">Lumina Terminal</h3>
 </p>
 <p align="center">
-  简体中文 | <a href="./README.md">English</a>
+  <a href="./README_zh.md">简体中文</a> | <a href="./README.md">English</a>
 </p>
 
 一个基于 Tauri、React 和 Xterm.js 构建的现代跨平台终端模拟器，拥有精美的界面、命令面板和可自定义的配置文件。
@@ -112,6 +112,10 @@ lumina-terminal --hold --profile dev -e cargo build
 lumina-terminal -T "build log"                  # 设置窗口标题
 lumina-terminal --sidebar hide                  # 本次启动隐藏侧边栏（不改设置）
 ```
+
+## 配置
+
+`config.json` 的全部可配置项 —— 包括没有设置界面的「仅配置文件」字段 —— 都在[配置参考](docs/Configuration_zh.md)中说明。
 
 ## 性能
 

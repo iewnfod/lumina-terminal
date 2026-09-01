@@ -5,7 +5,7 @@
   <h3 align="center">Lumina Terminal</h3>
 </p>
 <p align="center">
-  <a href="./README_zh.md">简体中文</a> | English
+  <a href="./README_zh.md">简体中文</a> | <a href="./README.md">English</a>
 </p>
 
 A modern, cross-platform terminal emulator built with Tauri, React, and Xterm.js — featuring a sleek UI, command palette, and customizable profiles.
@@ -112,6 +112,10 @@ lumina-terminal --hold --profile dev -e cargo build
 lumina-terminal -T "build log"                  # set the window title
 lumina-terminal --sidebar hide                  # hide the sidebar this launch (setting untouched)
 ```
+
+## Configuration
+
+Every `config.json` option — including the ones with no Settings UI — is documented in the [Configuration Reference](docs/Configuration.md).
 
 ## Performance
 
