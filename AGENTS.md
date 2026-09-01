@@ -588,14 +588,17 @@ whole suite with `cargo test` on all three desktop platforms alongside
     parser, or behavior change is incomplete without test coverage, and CI
     runs the full suite on every push. See §3.7 for the conventions (pure-fn
     extraction, self-skipping platform tests, no env mutation).
-16. **Keep the configuration reference in sync.** `docs/Configuration.md`
-    (English) and `docs/Configuration_zh.md` (Simplified Chinese) document
-    every user-editable config surface: `GlobalConfig`, `TerminalProfile`,
+16. **Keep the configuration reference in sync.** The docs live in the GitHub
+    Wiki submodule `docs/wiki/`: `Configuration.md` (English) and
+    `Configuration_zh.md` (Simplified Chinese) document every user-editable
+    config surface: `GlobalConfig`, `TerminalProfile`,
     `TerminalRenderOptions` (incl. the xterm.js passthrough), `bindings`,
     `commandIcons`, and `profiles[].launcher`. Any change to one of those —
     a new field, a changed default, a new action/icon id — MUST update both
     files in the same change, mirroring rule 13. They are plain GFM so they
-    can be pasted verbatim into the GitHub Wiki.
+    render as Wiki pages. Publishing requires a commit **inside the
+    submodule** (`docs/wiki`) pushed to the wiki remote, plus bumping the
+    submodule pointer in this repo.
 
 ---
 

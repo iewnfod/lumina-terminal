@@ -115,7 +115,7 @@ lumina-terminal --sidebar hide                  # 本次启动隐藏侧边栏（
 
 ## 配置
 
-`config.json` 的全部可配置项 —— 包括没有设置界面的「仅配置文件」字段 —— 都在[配置参考](docs/Configuration_zh.md)中说明。
+`config.json` 的全部可配置项 —— 包括没有设置界面的「仅配置文件」字段 —— 都在[配置参考](https://github.com/iewnfod/lumina-terminal/wiki/Configuration_zh)中说明。
 
 ## 性能
 

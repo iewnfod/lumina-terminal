@@ -115,7 +115,7 @@ lumina-terminal --sidebar hide                  # hide the sidebar this launch (
 
 ## Configuration
 
-Every `config.json` option — including the ones with no Settings UI — is documented in the [Configuration Reference](docs/Configuration.md).
+Every `config.json` option — including the ones with no Settings UI — is documented in the [Configuration Reference](https://github.com/iewnfod/lumina-terminal/wiki/Configuration).
 
 ## Performance
 
