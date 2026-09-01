@@ -2,7 +2,7 @@ name: Publish to AUR
 
 # Publishes the `lumina-terminal-bin` package to the Arch User Repository.
 #
-# Triggered by the Release workflow's `trigger-aur` job (via a
+# Triggered by the pkg-trigger workflow's `publish-aur` dispatch (via a
 # `repository_dispatch` event) AFTER every arch's .deb has been uploaded to
 # the release — so by the time this workflow runs, the assets we need are
 # guaranteed to be there. Also supports a manual `workflow_dispatch` run with

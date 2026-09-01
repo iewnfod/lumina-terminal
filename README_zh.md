@@ -16,6 +16,11 @@
 paru -S lumina-terminal-bin
 # 或：yay -S lumina-terminal-bin
 ```
+* Fedora（通过 COPR）：
+```shell
+dnf copr enable iewnfod/lumina-terminal
+dnf install lumina-terminal
+```
 * 其他 Linux / macOS：使用脚本安装
 ```shell
 curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scripts/install.sh | bash

@@ -1,0 +1,196 @@
+name: Publish to COPR
+
+# Publishes the `lumina-terminal` package to Fedora COPR
+# (copr.fedorainfracloud.org), mirroring what .github/workflows/aur.yml does
+# for Arch: a *binary repack* of the .rpm assets the Release workflow already
+# uploaded.
+#
+# Triggered by the pkg-trigger workflow's `publish-copr` dispatch (via a
+# `repository_dispatch` event) AFTER the Release workflow completes
+# successfully — the same hop aur.yml uses, so by the time this runs the
+# .rpm assets we need are guaranteed to be on the release. Also supports a
+# manual `workflow_dispatch` run with an explicit tag for re-publishing an
+# older release without re-running Release. The tag travels in
+# `client_payload.tag`.
+#
+# How the package is built: COPR cannot host prebuilt RPMs — every package is
+# built on COPR's builders from an SRPM. So this workflow renders
+# .copr/lumina-terminal.spec (Source0/Source1 = the release's x86_64/aarch64
+# .rpm assets), builds the SRPM locally with `rpmbuild -bs` (no scriptlets
+# run at SRPM time), and submits it via `copr-cli build`. On every chroot
+# enabled for the project, %install just unpacks the arch-matching .rpm into
+# the buildroot — nothing compiles on COPR's side.
+#
+# One-time manual setup (repo owner):
+#   1. Sign in at copr.fedorainfracloud.org with a Fedora Account (FAS).
+#   2. Create a project matching COPR_OWNER/COPR_PROJECT below and enable
+#      chroots. Fedora x86_64 + aarch64 are safe. Avoid EPEL chroots unless
+#      they ship `webkit2gtk4.1` — the binary links libwebkit2gtk-4.1.so.0.
+#   3. Generate an API token at copr.fedorainfracloud.org/api/ and store the
+#      WHOLE ini page as the repo secret COPR_CONFIG.
+#
+# Required repo secrets:
+#   COPR_CONFIG — the full ~/.config/copr/config ini from the COPR API page.
+
+on:
+  workflow_dispatch:
+    # `tag` is the only input. Manual invocations pass the release tag
+    # (e.g. "v0.2.5") here.
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v0.2.5)"
+        required: true
+        type: string
+  repository_dispatch:
+    # Fired by pkg-trigger's publish-copr leg with {tag: "<release tag>"} in
+    # the client payload. Runs on the DEFAULT branch (master), so this always
+    # uses the latest workflow code — no stale-on-tag problem.
+    types: [publish-copr]
+
+# A COPR project resolves one package; two concurrent submissions of the
+# same SRPM would only race the project's build queue.
+concurrency:
+  group: copr-publish
+  cancel-in-progress: false
+
+env:
+  # COPR full name of the target project (<owner>/<project>). COPR_OWNER
+  # must be the Fedora Account username that owns the project.
+  COPR_OWNER: iewnfod
+  COPR_PROJECT: lumina-terminal
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        id: rel
+        env:
+          # tag arrives differently depending on the trigger:
+          #   workflow_dispatch    → inputs.tag
+          #   repository_dispatch  → github.event.client_payload.tag
+          INPUT_TAG: ${{ inputs.tag }}
+          PAYLOAD_TAG: ${{ github.event.client_payload.tag }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-${PAYLOAD_TAG}}"
+          if [[ -z "${tag}" || "${tag}" == "master" ]]; then
+            echo "::error::No release tag found (tag=${tag}); aborting" >&2
+            exit 1
+          fi
+          # The RPM Version drops the leading "v" (as AUR pkgver does).
+          case "${tag}" in
+            v*) ver="${tag#v}" ;;
+            *)  ver="${tag}" ;;
+          esac
+          {
+            echo "tag=${tag}"
+            echo "pkgver=${ver}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Download both Linux .rpms the Release workflow uploaded. This
+      # workflow only runs after Release completed successfully, so both
+      # assets are guaranteed to be on the release — no polling. A failure
+      # here is a genuine problem and should surface loudly.
+      - name: Fetch release .rpm assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          tag="${{ steps.rel.outputs.tag }}"
+          for arch in x86_64 aarch64; do
+            name="Lumina.Terminal-${{ steps.rel.outputs.pkgver }}-1.${arch}.rpm"
+            gh release download "${tag}" \
+              --repo "${{ github.repository }}" \
+              --pattern "${name}" \
+              --dir assets
+            sum="$(sha256sum "assets/${name}" | awk '{print $1}')"
+            echo "::notice::${name} sha256=${sum}"
+          done
+
+      - name: Render spec
+        env:
+          VERSION: ${{ steps.rel.outputs.pkgver }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          # envsubst with an explicit var list substitutes ONLY the named
+          # placeholder — %{version}, %{buildroot}, %{SOURCE0} etc. are left
+          # intact for rpmbuild to expand.
+          envsubst '${VERSION}' \
+            < .copr/lumina-terminal.spec > out/lumina-terminal.spec
+
+          # Append a %changelog entry for this release; rpmbuild warns
+          # without one, and the real history lives on the releases page.
+          # LC_ALL=C pins the date format to "Mon Sep 01 2026" — rpmbuild's
+          # changelog parser rejects locale-translated weekday/month names.
+          {
+            echo ""
+            echo "%changelog"
+            echo "* $(LC_ALL=C date '+%a %b %d %Y') COPR Automation <noreply@copr.fedorainfracloud.org> - ${VERSION}-1"
+            echo "- Automatic build of Lumina Terminal ${VERSION} from the upstream release."
+          } >> out/lumina-terminal.spec
+
+          echo "===== rendered out/lumina-terminal.spec ====="
+          cat out/lumina-terminal.spec
+
+      # Ubuntu ships the rpm toolchain in apt; we need it for the lint parse
+      # and the SRPM build below (scriptlets never run at SRPM time, so
+      # building on Ubuntu is fine — the SRPM just bundles spec + sources).
+      - name: Install rpm toolchain
+        run: sudo apt-get install -y -qq rpm
+
+      # The two portable checks that catch the real failure modes of a
+      # *rendered* spec: rpmspec -P fully parses/expands the spec (structural
+      # validation), and the leftover-placeholder scan catches a broken
+      # envsubst. Deeper validation (%files vs the unpacked tree) happens on
+      # COPR's builders.
+      - name: Lint rendered spec
+        run: |
+          set -euo pipefail
+          rpmspec -P out/lumina-terminal.spec > /dev/null
+          if grep -nE '\$\{VERSION\}' out/lumina-terminal.spec; then
+            echo "::error::Unsubstituted placeholder found in spec" >&2
+            exit 1
+          fi
+          echo "spec OK: parses, no leftover placeholders"
+
+      - name: Build SRPM
+        id: srpm
+        run: |
+          set -euo pipefail
+          mkdir -p rpmbuild/SOURCES rpmbuild/SPECS rpmbuild/SRPMS
+          cp assets/*.rpm rpmbuild/SOURCES/
+          cp out/lumina-terminal.spec rpmbuild/SPECS/
+          rpmbuild -bs \
+            --define "_topdir ${PWD}/rpmbuild" \
+            rpmbuild/SPECS/lumina-terminal.spec
+          srpm="$(ls rpmbuild/SRPMS/*.src.rpm)"
+          echo "::notice::Built ${srpm}"
+          echo "srpm=${srpm}" >> "$GITHUB_OUTPUT"
+
+      - name: Submit build to COPR
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          set -euo pipefail
+          pipx install copr-cli
+          mkdir -p "${HOME}/.config/copr"
+          # The secret holds the full ini from the COPR API page; strip any
+          # stray CRLF the GitHub secrets UI may have injected.
+          printf '%s\n' "${COPR_CONFIG}" | tr -d '\r' > "${HOME}/.config/copr/config"
+          chmod 600 "${HOME}/.config/copr/config"
+
+          # No --nowait: wait for every enabled chroot so a COPR-side build
+          # failure fails THIS workflow loudly. The repack is tiny; the
+          # per-chroot builds take well under a minute each.
+          copr-cli build \
+            "${COPR_OWNER}/${COPR_PROJECT}" \
+            "${{ steps.srpm.outputs.srpm }}"

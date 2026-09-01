@@ -16,6 +16,11 @@ A modern, cross-platform terminal emulator built with Tauri, React, and Xterm.js
 paru -S lumina-terminal-bin
 # or: yay -S lumina-terminal-bin
 ```
+* Fedora (via COPR):
+```shell
+dnf copr enable iewnfod/lumina-terminal
+dnf install lumina-terminal
+```
 * Other Linux / macOS: install with script
 ```shell
 curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scripts/install.sh | bash

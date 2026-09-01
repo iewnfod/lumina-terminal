@@ -1,4 +1,4 @@
-name: Trigger AUR publish (fallback)
+name: Trigger package publishes (fallback)
 
 # Runs AFTER the Release workflow completes successfully, using the
 # `workflow_run` event. This avoids the GITHUB_TOKEN permission restriction
@@ -15,9 +15,11 @@ name: Trigger AUR publish (fallback)
 # exceptions to the "GITHUB_TOKEN events don't spawn runs" rule), so no PAT
 # is needed.
 #
-# Triggered by: Release workflow completing with success.
-# The AUR workflow (aur.yml) listens on `repository_dispatch: publish-aur` and
-# reads the tag from `client_payload.tag`.
+# Triggered by: Release workflow completing with success. Each matrix leg
+# dispatches ONE downstream publish workflow, both of which read the tag
+# from `client_payload.tag`:
+#   publish-aur  → .github/workflows/aur.yml  (AUR lumina-terminal-bin)
+#   publish-copr → .github/workflows/copr.yml (Fedora COPR lumina-terminal)
 
 on:
   workflow_run:
@@ -25,14 +27,19 @@ on:
     types: [completed]
 
 jobs:
-  trigger-aur:
+  trigger:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      # A failure in one leg must not cancel the other's dispatch.
+      fail-fast: false
+      matrix:
+        event: [publish-aur, publish-copr]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     steps:
-      - name: Trigger Publish to AUR workflow
+      - name: Trigger Publish workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -43,10 +50,10 @@ jobs:
             echo "::error::No release tag found (head_branch=${tag}); aborting" >&2
             exit 1
           fi
-          echo "::notice::Dispatching publish-aur for tag ${tag}"
+          echo "::notice::Dispatching ${{ matrix.event }} for tag ${tag}"
           gh api \
             --method POST \
             -H "Accept: application/vnd.github+json" \
             "/repos/${{ github.repository }}/dispatches" \
-            -f event_type=publish-aur \
+            -f event_type=${{ matrix.event }} \
             -f "client_payload[tag]=${tag}"
