@@ -178,19 +178,48 @@ jobs:
 
       - name: Submit build to COPR
         env:
-          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+          # Named ..._SECRET, not COPR_CONFIG: some copr-cli builds treat an
+          # exported COPR_CONFIG as a config file PATH — keep the content out
+          # of any name copr-cli might interpret.
+          COPR_CONFIG_SECRET: ${{ secrets.COPR_CONFIG }}
         run: |
           set -euo pipefail
           pipx install copr-cli
-          mkdir -p "${HOME}/.config/copr"
+
           # The secret holds the full ini from the COPR API page; strip any
           # stray CRLF the GitHub secrets UI may have injected.
-          printf '%s\n' "${COPR_CONFIG}" | tr -d '\r' > "${HOME}/.config/copr/config"
-          chmod 600 "${HOME}/.config/copr/config"
+          mkdir -p "${HOME}/.config/copr"
+          config="${HOME}/.config/copr/config"
+          printf '%s\n' "${COPR_CONFIG_SECRET}" | tr -d '\r' > "${config}"
+          chmod 600 "${config}"
+
+          # Fail with an actionable message instead of copr-cli's cryptic
+          # "Operation requires API authentication" when the secret is unset
+          # or holds something other than the full ini.
+          if [[ -z "${COPR_CONFIG_SECRET}" ]] \
+             || ! grep -qE '^\[copr-cli\]' "${config}" \
+             || ! grep -qE '^(username|login|token|copr_url)[[:space:]]*=' "${config}"; then
+            echo "::error::Secret COPR_CONFIG is missing or malformed. Open https://copr.fedorainfracloud.org/api/ and store the WHOLE ini (starting with '[copr-cli]') as the repo secret COPR_CONFIG." >&2
+            exit 1
+          fi
+
+          # The token's username should be able to build into the target
+          # project — warn early on an obvious mismatch.
+          cfg_user="$(sed -n 's/^username[[:space:]]*=[[:space:]]*//p' "${config}")"
+          if [[ -n "${cfg_user}" && "${cfg_user}" != "${COPR_OWNER}" ]]; then
+            echo "::warning::Token username (${cfg_user}) differs from COPR_OWNER (${COPR_OWNER}) — building into ${COPR_OWNER}/${COPR_PROJECT}; make sure that account may build there."
+          fi
 
           # No --nowait: wait for every enabled chroot so a COPR-side build
           # failure fails THIS workflow loudly. The repack is tiny; the
           # per-chroot builds take well under a minute each.
-          copr-cli build \
+          #
+          # --config is passed EXPLICITLY: PyPI's python-copr resolves its
+          # default to ~/.config/copr — a FILE literally named "copr" — and
+          # NOT the documented ~/.config/copr/config. A config written only
+          # to the documented path is silently ignored (configparser swallows
+          # the IsADirectoryError) and copr-cli falls back to anonymous
+          # access. Verified against copr-cli 2.6 + copr 2.7.
+          copr-cli --config "${config}" build \
             "${COPR_OWNER}/${COPR_PROJECT}" \
             "${{ steps.srpm.outputs.srpm }}"
