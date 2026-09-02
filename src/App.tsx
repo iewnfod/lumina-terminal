@@ -471,7 +471,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                         foregroundColor={effectiveFg ?? "#ffffff"}
                                         profiles={config.profiles}
                                         bindings={parsedBindings}
-                                        profileLastOpened={config.profileLastOpened}
+                                        profileLastOpened={mgr.profileLastOpened}
                                         maxProfiles={config.emptyStateMaxProfiles}
                                         onNewTab={(profile) => { mgr.newTerminal(profile); }}
                                     />

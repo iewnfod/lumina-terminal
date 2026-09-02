@@ -105,10 +105,10 @@ export interface GlobalConfig {
      * default tab on first run) regardless of this flag. When false, a "never"-
      * mode launch starts with no tabs (the empty state takes over). */
     loadDefaultProfileOnStartup?: boolean;
-    /** Per-profile "last opened" timestamps (ms since epoch), keyed by profile
-     * name. Recorded each time a terminal is opened with that profile and used
-     * to sort the empty-state quick-launch list by recency. Grows as profiles
-     * are opened; entries for deleted profiles are harmless dead keys. */
+    /** @deprecated The recency map is runtime state, not a user setting — it
+     *  lives in profile-usage.json now (see lib/profileUsage.ts +
+     *  hooks/useProfileUsage.ts). Still read once by the one-time migration
+     *  in hooks/config.tsx, which strips this key from config.toml. */
     profileLastOpened?: Record<string, number>;
     /** Max number of profiles the empty-state quick-launch list shows (the most
      *  recently opened first). An uncommon setting — no UI; edit config.toml

@@ -43,6 +43,20 @@ function migrateLegacyCopyWithCtrl(config: GlobalConfig): GlobalConfig {
     return {...rest, bindings};
 }
 
+/**
+ * One-time migration for `profileLastOpened`: the empty-state recency map is
+ * runtime state, not a user setting, and now lives in profile-usage.json (see
+ * lib/profileUsage.ts). Strip the legacy key so it disappears from the user's
+ * config.toml; recency history rebuilds naturally as profiles are opened.
+ * Idempotent by construction — safe to call on every load.
+ */
+function stripLegacyProfileLastOpened(config: GlobalConfig): GlobalConfig {
+    if (config.profileLastOpened === undefined) return config;
+    const {profileLastOpened: _legacy, ...rest} = config;
+    info("Migrated profileLastOpened out of config.toml (recency is now tracked in profile-usage.json)");
+    return rest;
+}
+
 export function useGlobalConfig() {
     const context = useContext(GlobalConfigContext);
     if (!context) {
@@ -68,7 +82,8 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
                 saveConfig(loadedConfig);
             }
             // "unreadable": run on defaults but leave the broken file alone.
-            const migrated = migrateLegacyCopyWithCtrl(loadedConfig);
+            let migrated = migrateLegacyCopyWithCtrl(loadedConfig);
+            migrated = stripLegacyProfileLastOpened(migrated);
             if (migrated !== loadedConfig) {
                 // The one-time migration changed something — persist it so
                 // the legacy flag is stripped from the file for good.
@@ -196,7 +211,8 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
                 getConfigFilePath().then((configPath) => readTextFile(configPath)).then((text) => {
                     if (text === lastWrittenTextRef.current) return;
                     const parsed = parseConfigToml(text) as unknown as GlobalConfig;
-                    const merged = migrateLegacyCopyWithCtrl({...DEFAULT_CONFIG, ...parsed});
+                    let merged = migrateLegacyCopyWithCtrl({...DEFAULT_CONFIG, ...parsed});
+                    merged = stripLegacyProfileLastOpened(merged);
                     if (semanticEqual(merged, configRef.current)) return;
                     setConfig(merged);
                     info("Config hot-reloaded from disk").catch(() => {});

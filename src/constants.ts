@@ -83,6 +83,12 @@ export const LEGACY_CONFIG_BACKUP_PATH = "config.json.bak";
  * pollutes the user's app config. See lib/session.ts. */
 export const SESSION_STORE_PATH = "session.json";
 
+/** LazyStore file holding the per-profile "last opened" recency map (one key
+ * "lastOpened") that sorts the empty-state quick-launch list. Runtime state,
+ * not a user setting — kept out of config.toml for the same reason as
+ * session.json. See lib/profileUsage.ts. */
+export const PROFILE_USAGE_STORE_PATH = "profile-usage.json";
+
 /** Shared height for the custom chrome and the macOS traffic-light safe area. */
 export const CHROME_TITLE_BAR_HEIGHT = 36;
 

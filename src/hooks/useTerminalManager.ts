@@ -22,6 +22,7 @@ import {emitTo, listen} from "@tauri-apps/api/event";
 import {useTearoffSession} from "./useTearoffSession.ts";
 import {useCliArgs} from "./useCliArgs.ts";
 import {useGlobalConfig} from "./config.tsx";
+import {useProfileUsage} from "./useProfileUsage.ts";
 import {useSessionPersistence} from "./useSessionPersistence.ts";
 import {useSystemTheme} from "./useSystemTheme.ts";
 import type {SavedSession} from "../lib/session.ts";
@@ -45,6 +46,11 @@ export interface TerminalManager {
      *  on the main window; undefined otherwise (→ TabBar shows "Lumina"). */
     brandTitle: string | undefined;
     reattachTabs: Record<string, {ptyId: string; scrollback: string}>;
+    /** Per-profile "last opened" timestamps (ms), keyed by profile name —
+     *  drives the empty-state quick-launch recency sort. Recorded by
+     *  newTerminal via hooks/useProfileUsage.ts and persisted to
+     *  profile-usage.json, NOT the user's config.toml. */
+    profileLastOpened: Record<string, number>;
     /** Per-tab scrollback to replay on a fresh-start (session restore), keyed
      *  by tab id. Term reads [id] via its initialScrollback prop. */
     initialScrollbackTabs: Record<string, string>;
@@ -116,13 +122,9 @@ export function useTerminalManager(): TerminalManager {
     const closeOnLastTabRef = useRef(config.closeWindowOnLastTab);
     closeOnLastTabRef.current = config.closeWindowOnLastTab;
 
-    // Mirror of config.profileLastOpened in a ref so newTerminal can record a
-    // profile's open time without a stale closure across rapid successive opens
-    // (the ref is updated immediately on each open, ahead of the config write).
-    const profileLastOpenedRef = useRef<Record<string, number>>(config.profileLastOpened ?? {});
-    useEffect(() => {
-        profileLastOpenedRef.current = config.profileLastOpened ?? {};
-    }, [config.profileLastOpened]);
+    // Per-profile "last opened" recency (empty-state sort), persisted to
+    // profile-usage.json — runtime state that must not touch config.toml.
+    const {lastOpened: profileLastOpened, record: recordProfileOpened} = useProfileUsage();
 
     const idsRef = useRef(ids);
     idsRef.current = ids;
@@ -216,13 +218,11 @@ export function useTerminalManager(): TerminalManager {
         setCurrentId(id);
         info(`New terminal: profile=${profile.name} id=${id}`);
         // Record this profile as just-opened so the empty-state quick-launch
-        // list can sort by recency. Update the ref immediately to stay correct
-        // across rapid successive opens, then persist. updateConfig handles its
-        // own error logging and never rejects, so fire-and-forget is safe.
-        const nextLastOpened = {...profileLastOpenedRef.current, [profile.name]: Date.now()};
-        profileLastOpenedRef.current = nextLastOpened;
-        updateConfig({profileLastOpened: nextLastOpened});
-    }, [config, addTerminal, systemTheme, updateConfig]);
+        // list can sort by recency. useProfileUsage updates its map immediately
+        // (correct across rapid successive opens) and persists to
+        // profile-usage.json, logging its own failures.
+        recordProfileOpened(profile.name);
+    }, [config, addTerminal, systemTheme, recordProfileOpened]);
 
     const closeTerminal = useCallback((id: string) => {
         debug(`closeTerminal called for id=${id}`);
@@ -757,6 +757,7 @@ export function useTerminalManager(): TerminalManager {
         commands,
         brandTitle,
         reattachTabs,
+        profileLastOpened,
         initialScrollbackTabs,
         serializeFns,
         mergeTargetRef,

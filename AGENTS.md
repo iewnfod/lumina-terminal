@@ -113,6 +113,9 @@ src/
 │   │                        #   LazyStore("session.json") load/save/clear. Save-side re-spawn contract
 │   │                        #   (profile name + live cwd + optional scrollback); restore re-parses against
 │   │                        #   the current globalProfile. Pure logic — no React.
+│   ├── profileUsage.ts      # Per-profile "last opened" recency map (empty-state sort) in a dedicated
+│   │                        #   LazyStore("profile-usage.json", NOT config.toml — runtime state, not user
+│   │                        #   config; mirrors session.ts): load/saveProfileLastOpened, log-on-fail.
 │   ├── tabDragOverlay.ts    # mountTabDragOverlay (transparent full-window layer keeping dragover alive over canvas)
 │   ├── tabReorder.ts        # Sidebar drag-reorder math: dropTargetFor (pointer Y → gap index)
 │   │                        #   + reorderByDrop (move item into gap; same ref when it's a no-op)
@@ -162,10 +165,15 @@ src/
 │   │                        #   (local state, never persisted; first explicit toggle drops it)
 │   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
 │   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
+│   ├── useProfileUsage.ts   # useProfileUsage() → {lastOpened, record}: the empty-state recency map
+│   │                        #   from lib/profileUsage.ts — one-shot load + immediate-stamp record with
+│   │                        #   async persist. Consumed by useTerminalManager, which exposes the map
+│   │                        #   (profileLastOpened) for App → EmptyState's recency sort.
 │   ├── useTerminalManager.ts# useTerminalManager() — tab list/profiles/active id + create/close/reorder/
 │   │                        #   tear-off + cross-window merge/hover listeners (extracted from App.tsx)
 │   │                        #   + hot re-resolution: config/global-profile/OS-theme changes re-resolve
-│   │                        #   every live tab's snapshot by name (lib/profileSync.ts)
+│   │                        #   every live tab's snapshot by name (lib/profileSync.ts); records per-profile
+│   │                        #   open recency via useProfileUsage (profile-usage.json, not config.toml)
 │   ├── useWindowGeometry.ts # useWindowGeometry(isMainWindow) — restore + persist window pos/size (Wayland-aware)
 │   ├── useEmptyStateWindowSize.ts # useEmptyStateWindowSize(opts) — when the app starts with no terminal, size the
 │   │                        #   main window to the default profile via profileWindowSize (same dummy-xterm measure
