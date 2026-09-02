@@ -91,11 +91,13 @@ export async function readConfigDocument(): Promise<ConfigFileResult> {
  * in place (see renderConfigToml in lib/configFormat.ts) so hand-written
  * key order, layout and comments survive the write; only when the current
  * file no longer parses does the save fall back to regenerating it from
- * scratch (logged — the broken layout is unsalvageable anyway). Throws on
- * IO failure — the caller (hooks/config.tsx saveConfig) logs and swallows.
+ * scratch (logged — the broken layout is unsalvageable anyway). Resolves
+ * with the exact text written, so the config hot-reload watcher can
+ * recognize its own writes and skip re-reading them. Throws on IO failure —
+ * the caller (hooks/config.tsx saveConfig) logs and swallows.
  * Last-write-wins.
  */
-export async function writeConfigDocument(config: GlobalConfig): Promise<void> {
+export async function writeConfigDocument(config: GlobalConfig): Promise<string> {
     const configPath = await getConfigFilePath();
     const existing = (await exists(configPath)) ? await readTextFile(configPath) : undefined;
     let text: string;
@@ -106,4 +108,5 @@ export async function writeConfigDocument(config: GlobalConfig): Promise<void> {
         text = renderConfigToml(undefined, config);
     }
     await writeTextFile(configPath, text);
+    return text;
 }

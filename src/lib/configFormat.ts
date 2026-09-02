@@ -57,6 +57,30 @@ function pruneNullish(value: unknown): unknown {
     return value;
 }
 
+/** Canonical JSON with object keys sorted recursively (arrays keep their
+ *  order — it is semantic). `undefined` properties are skipped so an
+ *  optional field present-as-undefined equals an absent one. */
+function canonicalJson(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+    if (value !== null && typeof value === "object") {
+        const entries = Object.entries(value)
+            .filter(([, v]) => v !== undefined)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+        return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+    }
+    return JSON.stringify(value) ?? "null";
+}
+
+/** Deep equality that ignores OBJECT key order. The hot-reload watcher
+ *  compares the file's parsed config against the in-memory state: the file
+ *  preserves the user's hand-written key order (patch-based writes) while
+ *  the state follows DEFAULT_CONFIG's order, so an order-sensitive compare
+ *  would false-positive and trigger pointless setConfig churn — which
+ *  re-seeds every settings draft and wipes unsaved UI edits. */
+export function semanticEqual(a: object, b: object): boolean {
+    return canonicalJson(a) === canonicalJson(b);
+}
+
 /** Serialize a config object to a full TOML document, pruning nullish
  *  values first (see {@link pruneNullish}). Uses smol-toml's writer (not
  *  toml-patch's) so nested tables render as `[profiles.render]` sections

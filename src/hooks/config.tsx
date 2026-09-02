@@ -1,10 +1,13 @@
-import {createContext, ReactNode, useContext, useEffect, useState} from "react";
+import {createContext, ReactNode, useContext, useEffect, useRef, useState} from "react";
 import {Binding, GlobalConfig} from "../types/config.ts";
 import {TerminalProfile} from "../types/terminal.ts";
 import {getCurrentWindow} from "@tauri-apps/api/window";
-import {DEFAULT_CONFIG} from "../constants.ts";
-import {readConfigDocument, writeConfigDocument} from "../lib/configFile.ts";
-import { info, debug, error } from "@tauri-apps/plugin-log";
+import {appDataDir} from "@tauri-apps/api/path";
+import {readTextFile, watch} from "@tauri-apps/plugin-fs";
+import {CONFIG_SAVE_PATH, DEFAULT_CONFIG} from "../constants.ts";
+import {readConfigDocument, writeConfigDocument, getConfigFilePath} from "../lib/configFile.ts";
+import {parseConfigToml, semanticEqual} from "../lib/configFormat.ts";
+import { info, debug, error, warn } from "@tauri-apps/plugin-log";
 
 interface GlobalConfigContextType {
     config: GlobalConfig;
@@ -95,15 +98,33 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
         });
     }, []);
 
+    // The exact text of our most recent successful write. The hot-reload
+    // watcher compares incoming file content against it to recognize (and
+    // skip) the app's own writes, so saving never loops back into a reload.
+    const lastWrittenTextRef = useRef<string | null>(null);
+    // Config write operations currently in flight. While any write is
+    // mid-flight the hot-reload watcher re-arms instead of reading: reading
+    // then would race our own half-applied write and misclassify it.
+    const writesInFlightRef = useRef(0);
+    // Mirror of the current config state for non-reactive readers (the
+    // watcher's semantic-equality guard).
+    const configRef = useRef(config);
+    configRef.current = config;
+
     const saveConfig = (newConfig: GlobalConfig): Promise<void> => {
         // Resolve once the flush to disk has settled (success or failure).
         // The write rejects on errors; we log and swallow so a disk hiccup
         // never throws into callers — the Promise resolves either way, which
         // lets the session close hook await durability before destroying the
         // window.
+        writesInFlightRef.current++;
         return writeConfigDocument(newConfig).then(
-            () => {},
+            (text) => {
+                lastWrittenTextRef.current = text;
+                writesInFlightRef.current--;
+            },
             (e: unknown) => {
+                writesInFlightRef.current--;
                 error(`Failed to persist config to disk: ${e}`).catch(() => {});
             },
         );
@@ -136,6 +157,69 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
             return updated;
         });
     };
+
+    // Hot reload: watch the app data dir for config.toml edits and apply
+    // them live. The directory (not the file) is watched so editors that
+    // save via atomic rename still surface — a file watch would follow the
+    // replaced inode and go quiet. Reload is guarded three ways so the
+    // app's own writes NEVER loop back into a state churn:
+    //  1. writes in flight → re-arm and wait (no read races our own write);
+    //  2. text identical to our last write → our own completed write;
+    //  3. parsed content semantically equal to the current state → skip.
+    // Guard 3 is the load-bearing one: the byte-level record (2) can miss
+    // after racing writes, and ANY setConfig — even with identical content
+    // — replaces every config-derived object reference, which re-seeds all
+    // settings drafts and wipes the user's unsaved UI edits. A broken
+    // hand-edit keeps the current state with a warn (the same "never
+    // overwrite a bad file" semantics as the startup loader). Runs once
+    // config has loaded; tear-off windows each run their own watcher and
+    // converge independently (this also gives cross-window config sync —
+    // a window whose state already matches the new content skips silently).
+    useEffect(() => {
+        if (isLoading) return;
+        let disposed = false;
+        let unwatch: (() => void) | undefined;
+        let debounce: ReturnType<typeof setTimeout> | undefined;
+        const scheduleReload = () => {
+            if (debounce !== undefined) clearTimeout(debounce);
+            // Editors and our own writer can each fire several events per
+            // save; collapse them into one deferred read.
+            debounce = setTimeout(() => {
+                debounce = undefined;
+                if (writesInFlightRef.current > 0) {
+                    // A write is mid-flight; its completion event may have
+                    // fired already, so re-arm ourselves rather than read a
+                    // half-raced state.
+                    scheduleReload();
+                    return;
+                }
+                getConfigFilePath().then((configPath) => readTextFile(configPath)).then((text) => {
+                    if (text === lastWrittenTextRef.current) return;
+                    const parsed = parseConfigToml(text) as unknown as GlobalConfig;
+                    const merged = migrateLegacyCopyWithCtrl({...DEFAULT_CONFIG, ...parsed});
+                    if (semanticEqual(merged, configRef.current)) return;
+                    setConfig(merged);
+                    info("Config hot-reloaded from disk").catch(() => {});
+                }).catch((e: unknown) => {
+                    warn(`Config hot-reload failed (keeping current state): ${e}`).catch(() => {});
+                });
+            }, 300);
+        };
+        appDataDir().then((dataDir) => watch(dataDir, (event) => {
+            if (!event.paths?.some((p) => p.endsWith(CONFIG_SAVE_PATH))) return;
+            scheduleReload();
+        })).then((unwatchFn) => {
+            if (disposed) unwatchFn();
+            else unwatch = unwatchFn;
+        }).catch((e: unknown) => {
+            error(`Failed to watch the config file for hot reload: ${e}`).catch(() => {});
+        });
+        return () => {
+            disposed = true;
+            unwatch?.();
+            if (debounce !== undefined) clearTimeout(debounce);
+        };
+    }, [isLoading]);
 
     useEffect(() => {
         if (!isLoading) {

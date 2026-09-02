@@ -120,7 +120,7 @@ lumina-terminal --sidebar hide                  # hide the sidebar this launch (
 
 ## Configuration
 
-The user config lives in `config.toml` (TOML, hand-editable — comments included). Every option — including the ones with no Settings UI — is documented in the [Configuration Reference](https://github.com/iewnfod/lumina-terminal/wiki/Configuration). A legacy `config.json` from older versions is still parsed and migrated automatically on first launch; the original is kept as `config.json.bak`.
+The user config lives in `config.toml` (TOML, hand-editable — comments included). Every option — including the ones with no Settings UI — is documented in the [Configuration Reference](https://github.com/iewnfod/lumina-terminal/wiki/Configuration). A legacy `config.json` from older versions is still parsed and migrated automatically on first launch; the original is kept as `config.json.bak`. The file is watched live: hand-edits apply without a restart, and the app's own saves patch the document in place, so your ordering and comments survive. Render options (font, theme, cursor, …) hot-apply to running terminals; `rows`/`cols` and the webgl toggle take effect on new terminals only.
 
 ## Performance
 

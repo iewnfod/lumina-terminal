@@ -2,6 +2,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
 import {parseProfile} from "../lib/term.ts";
+import {reResolveByName} from "../lib/profileSync.ts";
 import {reorderByDrop} from "../lib/tabReorder.ts";
 import {killTerminal, getTerminalCwd, setActiveTab} from "../lib/terminalApi.ts";
 import {info, debug, error, warn} from "@tauri-apps/plugin-log";
@@ -86,7 +87,8 @@ export function useTerminalManager(): TerminalManager {
     // OS light/dark preference drives the fallback terminal palette (a bare
     // profile with no themePath/inline theme): light → GitHub Light, dark/未决
     // → legacy black. Passed into parseProfile so new tabs pick it up at create
-    // time. Existing tabs keep their baked-in palette (same as themePath).
+    // time; a live system flip re-resolves existing tabs too (the hot-reload
+    // effect below), so bare-profile terminals follow the OS theme live.
     const systemTheme = useSystemTheme();
     // Parsed launch flags (Alacritty-style), parsed once on the backend.
     // `undefined` while the first fetch is in flight; the seed effect waits on
@@ -140,6 +142,34 @@ export function useTerminalManager(): TerminalManager {
     const defaultProfile = useMemo(() => {
         return config.profiles.find(p => p.default) || config.profiles[0];
     }, [config.profiles]);
+
+    // Hot-reload: when profiles, the global profile, or the OS theme change
+    // (settings save, hand-edited config.toml, system light/dark flip),
+    // re-resolve every live tab's profile snapshot by name so running
+    // terminals pick the change up — Term applies the new render options to
+    // its live xterm instance. Tabs whose profile was deleted or renamed
+    // away keep their snapshot (an edit never kills its running tabs).
+    // Content-equal passes return null, so this cannot loop with its own
+    // state writes. `terminals` is deliberately NOT a dependency: including
+    // it would re-resolve (backend theme reads included) after every tab
+    // open; entries are picked up on the next actual source change.
+    useEffect(() => {
+        if (!initialized) return;
+        let cancelled = false;
+        reResolveByName(terminals, config.profiles, (raw) =>
+            parseProfile(raw, config.globalProfile, systemTheme),
+        ).then((next) => {
+            if (!cancelled && next) {
+                setTerminals(next);
+                info(`Hot-applied profile/global-profile changes to ${Object.keys(next).length} terminal(s)`);
+            }
+        }).catch((e) => {
+            warn(`Failed to hot-apply profile changes (tabs keep their current options): ${e}`).catch(() => {});
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [initialized, config.profiles, config.globalProfile, systemTheme]);
 
     // Session persistence: close-time save hook + one-shot startup restore
     // load + the "ask" dialog state. Passed the manager's refs so the close

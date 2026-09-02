@@ -99,6 +99,25 @@ interface TermProps {
     onTearOff?: () => void;
 }
 
+/** Profile keys the hot-apply effect must NOT assign onto the live xterm
+ *  instance: the mount-time constructor strip excludes them (not xterm
+ *  options), plus cols/rows (would resize the OS window), webgl and
+ *  graphemeClusters (addons can't be unloaded cleanly), ligatures (handled
+ *  by re-registering the character joiner) and theme (applied with the
+ *  edge-sampling fallback kept in sync). */
+const HOT_APPLY_EXCLUDED_KEYS: ReadonlySet<string> = new Set([
+    "cols", "rows", "webgl", "padding", "themePath", "theme", "fontStyle",
+    "graphemeClusters", "ligatures",
+    "name", "exePath", "cwd", "default", "type", "ssh",
+    "startupCommand", "keepAfterExit", "launcher",
+]);
+
+/** xterm options that change cell metrics — applying one requires a re-fit
+ *  (and, when the grid shifts, a PTY resize via the onResize path). */
+const FONT_METRIC_KEYS: ReadonlySet<string> = new Set([
+    "fontFamily", "fontSize", "fontWeight", "fontWeightBold", "letterSpacing", "lineHeight",
+]);
+
 export default function Term(props : TermProps) {
     const {id, profile, isActive, bindings, paddingOffset} = props;
     const term = useRef<Terminal | null>(null);
@@ -114,6 +133,19 @@ export default function Term(props : TermProps) {
     // resize-observer effect (which re-runs normally under StrictMode, unlike
     // the one-shot init effect) can call fit() without re-deriving it.
     const fitAddonRef = useRef<FloatingFitAddon | null>(null);
+    // Id returned by term.registerCharacterJoiner for ligatures, so a hot
+    // font change can deregister the old joiner (it closes over the OLD
+    // family's font table) and re-enable against the new family.
+    const ligatureJoinerIdRef = useRef<number | undefined>(undefined);
+    // The profile theme's canvas background, i.e. the color the edge-sampling
+    // effect restores when a fullscreen TUI's sampled background goes away.
+    // Kept in a ref rather than an effect-local snapshot so hot-applying a new
+    // theme updates the fallback the ALREADY-RUNNING sampler restores to.
+    const profileThemeBgRef = useRef<string | undefined>(profile.theme?.background);
+    // The last profile whose render options were applied to the live xterm
+    // instance (at mount or via the hot-apply effect below). Diffed against
+    // the incoming profile to compute the minimal set of live changes.
+    const appliedProfileRef = useRef<TerminalProfile>(profile);
     const padding = useMemo(() => parseProfilePadding(profile, paddingOffset), [profile, paddingOffset]);
     const {config} = useGlobalConfig();
     const t = useI18n();
@@ -402,7 +434,7 @@ export default function Term(props : TermProps) {
             const family = profile.fontFamily;
             import("../lib/ligatures.ts").then(({enableLigatures}) => {
                 if (!term.current) return;
-                enableLigatures(term.current, family);
+                ligatureJoinerIdRef.current = enableLigatures(term.current, family);
             }).catch((e) => {
                 info(`Failed to load ligatures module: ${e}`);
             });
@@ -510,6 +542,71 @@ export default function Term(props : TermProps) {
             });
         }
     }, [id]);
+
+    // Hot-apply render options when the profile changes (config hot reload,
+    // settings save, profile edit). xterm's options are runtime-mutable, so
+    // everything xterm owns is assigned onto the live instance — the same
+    // key set the mount-time constructor strip passes through. Deliberately
+    // NOT hot-applied:
+    //  - cols/rows: would resize the OS window under the user's hands;
+    //    applies to NEW terminals/windows only.
+    //  - webgl / graphemeClusters: addons cannot be unloaded cleanly once
+    //    loaded — new terminals only.
+    // theme is applied with the edge-sampling fallback (profileThemeBgRef)
+    // kept in sync; a font-metric or padding change re-fits, which re-sizes
+    // the PTY through the existing onResize → resizeTerminal path; ligatures
+    // is handled by re-registering the character joiner against the new
+    // family (the old joiner closes over the old font table).
+    useEffect(() => {
+        const liveTerm = term.current;
+        if (!liveTerm) return;
+        const prev = appliedProfileRef.current;
+        if (prev === profile) return;
+        appliedProfileRef.current = profile;
+
+        const current = profile as unknown as Record<string, unknown>;
+        const before = prev as unknown as Record<string, unknown>;
+        let fontMetricsChanged = false;
+        for (const key of new Set([...Object.keys(current), ...Object.keys(before)])) {
+            if (HOT_APPLY_EXCLUDED_KEYS.has(key)) continue;
+            if (current[key] === before[key]) continue;
+            (liveTerm.options as unknown as Record<string, unknown>)[key] = current[key];
+            if (FONT_METRIC_KEYS.has(key)) fontMetricsChanged = true;
+        }
+
+        if (JSON.stringify(profile.theme) !== JSON.stringify(prev.theme) && profile.theme) {
+            // Update the fallback BEFORE assigning: the edge sampler's next
+            // tick re-applies a fullscreen TUI's color on top of this, and
+            // its clear path restores from profileThemeBgRef.
+            profileThemeBgRef.current = profile.theme.background;
+            liveTerm.options.theme = {...profile.theme};
+        }
+
+        if (profile.ligatures !== prev.ligatures
+            || (profile.ligatures && profile.fontFamily !== prev.fontFamily)) {
+            if (ligatureJoinerIdRef.current !== undefined) {
+                liveTerm.deregisterCharacterJoiner(ligatureJoinerIdRef.current);
+                ligatureJoinerIdRef.current = undefined;
+            }
+            if (profile.ligatures) {
+                const family = profile.fontFamily;
+                import("../lib/ligatures.ts").then(({enableLigatures}) => {
+                    if (term.current) {
+                        ligatureJoinerIdRef.current = enableLigatures(term.current, family);
+                    }
+                }).catch((e) => {
+                    info(`Failed to load ligatures module: ${e}`);
+                });
+            }
+        }
+
+        if (fontMetricsChanged || JSON.stringify(profile.padding) !== JSON.stringify(prev.padding)) {
+            // fit() re-measures with the new metrics; when cols/rows shift,
+            // the onResize handler forwards the new grid to the PTY.
+            fitAddonRef.current?.fit();
+        }
+        info(`Hot-applied render options to terminal ${id} (profile=${profile.name})`).catch(() => {});
+    }, [profile, id]);
 
     // WebKitGTK + IBus can commit text without a matching compositionstart.
     // Normalize that event sequence before xterm's delayed keyCode-229 fallback
@@ -741,20 +838,22 @@ export default function Term(props : TermProps) {
         if (!term.current) return;
         const xtermEl = termRef.current?.querySelector(".xterm") as HTMLElement | null;
         const viewportEl = termRef.current?.querySelector(".xterm-viewport") as HTMLElement | null;
-        // Snapshot the profile theme's original canvas background. The sampled
-        // edge color overrides this base color while a fullscreen TUI is active
-        // (so the canvas itself follows the TUI); on clear we restore it so the
+        // The profile theme's original canvas background is read from
+        // profileThemeBgRef (NOT snapshotted here) so the hot-apply effect
+        // can update it when the user changes the theme: the sampled edge
+        // color overrides this base while a fullscreen TUI is active (so the
+        // canvas itself follows the TUI); on clear we restore it so the
         // terminal falls back to the configured theme instead of xterm's
         // built-in default (black). Without this, applying an empty/invalid
-        // background would reset theme.background and drop the whole custom theme.
-        const originalThemeBg = term.current.options.theme?.background;
+        // background would reset theme.background and drop the whole custom
+        // theme.
 
         const apply = (next: string | null) => {
-            // When clearing, fall back to the original theme bg so the xterm
+            // When clearing, fall back to the (current) theme bg so the xterm
             // layers and canvas show the configured theme again (NOT "" — an
             // empty background makes xterm drop the theme and revert to its
             // built-in black default).
-            const value = next ?? originalThemeBg ?? "";
+            const value = next ?? profileThemeBgRef.current ?? "";
             if (xtermEl && xtermEl.style.backgroundColor !== value) {
                 xtermEl.style.backgroundColor = value;
             }
@@ -840,8 +939,9 @@ export default function Term(props : TermProps) {
             if (viewportEl) viewportEl.style.backgroundColor = "";
             // Restore the terminal theme's original canvas background so a
             // remount/tab switch doesn't inherit the last sampled TUI color.
-            if (term.current && originalThemeBg !== undefined && term.current.options.theme?.background !== originalThemeBg) {
-                term.current.options.theme = {...term.current.options.theme, background: originalThemeBg};
+            if (term.current && profileThemeBgRef.current !== undefined
+                && term.current.options.theme?.background !== profileThemeBgRef.current) {
+                term.current.options.theme = {...term.current.options.theme, background: profileThemeBgRef.current};
             }
             setContainerBg(null);
         };

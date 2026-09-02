@@ -120,7 +120,7 @@ lumina-terminal --sidebar hide                  # 本次启动隐藏侧边栏（
 
 ## 配置
 
-用户配置存放在 `config.toml`（TOML 格式，支持手写注释）。全部可配置项 —— 包括没有设置界面的「仅配置文件」字段 —— 都在[配置参考](https://github.com/iewnfod/lumina-terminal/wiki/Configuration_zh)中说明。旧版本的 `config.json` 仍可解析，并会在首次启动时自动迁移；原文件保留为 `config.json.bak`。
+用户配置存放在 `config.toml`（TOML 格式，支持手写注释）。全部可配置项 —— 包括没有设置界面的「仅配置文件」字段 —— 都在[配置参考](https://github.com/iewnfod/lumina-terminal/wiki/Configuration_zh)中说明。旧版本的 `config.json` 仍可解析，并会在首次启动时自动迁移；原文件保留为 `config.json.bak`。配置文件被实时监听：手动修改无需重启即可生效，应用自身的保存也以补丁方式写回，你的键序和注释不会被打乱。渲染选项（字体、主题、光标……）会热应用到正在运行的终端；`rows`/`cols` 与 webgl 开关仅对新终端生效。
 
 ## 性能
 

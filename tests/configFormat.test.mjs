@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {TomlError} from "smol-toml";
 
-import {parseConfigToml, renderConfigToml, unwrapLegacyJson} from "../src/lib/configFormat.ts";
+import {parseConfigToml, renderConfigToml, semanticEqual, unwrapLegacyJson} from "../src/lib/configFormat.ts";
 
 /** A representative GlobalConfig slice exercising every TOML shape the
  * config uses: array-of-tables (profiles), nested tables (render options),
@@ -120,6 +120,34 @@ test("render throws on a non-empty but unparseable existing document", () => {
     // The caller (writeConfigDocument) catches this and falls back to a
     // from-scratch render rather than losing the save.
     assert.throws(() => renderConfigToml("broken [[[", {a: 1}));
+});
+
+test("semanticEqual ignores object key order (file order vs state order)", () => {
+    // The hot-reload guard depends on this: patch-based writes preserve the
+    // file's hand-written key order while the in-memory state follows
+    // DEFAULT_CONFIG's order.
+    const fromFile = {language: "zh-cn", profiles: [{name: "a", fontSize: 14}], autoProxy: true};
+    const fromState = {autoProxy: true, profiles: [{name: "a", fontSize: 14}], language: "zh-cn"};
+    assert.ok(semanticEqual(fromFile, fromState));
+});
+
+test("semanticEqual detects real differences (nested, typed, array order)", () => {
+    assert.ok(!semanticEqual({a: {b: 1}}, {a: {b: 2}}));
+    assert.ok(!semanticEqual({a: 1}, {a: "1"}));
+    assert.ok(!semanticEqual({a: [1, 2]}, {a: [2, 1]}));  // arrays are ordered
+    assert.ok(!semanticEqual({a: 1}, {a: 1, b: 2}));
+});
+
+test("semanticEqual treats undefined fields as absent", () => {
+    // Optional fields in state are commonly undefined; the parsed file omits
+    // them entirely — those must compare equal.
+    assert.ok(semanticEqual({a: 1, b: undefined}, {a: 1}));
+    assert.ok(semanticEqual({a: {b: undefined, c: 2}}, {a: {c: 2}}));
+});
+
+test("semanticEqual round-trips through a TOML render+parse", () => {
+    const config = {language: "en-us", globalProfile: {fontSize: 14, ligatures: true}, profiles: [{name: "zsh"}]};
+    assert.ok(semanticEqual(config, parseConfigToml(renderConfigToml(undefined, config))));
 });
 
 test("unwrapLegacyJson unwraps the plugin-store {\"config\": {...}} wrapper", () => {

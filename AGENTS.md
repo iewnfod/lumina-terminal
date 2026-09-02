@@ -116,6 +116,10 @@ src/
 │   ├── tabDragOverlay.ts    # mountTabDragOverlay (transparent full-window layer keeping dragover alive over canvas)
 │   ├── tabReorder.ts        # Sidebar drag-reorder math: dropTargetFor (pointer Y → gap index)
 │   │                        #   + reorderByDrop (move item into gap; same ref when it's a no-op)
+│   ├── profileSync.ts       # reResolveByName — hot-reload core: re-resolve live tab profile
+│   │                        #   snapshots by name against fresh config sources (deleted profiles
+│   │                        #   keep their snapshot; null when nothing changed). Generic +
+│   │                        #   dependency-free so node --test loads it directly
 │   ├── chunkedWriter.ts     # ChunkedWriter — bounded-chunk feeder for term.write() (UTF-16-safe slicing)
 │   ├── terminalGeometry.ts  # profileWindowSize — measure cell size + compute OS window size for rows/cols
 │   ├── initialWindowSize.ts # Shared once-per-session lock for "size the main window to a terminal profile"
@@ -127,7 +131,9 @@ src/
 │   └── FloatingFitAddon.ts  # xterm fit addon subclass (centered sub-cell fit)
 │
 ├── hooks/                   # React hooks (start with `use`)
-│   ├── config.tsx           # GlobalConfigProvider + useGlobalConfig (LazyStore-backed)
+│   ├── config.tsx           # GlobalConfigProvider + useGlobalConfig — config.toml IO via
+│   │                        #   lib/configFile.ts + the config hot-reload watcher (dir watch +
+│   │                        #   debounce + own-write suppression via lastWrittenTextRef)
 │   ├── i18n.tsx             # useI18n, languageNames, Languages type
 │   ├── maximized.ts         # useMaximized (window resize → isMaximized)
 │   ├── useAlwaysOnTop.ts    # useAlwaysOnTop() → {pinned, toggle}: per-window always-on-top
@@ -158,6 +164,8 @@ src/
 │   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
 │   ├── useTerminalManager.ts# useTerminalManager() — tab list/profiles/active id + create/close/reorder/
 │   │                        #   tear-off + cross-window merge/hover listeners (extracted from App.tsx)
+│   │                        #   + hot re-resolution: config/global-profile/OS-theme changes re-resolve
+│   │                        #   every live tab's snapshot by name (lib/profileSync.ts)
 │   ├── useWindowGeometry.ts # useWindowGeometry(isMainWindow) — restore + persist window pos/size (Wayland-aware)
 │   ├── useEmptyStateWindowSize.ts # useEmptyStateWindowSize(opts) — when the app starts with no terminal, size the
 │   │                        #   main window to the default profile via profileWindowSize (same dummy-xterm measure
@@ -181,7 +189,10 @@ src/
 │   │   ├── SaveFooter.tsx       # Save (disabled-when-clean) + unsaved hint + trailing action slot
 │   │   └── ExternalLink.tsx     # <a> that opens via lib/openerApi.ts — every plain external
 │   │                            #   link goes through this (motion anchors call openExternal)
-│   ├── Term.tsx             # Single xterm instance: addons, PTY lifecycle, edge bg polling
+│   ├── Term.tsx             # Single xterm instance: addons, PTY lifecycle, edge bg polling,
+│   │                        #   + hot-apply effect (render-option changes mutate the live
+│   │                        #   term.options + re-fit + ligature joiner re-register; cols/rows
+│   │                        #   and webgl are deliberately NOT hot-applied)
 │   ├── SearchBar.tsx        # In-terminal search overlay (Ctrl+F): drives the headless
 │   │                        #   @xterm/addon-search via a glass top slide-down bar (case /
 │   │                        #   whole-word / regex toggles + result counter). Mounted in Term.
