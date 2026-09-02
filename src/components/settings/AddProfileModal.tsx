@@ -37,8 +37,6 @@ export default function AddProfileModal({ isOpen, onOpenChange, onCreate, border
                                         onCreate({
                                             name: t["Untitled Profile"],
                                             exePath: "",
-                                            rows: 24,
-                                            cols: 80,
                                             type: "local",
                                         });
                                     }}
@@ -52,8 +50,6 @@ export default function AddProfileModal({ isOpen, onOpenChange, onCreate, border
                                         onCreate({
                                             name: t["Untitled Profile"],
                                             exePath: "",
-                                            rows: 24,
-                                            cols: 80,
                                             type: "remote",
                                             ssh: { host: "", port: 22 },
                                         });
@@ -79,8 +75,6 @@ export default function AddProfileModal({ isOpen, onOpenChange, onCreate, border
                                                     onCreate({
                                                         name: entry.host,
                                                         exePath: "",
-                                                        rows: 24,
-                                                        cols: 80,
                                                         type: "remote",
                                                         ssh: entry.config,
                                                     });
