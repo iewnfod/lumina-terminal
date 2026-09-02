@@ -42,6 +42,38 @@
     "log:default",
     "updater:default",
     "process:default",
-    "clipboard-manager:allow-read-text"
+    "clipboard-manager:allow-read-text",
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        {
+          "path": "$APPDATA/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [
+        {
+          "path": "$APPDATA/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        {
+          "path": "$APPDATA/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-rename",
+      "allow": [
+        {
+          "path": "$APPDATA/**"
+        }
+      ]
+    }
   ]
 }

@@ -57,7 +57,13 @@ src/
 │
 ├── lib/                     # Pure, framework-agnostic logic (NO React)
 │   ├── platform.ts          # isMacOS() / isLinux()
-│   ├── configFile.ts        # config.json path + openConfigFile()
+│   ├── configFile.ts        # Config-file IO domain: config.toml path + openConfigFile +
+│   │                        #   readConfigDocument (toml preferred; legacy config.json parsed
+│   │                        #   and migrated, then renamed config.json.bak) + writeConfigDocument
+│   ├── configFormat.ts      # Pure config format layer: TOML parse + renderConfigToml (patches onto
+│   │                        #   the existing document — key order, layout and comments survive
+│   │                        #   settings rewrites; nullish pruning) + legacy JSON unwrap — zero
+│   │                        #   internal imports so node --test loads it directly
 │   ├── color.ts             # isColorDark, foregroundFor, adjustColor, visibleRed
 │   ├── glass.ts             # glassSurface / glassBorder / elevationShadow — backdrop-filter material
 │   │                        #   + Wayland/WebKitGTK opaque fallback (single source for the glass look)

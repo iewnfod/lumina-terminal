@@ -47,7 +47,7 @@ export interface GlobalConfig {
      *  (lib/edgeBackground.ts) — the remaining cells are edge-touching
      *  characters and are ignored. Default 0.9; 1 restores the strict
      *  all-cells-uniform behavior. Values outside (0,1] or non-numbers fall
-     *  back to the default. An uncommon setting — no UI; edit config.json
+     *  back to the default. An uncommon setting — no UI; edit config.toml
      *  to change. */
     edgeBackgroundCoverage?: number;
     /** How the app's light/dark appearance is decided. This controls only the
@@ -111,8 +111,8 @@ export interface GlobalConfig {
      * are opened; entries for deleted profiles are harmless dead keys. */
     profileLastOpened?: Record<string, number>;
     /** Max number of profiles the empty-state quick-launch list shows (the most
-     * recently opened first). An uncommon setting — no UI; edit config.json to
-     * change. 0/undefined/unset → show all. */
+     *  recently opened first). An uncommon setting — no UI; edit config.toml
+     *  to change. 0/undefined/unset → show all. */
     emptyStateMaxProfiles?: number;
     /** When true (default), watch the system proxy (GNOME gsettings / KDE
      *  kioslaverc / macOS scutil / Windows registry) and keep proxy env vars

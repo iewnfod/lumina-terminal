@@ -3,7 +3,7 @@ import {DEFAULT_BINDINGS} from "../constants.ts";
 import {actionSignature, keySignature} from "./bindings.ts";
 
 /** All actions a user can bind in the settings UI. `openConfigFile` (opens
- *  config.json) is intentionally excluded — it has no UI affordance. */
+ *  config.toml) is intentionally excluded — it has no UI affordance. */
 export const ALL_ACTIONS: Actions[] = [
     "newTab",
     "closeTab",

@@ -21,7 +21,7 @@ import {openConfigFile} from "../lib/configFile.ts";
 import {useGlobalConfig} from "../hooks/config.tsx";
 import {useI18n} from "../hooks/i18n.tsx";
 import {useOutputMode} from "../hooks/useOutputMode.ts";
-import { info, debug, error } from "@tauri-apps/plugin-log";
+import { info, debug, error, warn } from "@tauri-apps/plugin-log";
 import {getCurrentWebview} from "@tauri-apps/api/webview";
 import {WebLinksAddon} from "@xterm/addon-web-links";
 import {openExternal} from "../lib/openerApi.ts";
@@ -142,7 +142,9 @@ export default function Term(props : TermProps) {
                 props.onNewTab?.(args?.profileName);
                 break;
             case "openConfigFile":
-                openConfigFile().then();
+                openConfigFile().catch((e: unknown) => {
+                    warn(`Failed to open the config file: ${e}`).catch(() => {});
+                });
                 break;
             case "openCommandPalette":
                 props.onOpenCommandPalette?.();

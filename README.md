@@ -120,7 +120,7 @@ lumina-terminal --sidebar hide                  # hide the sidebar this launch (
 
 ## Configuration
 
-Every `config.json` option — including the ones with no Settings UI — is documented in the [Configuration Reference](https://github.com/iewnfod/lumina-terminal/wiki/Configuration).
+The user config lives in `config.toml` (TOML, hand-editable — comments included). Every option — including the ones with no Settings UI — is documented in the [Configuration Reference](https://github.com/iewnfod/lumina-terminal/wiki/Configuration). A legacy `config.json` from older versions is still parsed and migrated automatically on first launch; the original is kept as `config.json.bak`.
 
 ## Performance
 
@@ -194,6 +194,8 @@ See [**CONTRIBUTING.md**](./CONTRIBUTING.md) for the development setup, app-icon
 * [Lucide Icons](https://lucide.dev/) — icon set
 * [Framer Motion](https://www.framer.com/motion/) — animation library
 * [react-markdown](https://github.com/remarkjs/react-markdown) — markdown rendering
+* [smol-toml](https://github.com/squirrelchat/smol-toml) — TOML parsing/serialization for the config file
+* [toml-patch](https://github.com/DecimalTurn/toml-patch/) — comment/format-preserving TOML rewriting for the config file
 
 ### Tooling
 * [pnpm](https://pnpm.io/) — package manager

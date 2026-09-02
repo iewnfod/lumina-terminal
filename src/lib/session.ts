@@ -7,7 +7,7 @@ import {SESSION_STORE_PATH} from "../constants.ts";
  * window close and restoring them on the next launch.
  *
  * This mirrors the {@link lib/tearoff.ts} pattern: a dedicated `LazyStore`
- * (`session.json`, NOT the user's `config.json`) so session data never
+ * (`session.json`, NOT the user's `config.toml`) so session data never
  * pollutes app config. All failures are logged and swallowed so a store
  * hiccup can never block startup or crash on close.
  *

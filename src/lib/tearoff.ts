@@ -27,7 +27,7 @@ export const TAB_DRAG_MIME = "application/x-lumina-tab";
  *
  * The label is both the window identity and the store key, so no separate
  * hand-off channel (deep-link / argv) is needed. `tearoff.json` is a
- * dedicated LazyStore — NOT the user's config.json — so tear-off never
+ * dedicated LazyStore — NOT the user's config.toml — so tear-off never
  * pollutes the persisted app config.
  */
 

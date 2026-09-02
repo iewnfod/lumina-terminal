@@ -115,7 +115,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     );
     // Sidebar visibility. The setting drives it, unless a one-shot CLI
     // override (--sidebar show|hide) is active: `sidebarOverride` is local
-    // state, so the flag NEVER writes config.json. Any explicit change
+    // state, so the flag NEVER writes config.toml. Any explicit change
     // (toggle button / binding / palette / settings page) drops the override
     // and persists as usual. The CLI value itself is resolved further down,
     // after `isMainWindow` (cliArgs is process-global; without the gate,

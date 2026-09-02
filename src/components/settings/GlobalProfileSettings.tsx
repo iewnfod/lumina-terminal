@@ -21,7 +21,7 @@ export default function GlobalProfileSettings({borderColor}: {borderColor: strin
         (d) => {
             info("Global profile settings saved");
             // Trim empty strings to undefined so they don't serialize as "" in
-            // config.json (matches the original panel's behavior).
+            // config.toml (matches the original panel's behavior).
             const trimmed: TerminalRenderOptions = JSON.parse(JSON.stringify({
                 ...d,
                 fontFamily: d.fontFamily?.trim() || undefined,

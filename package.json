@@ -11,6 +11,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@decimalturn/toml-patch": "^3.0.5",
     "@heroui/react": "^3.0.5",
     "@heroui/styles": "^3.0.5",
     "@tailwindcss/vite": "^4.3.0",
@@ -42,6 +43,7 @@
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "smol-toml": "^1.8.0",
     "tailwindcss": "^4.3.0",
     "vite-plugin-compression": "^0.5.1"
   },

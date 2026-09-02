@@ -17,7 +17,7 @@
 //!
 //! Lifecycle is config-driven from the frontend: `start_mcp_server` /
 //! `stop_mcp_server` are invoked when the user toggles the setting, keeping
-//! the "config.json is frontend-owned" invariant intact.
+//! the "config.toml is frontend-owned" invariant intact.
 
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};

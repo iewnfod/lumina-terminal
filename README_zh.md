@@ -120,7 +120,7 @@ lumina-terminal --sidebar hide                  # 本次启动隐藏侧边栏（
 
 ## 配置
 
-`config.json` 的全部可配置项 —— 包括没有设置界面的「仅配置文件」字段 —— 都在[配置参考](https://github.com/iewnfod/lumina-terminal/wiki/Configuration_zh)中说明。
+用户配置存放在 `config.toml`（TOML 格式，支持手写注释）。全部可配置项 —— 包括没有设置界面的「仅配置文件」字段 —— 都在[配置参考](https://github.com/iewnfod/lumina-terminal/wiki/Configuration_zh)中说明。旧版本的 `config.json` 仍可解析，并会在首次启动时自动迁移；原文件保留为 `config.json.bak`。
 
 ## 性能
 
@@ -194,6 +194,8 @@ pnpm tauri dev
 * [Lucide Icons](https://lucide.dev/) — 图标库
 * [Framer Motion](https://www.framer.com/motion/) — 动画库
 * [react-markdown](https://github.com/remarkjs/react-markdown) — Markdown 渲染
+* [smol-toml](https://github.com/squirrelchat/smol-toml) — 配置文件的 TOML 解析/序列化
+* [toml-patch](https://github.com/DecimalTurn/toml-patch/) — 配置文件写回时保留注释与排版的 TOML 补丁重写
 
 ### 工具链
 * [pnpm](https://pnpm.io/) — 包管理器

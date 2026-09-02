@@ -11,6 +11,9 @@ importers:
 
   .:
     dependencies:
+      '@decimalturn/toml-patch':
+        specifier: ^3.0.5
+        version: 3.0.5
       '@heroui/react':
         specifier: ^3.0.5
         version: 3.0.5(@react-spectrum/provider@3.11.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@types/react-dom@19.2.4(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(tailwindcss@4.3.0)
@@ -25,7 +28,7 @@ importers:
         version: 2.11.0
       '@tauri-apps/plugin-clipboard-manager':
         specifier: ^2.3.2
-        version: 2.3.2
+        version: 2.3.3
       '@tauri-apps/plugin-dialog':
         specifier: ~2.7.1
         version: 2.7.1
@@ -104,6 +107,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      smol-toml:
+        specifier: ^1.8.0
+        version: 1.8.0
       tailwindcss:
         specifier: ^4.3.0
         version: 4.3.0
@@ -236,6 +242,10 @@ packages:
   '@babel/types@7.29.0':
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
+
+  '@decimalturn/toml-patch@3.0.5':
+    resolution: {integrity: sha512-awLRLA6DfoQFiv8xB6+BZBtTh1DuiUSxxIn26i7v6wnMRj6+fhcEIgAFuKo8PArK7iy882yN+jBdA26fjKOj8A==}
+    engines: {node: '>=16'}
 
   '@esbuild/aix-ppc64@0.27.7':
     resolution: {integrity: sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==}
@@ -920,8 +930,8 @@ packages:
     engines: {node: '>= 10'}
     hasBin: true
 
-  '@tauri-apps/plugin-clipboard-manager@2.3.2':
-    resolution: {integrity: sha512-CUlb5Hqi2oZbcZf4VUyUH53XWPPdtpw43EUpCza5HWZJwxEoDowFzNUDt1tRUXA8Uq+XPn17Ysfptip33sG4eQ==}
+  '@tauri-apps/plugin-clipboard-manager@2.3.3':
+    resolution: {integrity: sha512-KnyoTs9gj1yEgDkSPUNjOIOHjJTr5wk8IWcYMOWxYTIJCip6QwlyPW8u2X+6bd6kHM4fAdZNpxoal0gy/TwJbg==}
 
   '@tauri-apps/plugin-dialog@2.7.1':
     resolution: {integrity: sha512-OK1UBXYt+ojcmxMktzzuyonYIFta8CmAASpX+CA+DTGK24KlHjhYI6x2iOJ/TjZF4N7/ACK1oFmEOjIY9IhzOQ==}
@@ -1726,6 +1736,10 @@ packages:
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
 
+  smol-toml@1.8.0:
+    resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
+    engines: {node: '>= 18'}
+
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
@@ -2048,6 +2062,8 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
+
+  '@decimalturn/toml-patch@3.0.5': {}
 
   '@esbuild/aix-ppc64@0.27.7':
     optional: true
@@ -2568,7 +2584,7 @@ snapshots:
       '@tauri-apps/cli-win32-ia32-msvc': 2.11.2
       '@tauri-apps/cli-win32-x64-msvc': 2.11.2
 
-  '@tauri-apps/plugin-clipboard-manager@2.3.2':
+  '@tauri-apps/plugin-clipboard-manager@2.3.3':
     dependencies:
       '@tauri-apps/api': 2.11.0
 
@@ -3644,6 +3660,8 @@ snapshots:
   shebang-regex@3.0.0: {}
 
   signal-exit@3.0.7: {}
+
+  smol-toml@1.8.0: {}
 
   source-map-js@1.2.1: {}
 

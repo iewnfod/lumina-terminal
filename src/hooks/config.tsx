@@ -1,12 +1,10 @@
 import {createContext, ReactNode, useContext, useEffect, useState} from "react";
 import {Binding, GlobalConfig} from "../types/config.ts";
-import {LazyStore} from "@tauri-apps/plugin-store";
 import {TerminalProfile} from "../types/terminal.ts";
 import {getCurrentWindow} from "@tauri-apps/api/window";
-import {CONFIG_SAVE_PATH, DEFAULT_CONFIG} from "../constants.ts";
+import {DEFAULT_CONFIG} from "../constants.ts";
+import {readConfigDocument, writeConfigDocument} from "../lib/configFile.ts";
 import { info, debug, error } from "@tauri-apps/plugin-log";
-
-const store = new LazyStore(CONFIG_SAVE_PATH);
 
 interface GlobalConfigContextType {
     config: GlobalConfig;
@@ -57,14 +55,28 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         const loadConfig = async () => {
             info("Loading config...");
-            const savedConfig = await store.get<GlobalConfig>("config");
             let loadedConfig = DEFAULT_CONFIG;
-            if (savedConfig) {
-                loadedConfig = { ...loadedConfig, ...savedConfig };
+            const result = await readConfigDocument();
+            if (result.kind === "loaded") {
+                loadedConfig = { ...loadedConfig, ...result.config };
+            } else if (result.kind === "absent") {
+                // First run: materialize config.toml with the defaults so
+                // users can discover and hand-edit it.
+                saveConfig(loadedConfig);
             }
-            loadedConfig = migrateLegacyCopyWithCtrl(loadedConfig);
+            // "unreadable": run on defaults but leave the broken file alone.
+            const migrated = migrateLegacyCopyWithCtrl(loadedConfig);
+            if (migrated !== loadedConfig) {
+                // The one-time migration changed something — persist it so
+                // the legacy flag is stripped from the file for good.
+                saveConfig(migrated);
+                loadedConfig = migrated;
+            }
+            // NOTE: a successful plain load does NOT write back — the file is
+            // only written on first run, migrations, and real config changes.
+            // (When a write does happen, renderConfigToml patches the existing
+            // document in place, so hand-written order and comments survive.)
             setConfig(loadedConfig);
-            store.set("config", loadedConfig).then();
             info(`Config loaded: language=${loadedConfig.language}, profiles=${loadedConfig.profiles.length}`);
             setIsLoading(false);
             // Preload the global profile's font for ligature support so the
@@ -84,12 +96,12 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const saveConfig = (newConfig: GlobalConfig): Promise<void> => {
-        // Resolve once the flush to disk has settled (success or failure). The
-        // store APIs reject on errors; we log and swallow so a disk hiccup
+        // Resolve once the flush to disk has settled (success or failure).
+        // The write rejects on errors; we log and swallow so a disk hiccup
         // never throws into callers — the Promise resolves either way, which
         // lets the session close hook await durability before destroying the
         // window.
-        return store.set("config", newConfig).then(() => store.save()).then(
+        return writeConfigDocument(newConfig).then(
             () => {},
             (e: unknown) => {
                 error(`Failed to persist config to disk: ${e}`).catch(() => {});

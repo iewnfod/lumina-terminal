@@ -62,11 +62,24 @@ export const GITHUB_LIGHT_TERMINAL_THEME: ITheme = {
     brightWhite: "#d1d5da",
 };
 
-export const CONFIG_SAVE_PATH = "config.json";
+/** The user's config file: a plain TOML document (root table IS the config,
+ *  no wrapper key) in the app data dir. Read/written via plugin-fs by
+ *  lib/configFile.ts. The legacy config.json is parsed and migrated on
+ *  first read when this file is absent. */
+export const CONFIG_SAVE_PATH = "config.toml";
+
+/** Pre-TOML config file (a plugin-store JSON). Still parsed for migration
+ *  (both its `{"config": {...}}` wrapper shape and a plain JSON root); see
+ *  lib/configFormat.ts + lib/configFile.ts. */
+export const LEGACY_CONFIG_SAVE_PATH = "config.json";
+
+/** What the legacy config.json is renamed to after a successful migration,
+ *  so nothing is lost and the retired file is obvious. */
+export const LEGACY_CONFIG_BACKUP_PATH = "config.json.bak";
 
 /** LazyStore file holding the last-saved terminal session (one key "session").
  * Written on window close when sessionSaveMode != "never"; read once at startup
- * to restore tabs. Kept separate from config.json so session data never
+ * to restore tabs. Kept separate from config.toml so session data never
  * pollutes the user's app config. See lib/session.ts. */
 export const SESSION_STORE_PATH = "session.json";
 
