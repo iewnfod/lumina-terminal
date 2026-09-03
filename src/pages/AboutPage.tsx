@@ -24,6 +24,7 @@ import {
 import Markdown from "../components/Markdown.tsx";
 import TechStackModal from "../components/TechStackModal.tsx";
 import ExternalLink from "../components/ui/ExternalLink.tsx";
+import SettingRow from "../components/ui/SettingRow.tsx";
 
 interface AboutPageProps {
 	theme: ITheme | null;
@@ -108,23 +109,24 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                 <h1 className="text-xl font-semibold select-none">Lumina Terminal</h1>
 
                 <div className="flex flex-col gap-3 w-full text-sm">
-                    {/* Version */}
-                    <div
-                        className="flex items-center justify-between py-2"
-                        style={{ borderBottom: `1px solid ${colors.borderColor}` }}
+                    {/* Fact rows — SettingRow's `info` variant (theme-derived
+                        hairline border, label left / value right). */}
+                    <SettingRow
+                        variant="info"
+                        label={t["Version"]}
+                        style={{borderBottom: `1px solid ${colors.borderColor}`}}
                     >
-                        <span className="text-muted">{t["Version"]}</span>
-                        <span style={{ color: fg }}>
+                        <span style={{color: fg}}>
                             {version} ({commitHash})
                         </span>
-                    </div>
+                    </SettingRow>
 
                     {/* Updates */}
-                    <div
-                        className="flex items-center justify-between py-2"
-                        style={{ borderBottom: `1px solid ${colors.borderColor}` }}
+                    <SettingRow
+                        variant="info"
+                        label={t["Updates"]}
+                        style={{borderBottom: `1px solid ${colors.borderColor}`}}
                     >
-                        <span className="text-muted">{t["Updates"]}</span>
                         <div className="flex items-center" style={{ color: fg }}>
                             {/* Status text (always present) */}
                             {updater.status === "checking" ? (
@@ -203,14 +205,14 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                                 </button>
                             )}
                         </div>
-                    </div>
+                    </SettingRow>
 
                     {/* Author */}
-                    <div
-                        className="flex items-center justify-between py-2"
-                        style={{ borderBottom: `1px solid ${colors.borderColor}` }}
+                    <SettingRow
+                        variant="info"
+                        label={t["Author"]}
+                        style={{borderBottom: `1px solid ${colors.borderColor}`}}
                     >
-                        <span className="text-muted">{t["Author"]}</span>
                         <ExternalLink
                             href="https://iewnfod.com"
                             className="hover:underline"
@@ -218,14 +220,14 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                         >
                             Iewnfod
                         </ExternalLink>
-                    </div>
+                    </SettingRow>
 
                     {/* Contributors */}
-                    <div
-                        className="flex items-center justify-between py-2"
-                        style={{ borderBottom: `1px solid ${colors.borderColor}` }}
+                    <SettingRow
+                        variant="info"
+                        label={t["Contributors"]}
+                        style={{borderBottom: `1px solid ${colors.borderColor}`}}
                     >
-                        <span className="text-muted">{t["Contributors"]}</span>
                         <ExternalLink
                             href="https://github.com/iewnfod/lumina-terminal/graphs/contributors"
                             className="flex items-center gap-1.5 hover:underline"
@@ -234,14 +236,14 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                             <GithubMark size={14} />
                             {t["View Contributors"]}
                         </ExternalLink>
-                    </div>
+                    </SettingRow>
 
                     {/* GitHub Repo */}
-                    <div
-                        className="flex items-center justify-between py-2"
-                        style={{ borderBottom: `1px solid ${colors.borderColor}` }}
+                    <SettingRow
+                        variant="info"
+                        label={t["Repository"]}
+                        style={{borderBottom: `1px solid ${colors.borderColor}`}}
                     >
-                        <span className="text-muted">{t["Repository"]}</span>
                         <ExternalLink
                             href="https://github.com/iewnfod/lumina-terminal"
                             className="flex items-center gap-1.5 hover:underline text-sm"
@@ -250,14 +252,14 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                             <GithubMark size={14} />
                             iewnfod/lumina-terminal
                         </ExternalLink>
-                    </div>
+                    </SettingRow>
 
                     {/* License */}
-                    <div
-                        className="flex items-center justify-between py-2"
-                        style={{ borderBottom: `1px solid ${colors.borderColor}` }}
+                    <SettingRow
+                        variant="info"
+                        label={t["License"]}
+                        style={{borderBottom: `1px solid ${colors.borderColor}`}}
                     >
-                        <span className="text-muted">{t["License"]}</span>
                         <ExternalLink
                             href="https://opensource.org/licenses/MPL-2.0"
                             className="hover:underline"
@@ -265,7 +267,7 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                         >
                             MPL-2.0
                         </ExternalLink>
-                    </div>
+                    </SettingRow>
 
                     {/* Technologies — opens the full, grouped list in a modal */}
                     <button

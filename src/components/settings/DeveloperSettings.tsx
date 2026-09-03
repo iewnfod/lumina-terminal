@@ -8,20 +8,88 @@ import {Bug, Clipboard, FolderOpen} from "lucide-react";
 import {info, warn, error} from "@tauri-apps/plugin-log";
 import {useGlobalConfig} from "../../hooks/config.tsx";
 import {useMcpStatus} from "../../hooks/useMcpServer.ts";
-import {invalidateInstallSourceCache} from "../../hooks/useInstallSource.ts";
+import {invalidateInstallSourceCache, MOCK_INSTALL_SOURCE_KEY} from "../../hooks/useInstallSource.ts";
+import {MOCK_UPDATE_KEY} from "../../lib/updater.ts";
 import {MCP_DEFAULT_PORT} from "../../constants.ts";
 import SettingsShell from "../ui/SettingsShell.tsx";
 import SettingRow from "../ui/SettingRow.tsx";
 import SectionTitle from "../ui/SectionTitle.tsx";
 
-// localStorage key + values kept in sync with the dev mock in lib/updater.ts.
-const MOCK_KEY = "LUMINA_MOCK_UPDATE";
+// Mock value shapes ("" = no mock). The localStorage KEYS live next to their
+// readers (lib/updater.ts + hooks/useInstallSource.ts) so they can never
+// drift apart.
 type MockValue = "available" | "upToDate" | "error" | "";
-
-// localStorage key + values kept in sync with the dev mock in
-// hooks/useInstallSource.ts.
-const MOCK_INSTALL_KEY = "LUMINA_MOCK_INSTALL_SOURCE";
 type MockInstallValue = "pacman" | "dpkg" | "rpm" | "";
+
+/** Action row showing a path (truncated, full value on hover) with an
+ *  open-in-file-manager button — the config file + log directory rows. */
+function RevealRow({label, path}: {label: string; path: string}) {
+    const t = useI18n();
+    return (
+        <SettingRow
+            variant="action"
+            label={<Label>{label}</Label>}
+            description={<span className="truncate block" title={path}>{path || "—"}</span>}
+        >
+            <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onPress={() => {
+                    if (path) {
+                        openInFileManager(path).catch(() => {
+                            // logged in the wrapper
+                        });
+                    }
+                }}
+            >
+                <FolderOpen size={15} />
+                {t["Open"]}
+            </Button>
+        </SettingRow>
+    );
+}
+
+/** Action row with a small "simulate a dev mock" picker — the mock update
+ *  state + mock install source rows share everything but the options. */
+function MockSelectRow({label, description, selected, options, onApply}: {
+    label: string;
+    description: string;
+    selected: string;
+    options: {id: string; text: string}[];
+    onApply: (id: string) => void;
+}) {
+    return (
+        <SettingRow
+            variant="action"
+            label={<Label>{label}</Label>}
+            description={description}
+        >
+            <div className="w-40 shrink-0">
+                <Select
+                    selectedKey={selected || "none"}
+                    onSelectionChange={(key) => {
+                        if (key) onApply(key === "none" ? "" : String(key));
+                    }}
+                >
+                    <Select.Trigger>
+                        <Select.Value />
+                        <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                        <ListBox>
+                            {options.map((opt) => (
+                                <ListBox.Item id={opt.id} key={opt.id} textValue={opt.id}>
+                                    {opt.text}
+                                </ListBox.Item>
+                            ))}
+                        </ListBox>
+                    </Select.Popover>
+                </Select>
+            </div>
+        </SettingRow>
+    );
+}
 
 export default function DeveloperSettings() {
     const t = useI18n();
@@ -51,25 +119,25 @@ export default function DeveloperSettings() {
             error(`Failed to check debug mode: ${e}`).catch(() => {});
             setIsDebug(false);
         });
-        setMockUpdate((localStorage.getItem(MOCK_KEY) ?? "") as MockValue);
-        setMockInstallSource((localStorage.getItem(MOCK_INSTALL_KEY) ?? "") as MockInstallValue);
+        setMockUpdate((localStorage.getItem(MOCK_UPDATE_KEY) ?? "") as MockValue);
+        setMockInstallSource((localStorage.getItem(MOCK_INSTALL_SOURCE_KEY) ?? "") as MockInstallValue);
     }, []);
 
     const applyMock = (value: MockValue) => {
         setMockUpdate(value);
         if (value === "") {
-            localStorage.removeItem(MOCK_KEY);
+            localStorage.removeItem(MOCK_UPDATE_KEY);
         } else {
-            localStorage.setItem(MOCK_KEY, value);
+            localStorage.setItem(MOCK_UPDATE_KEY, value);
         }
     };
 
     const applyMockInstallSource = (value: MockInstallValue) => {
         setMockInstallSource(value);
         if (value === "") {
-            localStorage.removeItem(MOCK_INSTALL_KEY);
+            localStorage.removeItem(MOCK_INSTALL_SOURCE_KEY);
         } else {
-            localStorage.setItem(MOCK_INSTALL_KEY, value);
+            localStorage.setItem(MOCK_INSTALL_SOURCE_KEY, value);
         }
         // Re-run detection now (mock included) so the picker applies live —
         // the source is otherwise cached for the whole session.
@@ -93,56 +161,16 @@ export default function DeveloperSettings() {
 
             <div className="flex flex-col gap-5">
                 {/* Config File Path */}
-                <SettingRow
-                    variant="action"
-                    label={<Label>{t["Config File Path"]}</Label>}
-                    description={<span className="truncate block" title={configPath}>{configPath || "—"}</span>}
-                >
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0"
-                        onPress={() => {
-                            if (configPath) {
-                                openInFileManager(configPath).catch(() => {
-                                    // logged in the wrapper
-                                });
-                            }
-                        }}
-                    >
-                        <FolderOpen size={15} />
-                        {t["Open"]}
-                    </Button>
-                </SettingRow>
+                <RevealRow label={t["Config File Path"]} path={configPath} />
 
                 {/* Log Directory */}
-                <SettingRow
-                    variant="action"
-                    label={<Label>{t["Log Directory"]}</Label>}
-                    description={<span className="truncate block" title={logDir}>{logDir || "—"}</span>}
-                >
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0"
-                        onPress={() => {
-                            if (logDir) {
-                                openInFileManager(logDir).catch(() => {
-                                    // logged in the wrapper
-                                });
-                            }
-                        }}
-                    >
-                        <FolderOpen size={15} />
-                        {t["Open"]}
-                    </Button>
-                </SettingRow>
+                <RevealRow label={t["Log Directory"]} path={logDir} />
 
                 {/* DevTools */}
                 <SettingRow
                     variant="action"
                     label={<Label>{t["DevTools"]}</Label>}
-                    description={"Open the webview developer tools"}
+                    description={t["Open the webview developer tools"]}
                 >
                     <Button
                         variant="outline"
@@ -235,41 +263,18 @@ export default function DeveloperSettings() {
                 {/* Mock Update State — dev-only, drives the updater mock purely
                     via localStorage (see lib/updater.ts DEV MOCK). */}
                 {import.meta.env.DEV && (
-                    <SettingRow
-                        variant="action"
-                        label={<Label>{t["Mock Update State"]}</Label>}
+                    <MockSelectRow
+                        label={t["Mock Update State"]}
                         description={t["Simulate an update-check result for testing the update UI"]}
-                    >
-                        <div className="w-40 shrink-0">
-                            <Select
-                                selectedKey={mockUpdate || "none"}
-                                onSelectionChange={(key) => {
-                                    applyMock((key === "none" ? "" : key) as MockValue);
-                                }}
-                            >
-                                <Select.Trigger>
-                                    <Select.Value />
-                                    <Select.Indicator />
-                                </Select.Trigger>
-                                <Select.Popover>
-                                    <ListBox>
-                                        <ListBox.Item id="none" key="none" textValue="none">
-                                            {t["None"]}
-                                        </ListBox.Item>
-                                        <ListBox.Item id="available" key="available" textValue="available">
-                                            {t["Available"]}
-                                        </ListBox.Item>
-                                        <ListBox.Item id="upToDate" key="upToDate" textValue="upToDate">
-                                            {t["Up to Date"]}
-                                        </ListBox.Item>
-                                        <ListBox.Item id="error" key="error" textValue="error">
-                                            {t["Error"]}
-                                        </ListBox.Item>
-                                    </ListBox>
-                                </Select.Popover>
-                            </Select>
-                        </div>
-                    </SettingRow>
+                        selected={mockUpdate}
+                        options={[
+                            {id: "none", text: t["None"]},
+                            {id: "available", text: t["Available"]},
+                            {id: "upToDate", text: t["Up to Date"]},
+                            {id: "error", text: t["Error"]},
+                        ]}
+                        onApply={(id) => applyMock(id as MockValue)}
+                    />
                 )}
 
                 {/* Mock Install Source — dev-only, drives the install-source
@@ -277,41 +282,18 @@ export default function DeveloperSettings() {
                     DEV MOCK) and invalidates the cached result so it applies
                     immediately. */}
                 {import.meta.env.DEV && (
-                    <SettingRow
-                        variant="action"
-                        label={<Label>{t["Mock Install Source"]}</Label>}
+                    <MockSelectRow
+                        label={t["Mock Install Source"]}
                         description={t["Force a package-managed install for testing the update hint"]}
-                    >
-                        <div className="w-40 shrink-0">
-                            <Select
-                                selectedKey={mockInstallSource || "none"}
-                                onSelectionChange={(key) => {
-                                    applyMockInstallSource((key === "none" ? "" : key) as MockInstallValue);
-                                }}
-                            >
-                                <Select.Trigger>
-                                    <Select.Value />
-                                    <Select.Indicator />
-                                </Select.Trigger>
-                                <Select.Popover>
-                                    <ListBox>
-                                        <ListBox.Item id="none" key="none" textValue="none">
-                                            {t["None"]}
-                                        </ListBox.Item>
-                                        <ListBox.Item id="pacman" key="pacman" textValue="pacman">
-                                            pacman
-                                        </ListBox.Item>
-                                        <ListBox.Item id="dpkg" key="dpkg" textValue="dpkg">
-                                            dpkg
-                                        </ListBox.Item>
-                                        <ListBox.Item id="rpm" key="rpm" textValue="rpm">
-                                            rpm
-                                        </ListBox.Item>
-                                    </ListBox>
-                                </Select.Popover>
-                            </Select>
-                        </div>
-                    </SettingRow>
+                        selected={mockInstallSource}
+                        options={[
+                            {id: "none", text: t["None"]},
+                            {id: "pacman", text: "pacman"},
+                            {id: "dpkg", text: "dpkg"},
+                            {id: "rpm", text: "rpm"},
+                        ]}
+                        onApply={(id) => applyMockInstallSource(id as MockInstallValue)}
+                    />
                 )}
             </div>
         </SettingsShell>
