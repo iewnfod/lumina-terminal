@@ -8,6 +8,7 @@ import {
 } from "../constants.ts";
 import {invoke} from "@tauri-apps/api/core";
 import {appDataDir, join} from "@tauri-apps/api/path";
+import {stat} from "@tauri-apps/plugin-fs";
 import {error} from "@tauri-apps/plugin-log";
 
 export function parseProfilePadding(profile: TerminalProfile, paddingOffset: number) {
@@ -50,31 +51,62 @@ export function parseProfilePadding(profile: TerminalProfile, paddingOffset: num
  *  treated as dark (matches useSystemTheme's convention for unknown/未决). */
 export type SystemTheme = "light" | "dark" | null;
 
+// Theme-file reading used to cost up to 4 serial IPC round-trips per call
+// (appDataDir → join → path_exist → read_file), and the same file was read
+// again by useEffectiveTheme on every profile/config change. The caches below
+// cut a warm read to a single stat IPC; the stat's mtime still validates the
+// entry, so editing the theme file externally keeps working (the next
+// re-resolve sees a new mtime and re-reads).
+/** Resolved app data dir — fixed for the session, fetched once. */
+let appDataDirPromise: Promise<string> | null = null;
+/** themePath → joined absolute path (the join is an IPC; memoized per path). */
+const themeFullPathCache = new Map<string, string>();
+/** Absolute path → parsed theme JSON + the mtime it was read at. */
+const themeFileCache = new Map<string, {mtimeSec: number | null; json: Record<string, unknown> | null}>();
+
+/**
+ * Read + parse a theme file (JSON), trying the app-data-relative path first
+ * and the raw configured path second (absolute / cwd-relative). Returns the
+ * parsed object, or null when no candidate exists / the file is unreadable /
+ * the JSON is invalid (the error is logged). Cached per file, validated
+ * against the file's mtime.
+ */
+async function readThemeFile(themePath: string): Promise<Record<string, unknown> | null> {
+    appDataDirPromise ??= appDataDir();
+    let fullPath = themeFullPathCache.get(themePath);
+    if (fullPath === undefined) {
+        fullPath = await join(await appDataDirPromise, themePath);
+        themeFullPathCache.set(themePath, fullPath);
+    }
+    for (const path of [fullPath, themePath]) {
+        const info = await stat(path).catch(() => null);
+        if (!info?.isFile) continue;
+        const mtimeSec = info.mtime ? Math.floor(info.mtime.getTime() / 1000) : null;
+        const cached = themeFileCache.get(path);
+        if (cached && cached.mtimeSec === mtimeSec) return cached.json;
+        const text = await invoke<string>("read_file", {path});
+        let json: Record<string, unknown> | null = null;
+        if (text) {
+            try {
+                json = JSON.parse(text) as Record<string, unknown>;
+            } catch (e) {
+                error(`Failed to parse theme at ${path}: ${e}`).catch(() => {});
+            }
+        }
+        themeFileCache.set(path, {mtimeSec, json});
+        return json;
+    }
+    return null;
+}
+
 export async function parseProfileTheme(profile: TerminalRenderOptions, defaultTheme?: ITheme, systemTheme?: SystemTheme) {
     // 起始兜底配色：显式 defaultTheme > 按 systemTheme 在亮/暗间选择。
     // dark 与未决(null)都走原黑底，保持向后兼容且与 useSystemTheme 约定一致。
     let theme: ITheme = defaultTheme ?? (systemTheme === "light" ? GITHUB_LIGHT_TERMINAL_THEME : DEFAULT_TERMINAL_THEME);
     if (profile.themePath) {
-        const basePath = await appDataDir();
-        const fullPath = await join(basePath, profile.themePath);
-        const paths = [
-            fullPath,
-            profile.themePath,
-        ];
-        for (const path of paths) {
-            const exists = await invoke<boolean>("path_exist", {path: path});
-            if (exists) {
-                const readTheme = await invoke<string>("read_file", {path: path});
-                if (readTheme) {
-                    try {
-                        const t = JSON.parse(readTheme);
-                        theme = {...theme, ...t};
-                    } catch (e) {
-                        error(`Failed to parse theme at ${path}: ${e}`).catch(() => {});
-                    }
-                }
-                break;
-            }
+        const parsed = await readThemeFile(profile.themePath);
+        if (parsed) {
+            theme = {...theme, ...parsed};
         }
     }
     if (profile.theme) {

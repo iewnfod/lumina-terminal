@@ -7,7 +7,7 @@ import {getCurrentWindow, LogicalSize} from "@tauri-apps/api/window";
 import {SSHConfig, TerminalProfile} from "../types/terminal.ts";
 import {invoke} from "@tauri-apps/api/core";
 import Confetti from "react-confetti-boom";
-import { info, debug } from "@tauri-apps/plugin-log";
+import { info, debug, error } from "@tauri-apps/plugin-log";
 import ShellSelector from "../components/settings/ShellSelector.tsx";
 import SshFields from "../components/settings/SshFields.tsx";
 import {useSshConfig} from "../hooks/useSshConfig.ts";
@@ -149,6 +149,10 @@ function Step2({onNext, onPrev} : {
         } else {
             invoke<boolean>("path_exist", {path: profile.exePath}).then((value) => {
                 setExePathExist(value);
+            }).catch((e) => {
+                // Degrade to "exists" so the wizard never blocks on the check.
+                error(`Failed to check shell path ${profile.exePath}: ${e}`).catch(() => {});
+                setExePathExist(true);
             });
         }
     }, [profile.exePath, profileType]);
@@ -327,8 +331,12 @@ export default function WelcomePage() {
             if (containerRef.current) {
                 let width = containerRef.current.clientWidth;
                 let height = containerRef.current.clientHeight;
-                getCurrentWindow().setResizable(false).then();
-                getCurrentWindow().setSize(new LogicalSize(width, height)).then();
+                getCurrentWindow().setResizable(false).catch((e) => {
+                    error(`WelcomePage: failed to lock window resizable: ${e}`).catch(() => {});
+                });
+                getCurrentWindow().setSize(new LogicalSize(width, height)).catch((e) => {
+                    error(`WelcomePage: failed to size window to ${width}x${height}: ${e}`).catch(() => {});
+                });
             }
         };
         const observer = new ResizeObserver(handleResize);

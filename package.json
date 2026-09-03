@@ -36,7 +36,6 @@
     "@xterm/xterm": "^6.0.0",
     "font-ligatures": "^1.4.1",
     "framer-motion": "^12.43.0",
-    "git-commit-info": "^2.0.2",
     "lucide-react": "^1.16.0",
     "react": "^19.1.0",
     "react-confetti-boom": "^2.0.1",
@@ -44,8 +43,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "smol-toml": "^1.8.0",
-    "tailwindcss": "^4.3.0",
-    "vite-plugin-compression": "^0.5.1"
+    "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
