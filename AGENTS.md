@@ -106,6 +106,10 @@ src/
 │   ├── fileManagerApi.ts    # openInFileManager(path) — reveal-in-file-manager wrapper (log-on-reject);
 │   │                        #   the one frontend entry to backend open_in_file_manager
 │   ├── shellIcon.ts         # getShellType(profile) → "bash"|"zsh"|"fish"|"nu"|"pwsh"|"ssh"|"default"
+│   ├── apiCore.ts           # invokeLogged — THE one invoke-with-error-logging core every domain api
+│   │                        #   module (terminalApi/mcpApi/proxyApi/cliApi/fileManagerApi/
+│   │                        #   commandIconApi/launcherApi) builds on; log-then-rethrow, optional
+│   │                        #   message/scope/fallback. Never hand-roll another catch-and-log invoke
 │   ├── bindings.ts          # parseBindings, matchBinding, loadBindings, useKeyboardBindings,
 │   │                        #   exported actionSignature / keySignature. loadBindings dispatches
 │   │                        #   the `copy` action itself (needs the live selection: with one it
@@ -134,6 +138,19 @@ src/
 │   │                        #   (app starts with no terminal) so exactly one sizes the window per session.
 │   ├── imeCompositionGuard.ts # WebKitGTK/IBus normalization for xterm's unmatched keyCode-229 IME fallback
 │   │                        #   (config-gated: global imeDuplicateInputFix, default on — see GeneralSettings)
+│   ├── currentCommand.ts     # CurrentCommandParser — OSC 1337 shell-integration sequence parser feeding the
+│   │                        #   tab-subtitle command + per-command exit codes (fed by useCurrentCommand)
+│   ├── ligatures.ts          # Programming-ligature rendering from the font's real GSUB table: findFont +
+│   │                        #   parse (module-level font cache), enableLigatures installs a character
+│   │                        #   joiner; preloaded at startup by config.tsx when the global font enables it
+│   ├── updater.ts            # Updater wrapper (pure, React-free) around @tauri-apps/plugin-updater
+│   │                        #   (check/download/install) — state machine consumed by useUpdater
+│   ├── updateAvailable.ts    # Module-level store of the last update-check result, shared by the startup
+│   │                        #   check (useStartupUpdateCheck) and manual checks (sidebar banner / About)
+│   ├── releaseNotes.ts       # fetchReleaseNotes — GitHub Releases API fetch for the About page's
+│   │                        #   "you're up to date" double-click changelog easter egg
+│   ├── techStack.ts          # Parses README.md's "Technology Used" section into grouped items for the
+│   │                        #   About page's tech-stack modal (README is the single source of truth)
 │   ├── bindingsSettings.ts  # bindings-editor pure logic: actionLabel, detectConflicts, toDraft, …
 │   ├── setupTermAddons.ts   # setupTermAddons(term, profile, id) — assemble the standard xterm addon
 │   │                        #   stack (web links, Unicode 11, optional graphemes/WebGL, image, fit,
@@ -223,6 +240,17 @@ src/
 │   │                        #   + once-per-session lock Term uses), so the empty state isn't stuck at the OS size.
 │   ├── useCommandPaletteActions.tsx # useCommandPaletteActions(opts) — build the palette action list (JSX)
 │   ├── useKeyRecorder.ts    # useKeyRecorder(index, onRecord, onCancel) — global keydown capture for bindings editor
+│   ├── useSystemTheme.ts    # useSystemTheme() → "light"|"dark"|null — OS theme preference (module-cached,
+│   │                        #   subscriber set; drives bare-profile palettes + themeMode "system")
+│   ├── useIsWayland.ts      # useIsWayland() — cached is_wayland backend read (gates position restore,
+│   │                        #   glass capability; mirrors the useShells caching pattern)
+│   ├── useInstallSource.ts  # useInstallSource() — cached install_source read (pacman/dpkg/rpm): the
+│   │                        #   update modal shows the package-manager command instead of self-update
+│   ├── useUpdater.ts        # useUpdater() — the single updater state machine (check/download/install/
+│   │                        #   progress/error) wrapping lib/updater.ts; owned by App so the sidebar
+│   │                        #   banner, update modal, and About page share one instance
+│   ├── useStartupUpdateCheck.ts # useStartupUpdateCheck(enabled) — the one-shot startup check (config-
+│   │                        #   gated; App mounts after config load so defaults never fire it)
 │   ├── useTearoffSession.ts # useTearoffSession() → {label, payload} | "no" | null (tab tear-off boot)
 │   └── useSessionPersistence.ts # useSessionPersistence(refs) — the app's only window close hook
 │                            #   (onCloseRequested): saves open tabs to session.json per sessionSaveMode,
@@ -263,6 +291,10 @@ src/
 │   │                        # Rendered when the running command maps to an app (lib/appIcon.ts);
 │   │                        # takes precedence over ShellIcon.
 │   ├── ThemePreview.tsx     # 8-color ANSI swatch with tooltip
+│   ├── UpdateModal.tsx      # Update flow modal: version + release notes + download progress + install;
+│   │                        #   driven by App's single useUpdater instance + installSource
+│   ├── TechStackModal.tsx   # About page's tech-stack modal (items from lib/techStack.ts)
+│   ├── Markdown.tsx         # Shared react-markdown + remark-gfm renderer (About page release notes)
 │   ├── EmptyState.tsx       # Profile quick-launch list shown in the main area when the last tab is
 │   │                        #   closed while "keep window on last tab closed" is on (ids empty).
 │   │                        #   Centered icon + heading + clickable profile rows (shell icon via
@@ -366,7 +398,10 @@ src-tauri/src/
 │                  #   icns/ico wrapping is hand-rolled (no image deps). Tested in tests/launchers.rs
 ├── fonts.rs       # find_font — CSS font-family → font file bytes for ligature parsing;
 │                  #   first_concrete_family pure (tested in tests/fonts.rs)
-└── utils.rs       # path_exist, read_file (tiny fs helpers; tested in tests/utils.rs)
+└── utils.rs       # path_exist, read_file (frontend-facing fs helpers) + the shared fs idioms
+                   #   previously hand-rolled per module: content_hash_hex (icon storage naming),
+                   #   write_atomic (tmp+rename; proxy env-file, icons, .desktop entries) and
+                   #   prune_files_not_in (command-icons + launcher-icon caches)
 
 tests/             # Backend integration tests (mandatory for backend work — see §3.7).
 │                  #   Each file targets one src/ module against the lib crate
@@ -394,7 +429,9 @@ tests/             # Backend integration tests (mandatory for backend work — s
 │                  #   idempotent re-run, prune, macOS bundle-ownership protection, custom-icon
 │                  #   resolution + traversal rejection)
 ├── fonts.rs       # CSS font-family → first concrete family extraction
-├── utils.rs       # path_exist / read_file over real temp files
+├── utils.rs       # path_exist / read_file over real temp files + content_hash_hex (shape,
+│                  #   stability), write_atomic (overwrite/parents/no-tmp-leftover) and
+│                  #   prune_files_not_in (keep-vs-drop, subdir-safe, missing-dir no-op)
 └── file_manager.rs # nonexistent-path guard (rejected before any OS spawn)
 ```
 
