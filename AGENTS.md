@@ -352,7 +352,10 @@ src-tauri/src/
 ├── terminal.rs    # start/reattach/kill/write/resize_terminal, set_output_mode commands.
 │                  #   start_terminal is a thin orchestrator over: build_shell_command (+ pure
 │                  #   shell_family / startup_command_argv / ssh_remote_command helpers — the
-│                  #   keepAfterExit per-shell-family argv, tested in tests/terminal.rs), the
+│                  #   keepAfterExit per-shell-family argv, tested in tests/terminal.rs;
+│                  #   startup-command tabs also get the current proxy env set straight onto
+│                  #   the PTY via proxy::spawn_proxy_env — a -c command runs before the
+│                  #   first prompt, where the proxy hooks fire), the
 │                  #   extracted spawn_reader_thread (streams output over the entry's swappable
 │                  #   Channel<String> with streaming-UTF-8 decoding + two-mode burst coalescing)
 │                  #   and spawn_watcher_thread (exit poll, foreground-command tracking, cleanup,
@@ -375,7 +378,10 @@ src-tauri/src/
 │                  #   reg query — pure & unit-tested) + the polling watcher thread and
 │                  #   start/stop_proxy_sync commands. Publishes the shell hooks' env-file
 │                  #   (KEY=value lines, absence = unset) atomically on change only; PAC
-│                  #   modes are reported off (env vars cannot express them). Parsers are
+│                  #   modes are reported off (env vars cannot express them). Also the
+│                  #   spawn-time source for startup-command tabs (spawn_proxy_env +
+│                  #   parse_proxy_env, PROXY_ENV_KEYS-only filter) — a -c command runs
+│                  #   before the hooks' first prompt. Parsers are
 │                  #   tested in tests/proxy.rs
 ├── mcp.rs         # Read-only MCP (Model Context Protocol) server: rmcp tool handlers
 │                  #   (list_tabs/get_active_tab/get_tab/get_foreground_command/get_recent_output/
@@ -414,7 +420,7 @@ tests/             # Backend integration tests (mandatory for backend work — s
 │                  #   Each file targets one src/ module against the lib crate
 │                  #   (lumina_terminal_lib); run with
 │                  #   `cargo test --manifest-path src-tauri/Cargo.toml`.
-├── proxy.rs       # per-source proxy parsers + env-file render + real-gsettings e2e (self-skipping)
+├── proxy.rs       # per-source proxy parsers + env-file render + env-file parse (spawn injection) + real-gsettings e2e (self-skipping)
 ├── shell_hooks.rs # real bash/zsh/fish lifecycle of the generated proxy-sync hooks (self-skipping)
 ├── cli.rs         # launch-flag parsing + the macOS -psn_* argv filter + the `-e`
 │                  #   command-region split (flags-after-command, `--` escape hatch)

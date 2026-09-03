@@ -157,10 +157,12 @@ fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// The env-var keys the hooks manage, in a fixed order shared by all three
-/// shells. Keys ARE env-var names (both cases), so the env-file's `KEY=value`
-/// lines map 1:1 with no case conversion.
-const PROXY_ENV_KEYS: &str = "http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY";
+/// The env-var keys the hooks manage, as the space-separated list the
+/// for-loops consume. Single source: [`crate::proxy::PROXY_ENV_KEYS`] — the
+/// env-file contract the hooks and the spawn-time parser both parse against.
+fn proxy_key_words() -> String {
+    crate::proxy::PROXY_ENV_KEYS.join(" ")
+}
 
 /// bash proxy-sync hook source with the env-file path baked in. Called from
 /// `__lumina_precmd` (PROMPT_COMMAND) before every prompt. Steady state (file
@@ -214,7 +216,7 @@ __lumina_proxy() {{
     done
 }}"#,
         env_path = shell_quote(env_path),
-        proxy_keys = PROXY_ENV_KEYS,
+        proxy_keys = proxy_key_words(),
     )
 }
 
@@ -269,7 +271,7 @@ __lumina_proxy() {{
 }}
 precmd_functions+=(__lumina_proxy)"#,
         env_path = shell_quote(env_path),
-        proxy_keys = PROXY_ENV_KEYS,
+        proxy_keys = proxy_key_words(),
     )
 }
 
@@ -327,6 +329,6 @@ function __lumina_proxy --on-event fish_prompt
     end
 end"#,
         env_path = shell_quote(env_path),
-        proxy_keys = PROXY_ENV_KEYS,
+        proxy_keys = proxy_key_words(),
     )
 }

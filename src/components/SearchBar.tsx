@@ -18,6 +18,10 @@ interface SearchBarProps {
     terminal: Terminal | null;
     /** Effective background hex the bar floats over (App's effective bg). */
     fillBg?: string;
+    /** Bumped by the parent every time the search action fires. Each change
+     *  (re)focuses the input — including when the bar is already open, so the
+     *  shortcut focuses the bar rather than closing it. */
+    focusTick: number;
     onClose: () => void;
 }
 
@@ -44,7 +48,7 @@ const slideDownFromChrome: Variants = {
     },
 };
 
-export default function SearchBar({searchAddon, terminal, fillBg, onClose}: SearchBarProps) {
+export default function SearchBar({searchAddon, terminal, fillBg, focusTick, onClose}: SearchBarProps) {
     const t = useI18n();
     const bg = fillBg ?? "#000000";
     const colors = useSurfaceColors(bg);
@@ -115,11 +119,14 @@ export default function SearchBar({searchAddon, terminal, fillBg, onClose}: Sear
         return () => disposable.dispose();
     }, [searchAddon]);
 
-    // Auto-focus the input shortly after mount (after the slide-down animates).
+    // Auto-focus the input shortly after the bar appears (after the
+    // slide-down animates), and again whenever the parent bumps focusTick —
+    // the search shortcut re-triggered, which focuses the bar instead of
+    // closing it. The effect also runs on mount, so every open path focuses.
     useEffect(() => {
         const handle = setTimeout(() => inputRef.current?.focus(), 60);
         return () => clearTimeout(handle);
-    }, []);
+    }, [focusTick]);
 
     // Strip the active-match decoration so the normal selection shows through
     // again, but keep decorations so matches stay highlighted while idle. We
@@ -153,9 +160,6 @@ export default function SearchBar({searchAddon, terminal, fillBg, onClose}: Sear
             e.preventDefault();
             runSearch(!e.shiftKey);
             inputRef.current?.focus();
-        } else if (e.key === "Escape") {
-            e.preventDefault();
-            onClose();
         }
     };
 
@@ -175,6 +179,14 @@ export default function SearchBar({searchAddon, terminal, fillBg, onClose}: Sear
                 transformOrigin: "top right",
             }}
             onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+                // Escape anywhere inside the bar (the input or a focused
+                // option button) closes it — the only way out besides ✕.
+                if (e.key === "Escape") {
+                    e.preventDefault();
+                    onClose();
+                }
+            }}
             >
                 <Search size={16} style={{color: muted, flexShrink: 0}}/>
                 <input

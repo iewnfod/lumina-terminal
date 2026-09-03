@@ -231,6 +231,53 @@ fn render_off_snapshot_has_no_variable_lines() {
 }
 
 #[test]
+fn parse_round_trips_full_render() {
+    let snap = ProxySnapshot {
+        http: Some("http://127.0.0.1:7890".to_string()),
+        https: Some("http://127.0.0.1:7890".to_string()),
+        all: Some("socks5://127.0.0.1:7890".to_string()),
+        no_proxy: vec!["192.168.0.0/16".to_string()],
+    };
+    let pairs = parse_proxy_env(&render_proxy_env(&snap));
+    // Exactly the managed keys (both cases), with the no_proxy baseline merged.
+    assert_eq!(pairs.len(), PROXY_ENV_KEYS.len());
+    for (key, value) in &pairs {
+        assert!(PROXY_ENV_KEYS.contains(&key.as_str()), "unmanaged key {key}");
+        let expected = match key.as_str() {
+            "http_proxy" | "HTTP_PROXY" | "https_proxy" | "HTTPS_PROXY" => "http://127.0.0.1:7890",
+            "all_proxy" | "ALL_PROXY" => "socks5://127.0.0.1:7890",
+            _ => "localhost,127.0.0.1,::1,192.168.0.0/16",
+        };
+        assert_eq!(value, expected);
+    }
+}
+
+#[test]
+fn parse_off_render_is_empty() {
+    // Off = no lines = nothing injected at spawn (inherited env untouched).
+    assert!(parse_proxy_env(&render_proxy_env(&ProxySnapshot::default())).is_empty());
+}
+
+#[test]
+fn parse_skips_unmanaged_and_malformed_lines() {
+    // Only managed keys are accepted: a corrupted or hand-edited env-file must
+    // not smuggle arbitrary env (PATH, LD_PRELOAD, …) into a spawned shell.
+    let content = "\
+# lumina proxy v1
+http_proxy=http://127.0.0.1:7890
+PATH=/usr/bin
+LD_PRELOAD=/tmp/evil.so
+no key here
+=https://x
+no_proxy=
+";
+    assert_eq!(
+        parse_proxy_env(content),
+        vec![("http_proxy".to_string(), "http://127.0.0.1:7890".to_string())]
+    );
+}
+
+#[test]
 fn env_pairs_lowercase_wins_and_splits_no_proxy() {
     let snap = proxy_from_env_pairs([
         ("http_proxy".to_string(), "http://127.0.0.1:7890".to_string()),

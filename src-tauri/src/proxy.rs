@@ -91,6 +91,20 @@ fn normalize_proxy_url(v: &str, default_scheme: &str) -> Option<String> {
 /// localhost traffic never goes through the proxy even on bare DE configs.
 const NO_PROXY_BASELINE: [&str; 3] = ["localhost", "127.0.0.1", "::1"];
 
+/// The env-var keys the proxy env-file manages (both cases per class), in the
+/// fixed order the hooks apply them. Single source for the renderer, the
+/// shell-integration hook loops, and the spawn-time parser below.
+pub const PROXY_ENV_KEYS: [&str; 8] = [
+    "http_proxy",
+    "HTTP_PROXY",
+    "https_proxy",
+    "HTTPS_PROXY",
+    "all_proxy",
+    "ALL_PROXY",
+    "no_proxy",
+    "NO_PROXY",
+];
+
 /// Render the env-file the shell hooks consume. Keys are literal env-var names
 /// (both cases per class), so the hook can apply each line with no case
 /// conversion. Absent classes produce no lines — absence IS the "unset" signal.
@@ -129,6 +143,26 @@ pub fn render_proxy_env(snap: &ProxySnapshot) -> String {
         push("NO_PROXY", &joined);
     }
     out
+}
+
+/// Parse an env-file back into (key, value) pairs, for spawning terminals
+/// with a startup command (see `spawn_proxy_env`). Only the managed keys are
+/// accepted — a corrupted or hand-edited file must not smuggle arbitrary env
+/// (`PATH=`, `LD_PRELOAD=`…) into a spawned shell — and lines without a key,
+/// without a value, or malformed are skipped: absence is the "unset" signal,
+/// which at spawn time means "leave the inherited env alone". Pure — tested
+/// in tests/proxy.rs.
+pub fn parse_proxy_env(content: &str) -> Vec<(String, String)> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let (key, value) = line.split_once('=')?;
+            if value.is_empty() || !PROXY_ENV_KEYS.contains(&key) {
+                return None;
+            }
+            Some((key.to_string(), value.to_string()))
+        })
+        .collect()
 }
 
 /// Parse `gsettings list-recursively org.gnome.system.proxy` output.
@@ -524,6 +558,31 @@ struct WatcherThread {
 /// scripts bake this same path in at shell spawn time).
 fn proxy_env_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(crate::shell_integration::integration_dir(app)?.join("proxy.env"))
+}
+
+/// The proxy pairs a startup-command terminal should be spawned with: a `-c`
+/// command runs BEFORE the first prompt, so the pre-prompt hooks
+/// (`shell_integration.rs`) never fire for it — `build_shell_command` sets
+/// these straight onto the PTY env instead. A spawn-time snapshot by nature:
+/// hot proxy changes still only reach tabs with hooks (plain interactive
+/// shells). Empty when the file is absent (feature disabled, watcher not yet
+/// warmed up) — the same "no signal" the hooks see.
+pub fn spawn_proxy_env(app: &tauri::AppHandle) -> Vec<(String, String)> {
+    let path = match proxy_env_path(app) {
+        Ok(path) => path,
+        Err(e) => {
+            log::debug!("spawn_proxy_env: {}", e);
+            return Vec::new();
+        }
+    };
+    match std::fs::read_to_string(&path) {
+        Ok(content) => parse_proxy_env(&content),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => {
+            log::warn!("Failed to read proxy env-file {}: {}", path.display(), e);
+            Vec::new()
+        }
+    }
 }
 
 fn watcher_loop(

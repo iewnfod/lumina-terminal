@@ -210,6 +210,13 @@ pub fn build_shell_command(app: &AppHandle, p: &ShellCommandParams) -> CommandBu
         let shell_base = shell_family(p.exe_path);
         let mut c = CommandBuilder::new(p.exe_path);
         if let Some(ref cmd) = p.startup_command {
+            // The `-c` startup command runs BEFORE the first prompt, so the
+            // pre-prompt proxy hooks never fire for it — inject the env-file's
+            // current pairs straight onto the PTY env (a spawn-time snapshot;
+            // hot proxy changes still only reach plain interactive tabs).
+            for (key, value) in crate::proxy::spawn_proxy_env(app) {
+                c.env(key, value);
+            }
             c.args(&startup_command_argv(cmd, keep_shell, &shell_base, p.exe_path));
         } else {
             // Pure interactive shell. Apply shell-integration injection

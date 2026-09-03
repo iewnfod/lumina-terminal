@@ -151,6 +151,10 @@ export default function Term(props : TermProps) {
     const {markInteractive} = useOutputMode(id);
     const [isDragOver, setIsDragOver] = useState(false);
     const [searchOpen, setSearchOpen] = useState(false);
+    // Bumped on every search trigger so an already-open SearchBar re-focuses
+    // its input: the shortcut always focuses the bar, never closes it — only
+    // Escape in the bar (or its ✕ button) does.
+    const [searchFocusTick, setSearchFocusTick] = useState(0);
     const isActiveRef = useRef(isActive);
     isActiveRef.current = isActive;
 
@@ -162,6 +166,14 @@ export default function Term(props : TermProps) {
             container?.clientHeight ?? 0,
         );
     }, [profile]);
+
+    // Open the search bar and focus its input. Shared by the `search` binding
+    // (handleActions) and the command-palette trigger (onRegisterSearch): the
+    // shortcut never toggles the bar closed — re-triggering just re-focuses.
+    const openSearch = useCallback(() => {
+        setSearchOpen(true);
+        setSearchFocusTick((tick) => tick + 1);
+    }, []);
 
     const handleActions = (action: Actions, args?: Record<string, string>) => {
         info(`Term action: ${action}${args ? ` args=${JSON.stringify(args)}` : ""}`);
@@ -195,7 +207,7 @@ export default function Term(props : TermProps) {
                 props.onTearOff?.();
                 break;
             case "search":
-                setSearchOpen((o) => !o);
+                openSearch();
                 break;
             case "selectAll":
                 term.current?.selectAll();
@@ -537,8 +549,8 @@ export default function Term(props : TermProps) {
     // can open this terminal's search bar. Mirrors the serialize registration.
     useEffect(() => {
         if (!props.onRegisterSearch) return;
-        return props.onRegisterSearch(() => setSearchOpen(true));
-    }, [props.onRegisterSearch]);
+        return props.onRegisterSearch(openSearch);
+    }, [props.onRegisterSearch, openSearch]);
 
     // ResizeObserver: refit the terminal whenever its container changes size.
     // Lives in its own effect (NOT inside the one-shot init effect) so that:
@@ -727,6 +739,7 @@ export default function Term(props : TermProps) {
                             searchAddon={searchAddonRef.current}
                             terminal={term.current}
                             fillBg={containerBg ?? props.fillBg}
+                            focusTick={searchFocusTick}
                             onClose={() => setSearchOpen(false)}
                         />
                     )}
