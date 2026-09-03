@@ -5,6 +5,7 @@ import {type FontWeight, type ITerminalOptions, ITheme} from "@xterm/xterm";
 import {parseProfileTheme} from "../../lib/term.ts";
 import {Input, Label, ListBox, Select, Switch} from "@heroui/react";
 import ThemePreview from "../ThemePreview.tsx";
+import SettingRow from "../ui/SettingRow.tsx";
 import { ChevronDown } from "lucide-react";
 
 const FONT_WEIGHT_OPTIONS: FontWeight[] = ["normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900"];
@@ -33,8 +34,7 @@ export default function RenderSettings({
         <div className="flex flex-col gap-4">
             {/* Rows and Columns */}
             <div className="flex flex-row gap-4">
-                <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="profile-rows">{t["Rows"]}</Label>
+                <SettingRow label={<Label htmlFor="profile-rows">{t["Rows"]}</Label>}>
                     <Input
                         id="profile-rows"
                         type="number"
@@ -46,9 +46,8 @@ export default function RenderSettings({
                         }}
                         className="w-24"
                     />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="profile-cols">{t["Columns"]}</Label>
+                </SettingRow>
+                <SettingRow label={<Label htmlFor="profile-cols">{t["Columns"]}</Label>}>
                     <Input
                         id="profile-cols"
                         type="number"
@@ -60,10 +59,9 @@ export default function RenderSettings({
                         }}
                         className="w-24"
                     />
-                </div>
+                </SettingRow>
                 {/* Padding */}
-                <div className="flex flex-col gap-1.5">
-                    <Label htmlFor={`${idPrefix}-padding`}>{t["Padding"]}</Label>
+                <SettingRow label={<Label htmlFor={`${idPrefix}-padding`}>{t["Padding"]}</Label>}>
                     <Input
                         id={`${idPrefix}-padding`}
                         type="number"
@@ -74,10 +72,9 @@ export default function RenderSettings({
                         }
                         className="w-24"
                     />
-                </div>
+                </SettingRow>
                 {/* Scrollback */}
-                <div className="flex flex-col gap-1.5">
-                    <Label htmlFor={`${idPrefix}-scrollback`}>{t["Scrollback"]}</Label>
+                <SettingRow label={<Label htmlFor={`${idPrefix}-scrollback`}>{t["Scrollback"]}</Label>}>
                     <Input
                         id={`${idPrefix}-scrollback`}
                         type="number"
@@ -89,12 +86,11 @@ export default function RenderSettings({
                         }}
                         className="w-24"
                     />
-                </div>
+                </SettingRow>
             </div>
 
             {/* Font Family */}
-            <div className="flex flex-col gap-1.5">
-                <Label htmlFor={`${idPrefix}-font-family`}>{t["Font Family"]}</Label>
+            <SettingRow label={<Label htmlFor={`${idPrefix}-font-family`}>{t["Font Family"]}</Label>}>
                 <Input
                     id={`${idPrefix}-font-family`}
                     value={draft.fontFamily ?? ""}
@@ -104,12 +100,11 @@ export default function RenderSettings({
                     className="max-w-sm"
                     placeholder="e.g. JetBrains Mono"
                 />
-            </div>
+            </SettingRow>
 
             {/* Font Size / Weight / Style */}
             <div className="flex flex-row gap-5">
-                <div className="flex flex-col gap-1.5">
-                    <Label htmlFor={`${idPrefix}-font-size`}>{t["Font Size"]}</Label>
+                <SettingRow label={<Label htmlFor={`${idPrefix}-font-size`}>{t["Font Size"]}</Label>}>
                     <Input
                         id={`${idPrefix}-font-size`}
                         type="number"
@@ -120,9 +115,8 @@ export default function RenderSettings({
                         }
                         className="w-24"
                     />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                    <Label>{t["Font Weight"]}</Label>
+                </SettingRow>
+                <SettingRow label={<Label>{t["Font Weight"]}</Label>}>
                     <Select
                         selectedKey={String(draft.fontWeight)}
                         onSelectionChange={(key) => {
@@ -146,9 +140,8 @@ export default function RenderSettings({
                             </ListBox>
                         </Select.Popover>
                     </Select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                    <Label>{t["Font Style"]}</Label>
+                </SettingRow>
+                <SettingRow label={<Label>{t["Font Style"]}</Label>}>
                     <Select
                         selectedKey={draft.fontStyle}
                         onSelectionChange={(key) => {
@@ -173,13 +166,12 @@ export default function RenderSettings({
                             </ListBox>
                         </Select.Popover>
                     </Select>
-                </div>
+                </SettingRow>
             </div>
 
             {/* Cursor Style + Blink */}
             <div className="flex flex-row gap-5 items-end">
-                <div className="flex flex-col gap-1.5">
-                    <Label>{t["Cursor Style"]}</Label>
+                <SettingRow label={<Label>{t["Cursor Style"]}</Label>}>
                     <Select
                         selectedKey={draft.cursorStyle ?? "block"}
                         onSelectionChange={(key) => {
@@ -203,11 +195,13 @@ export default function RenderSettings({
                             </ListBox>
                         </Select.Popover>
                     </Select>
-                </div>
-                <div className="flex flex-row items-center justify-between gap-2 pb-1.5">
-                    <Label className="cursor-pointer">
-                        {t["Cursor Blink"]}
-                    </Label>
+                </SettingRow>
+                <SettingRow
+                    variant="toggle"
+                    className="pb-1.5"
+                    label={<Label className="cursor-pointer">{t["Cursor Blink"]}</Label>}
+                    onClick={() => updateDraft({ cursorBlink: !(draft.cursorBlink ?? false) })}
+                >
                     <Switch
                         isSelected={draft.cursorBlink ?? false}
                         onChange={(v) => updateDraft({ cursorBlink: v })}
@@ -216,12 +210,11 @@ export default function RenderSettings({
                             <Switch.Thumb />
                         </Switch.Control>
                     </Switch>
-                </div>
+                </SettingRow>
             </div>
 
             {/* Theme Path */}
-            <div className="flex flex-col gap-1.5">
-                <Label htmlFor={`${idPrefix}-theme`}>{t["Theme Path"]}</Label>
+            <SettingRow label={<Label htmlFor={`${idPrefix}-theme`}>{t["Theme Path"]}</Label>}>
                 <div className="flex flex-row items-center justify-between gap-4">
                     <Input
                         id={`${idPrefix}-theme`}
@@ -234,18 +227,15 @@ export default function RenderSettings({
                     />
                     <ThemePreview theme={themePreview} />
                 </div>
-            </div>
+            </SettingRow>
 
             {/* WebGL Renderer */}
-            <div className="flex flex-row items-center justify-between">
-                <div className="flex flex-col gap-0.5">
-                    <Label className="cursor-pointer">
-                        {t["WebGL Renderer"]}
-                    </Label>
-                    <p className="text-xs text-muted">
-                        {t["webgl description"]}
-                    </p>
-                </div>
+            <SettingRow
+                variant="toggle"
+                label={<Label className="cursor-pointer">{t["WebGL Renderer"]}</Label>}
+                description={t["webgl description"]}
+                onClick={() => updateDraft({ webgl: !(draft.webgl ?? false) })}
+            >
                 <Switch
                     isSelected={draft.webgl ?? false}
                     onChange={(v) => updateDraft({ webgl: v })}
@@ -254,18 +244,15 @@ export default function RenderSettings({
                         <Switch.Thumb />
                     </Switch.Control>
                 </Switch>
-            </div>
+            </SettingRow>
 
             {/* Grapheme Clusters (experimental) */}
-            <div className="flex flex-row items-center justify-between">
-                <div className="flex flex-col gap-0.5">
-                    <Label className="cursor-pointer">
-                        {t["Grapheme Clusters"]}
-                    </Label>
-                    <p className="text-xs text-muted">
-                        {t["grapheme clusters description"]}
-                    </p>
-                </div>
+            <SettingRow
+                variant="toggle"
+                label={<Label className="cursor-pointer">{t["Grapheme Clusters"]}</Label>}
+                description={t["grapheme clusters description"]}
+                onClick={() => updateDraft({ graphemeClusters: !(draft.graphemeClusters ?? false) })}
+            >
                 <Switch
                     isSelected={draft.graphemeClusters ?? false}
                     onChange={(v) => updateDraft({ graphemeClusters: v })}
@@ -274,18 +261,15 @@ export default function RenderSettings({
                         <Switch.Thumb />
                     </Switch.Control>
                 </Switch>
-            </div>
+            </SettingRow>
 
             {/* Ligatures */}
-            <div className="flex flex-row items-center justify-between">
-                <div className="flex flex-col gap-0.5">
-                    <Label className="cursor-pointer">
-                        {t["Ligatures"]}
-                    </Label>
-                    <p className="text-xs text-muted">
-                        {t["ligatures description"]}
-                    </p>
-                </div>
+            <SettingRow
+                variant="toggle"
+                label={<Label className="cursor-pointer">{t["Ligatures"]}</Label>}
+                description={t["ligatures description"]}
+                onClick={() => updateDraft({ ligatures: !(draft.ligatures ?? false) })}
+            >
                 <Switch
                     isSelected={draft.ligatures ?? false}
                     onChange={(v) => updateDraft({ ligatures: v })}
@@ -294,7 +278,7 @@ export default function RenderSettings({
                         <Switch.Thumb />
                     </Switch.Control>
                 </Switch>
-            </div>
+            </SettingRow>
         </div>
     );
 

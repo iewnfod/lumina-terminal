@@ -12,6 +12,8 @@ import {useCallback, useEffect, useRef, useState} from "react";
  *
  * `isDirty` uses a deep equality check so nested object/array drafts (e.g.
  * Bindings, profile fields) work without each caller writing its own compare.
+ * Panels whose draft carries TRANSIENT fields (Bindings' `__isDefault` flag)
+ * pass `isEqual` to compare a normalized projection instead.
  *
  * @param source the immutable "committed" value the draft tracks.
  * @param onCommit called with the current draft when `save()` is invoked. The
@@ -19,11 +21,14 @@ import {useCallback, useEffect, useRef, useState} from "react";
  * @param deps dependency array that, when changed, re-seeds the draft from
  *   `source` (e.g. the config fields the draft mirrors). Pass the same values
  *   the old `useEffect` depended on.
+ * @param opts.isEqual optional equality override used for `isDirty` and the
+ *   save() no-op guard (defaults to JSON deep equality).
  */
 export function useSettingsDraft<T>(
     source: T,
     onCommit: (draft: T) => void,
     deps: ReadonlyArray<unknown>,
+    opts?: {isEqual?: (a: T, b: T) => boolean},
 ): {
     draft: T;
     setDraft: (next: T | ((prev: T) => T)) => void;
@@ -39,6 +44,7 @@ export function useSettingsDraft<T>(
     sourceRef.current = source;
     const onCommitRef = useRef(onCommit);
     onCommitRef.current = onCommit;
+    const isEqual = opts?.isEqual ?? jsonEqual;
 
     // Re-seed when the source (or any tracked dep) changes externally. This
     // mirrors the original panels' behavior: opening settings or receiving a
@@ -56,15 +62,16 @@ export function useSettingsDraft<T>(
     // (no functions/symbols), so this is both correct and avoids forcing every
     // caller to supply a comparator. Keys are not sorted, but the source and
     // draft share the same shape so key order is stable between them.
-    const isDirty = !jsonEqual(source, draft);
+    const isDirty = !isEqual(source, draft);
 
     const save = useCallback(() => {
         // Guard: only commit if there's actually a difference, so a stray
         // Save press on a clean form is a no-op (matches prior behavior).
-        if (!jsonEqual(sourceRef.current, draft)) {
+        if (!isEqual(sourceRef.current, draft)) {
             onCommitRef.current(draft);
         }
-    }, [draft]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draft, isEqual]);
 
     const reset = useCallback(() => {
         setDraft(sourceRef.current);

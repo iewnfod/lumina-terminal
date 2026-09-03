@@ -3,6 +3,7 @@ import {Button, Kbd, Label, ListBox, Select} from "@heroui/react";
 import {Pencil, Plus, RotateCcw, Trash2, X} from "lucide-react";
 import {useGlobalConfig} from "../../hooks/config.tsx";
 import {useI18n} from "../../hooks/i18n.tsx";
+import {useSettingsDraft} from "../../hooks/useSettingsDraft.ts";
 import {info} from "@tauri-apps/plugin-log";
 import {Actions} from "../../types/config.ts";
 import {DEFAULT_BINDINGS} from "../../constants.ts";
@@ -21,6 +22,8 @@ import {
 import {useKeyRecorder} from "../../hooks/useKeyRecorder.ts";
 import SettingsShell from "../ui/SettingsShell.tsx";
 import SectionTitle from "../ui/SectionTitle.tsx";
+import SaveFooter from "../ui/SaveFooter.tsx";
+import SettingRow from "../ui/SettingRow.tsx";
 
 // Key used in the "Add binding" action dropdown when no action is chosen yet.
 const NO_ACTION = "__none__";
@@ -32,7 +35,6 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
     const t = useI18n();
 
     const sourceBindings = config.bindings?.length ? config.bindings : DEFAULT_BINDINGS;
-    const [draft, setDraft] = useState<DraftBinding[]>(() => sourceBindings.map(toDraft));
     const [recordingIndex, setRecordingIndex] = useState<number | null>(null);
     // New-binding creation state.
     const [newAction, setNewAction] = useState<Actions | typeof NO_ACTION>(NO_ACTION);
@@ -40,17 +42,24 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
     // For newTab: DEFAULT_PROFILE_KEY = default profile; otherwise the profile name to open.
     const [newProfileName, setNewProfileName] = useState<string>(DEFAULT_PROFILE_KEY);
 
-    // Reset draft when config changes externally.
-    useEffect(() => {
-        const src = config.bindings?.length ? config.bindings : DEFAULT_BINDINGS;
-        setDraft(src.map(toDraft));
-    }, [config.bindings]);
-
-    const isDirty = useMemo(() => {
-        const src = sourceBindings.map((b) => ({...b}));
-        const cur = draft.map(stripDraftFlag);
-        return JSON.stringify(cur) !== JSON.stringify(src);
-    }, [draft, sourceBindings]);
+    // Shared draft logic (reseed on external config change + isDirty). The
+    // draft carries the transient __isDefault flag, so dirtiness compares a
+    // normalized (stripped) projection — editing a key away and back to the
+    // default reads as clean again, exactly like the previous hand-rolled
+    // comparator.
+    const {draft, setDraft, isDirty, save} = useSettingsDraft(
+        useMemo(() => sourceBindings.map(toDraft), [sourceBindings]),
+        (d) => {
+            info(`Bindings saved (${d.length} entries)`);
+            // Strip the transient __isDefault flag before persisting.
+            updateConfig({bindings: d.map(stripDraftFlag)});
+        },
+        [config.bindings],
+        {
+            isEqual: (src, d) =>
+                JSON.stringify(d.map(stripDraftFlag)) === JSON.stringify(src.map(stripDraftFlag)),
+        },
+    );
 
     const conflicts = useMemo(() => detectConflicts(draft), [draft]);
     const hasConflicts = conflicts.size > 0;
@@ -118,18 +127,11 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
     }, [recordingIndex, draft.length]);
 
     const handleReset = useCallback(() => {
+        // "Reset to Defaults" restores the FACTORY bindings (not the last
+        // saved ones) — the user then presses Save to persist them.
         setDraft(DEFAULT_BINDINGS.map(toDraft));
         setRecordingIndex(null);
-    }, []);
-
-    const handleSave = useCallback(() => {
-        if (hasConflicts || hasMissingAccelerator) return;
-        info(`Bindings saved (${draft.length} entries)`);
-        // Strip the transient __isDefault flag before persisting.
-        updateConfig({
-            bindings: draft.map(stripDraftFlag),
-        });
-    }, [draft, hasConflicts, hasMissingAccelerator, updateConfig]);
+    }, [setDraft]);
 
     // HeroUI semantic danger token — redefined under .dark so it tracks the
     // theme mode (unlike the old --color-danger-500, which was never defined
@@ -139,36 +141,29 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
     return (
         <SettingsShell
             footer={
-                <div className="shrink-0 pt-3 ml-1 mr-6" style={{borderTop: `1px solid ${borderColor}`}}>
-                    <div className="flex items-center gap-3 justify-between">
-                        <div className="flex items-center gap-3">
-                            <Button
-                                variant="primary"
-                                isDisabled={!isDirty || hasConflicts || hasMissingAccelerator}
-                                onPress={handleSave}
-                            >
-                                {t["Save"]}
-                            </Button>
-                            {isDirty && !hasConflicts && !hasMissingAccelerator && (
-                                <span className="text-xs text-muted">{t["Unsaved changes"]}</span>
-                            )}
-                            {hasConflicts && (
-                                <span className="text-xs" style={{color: dangerColor}}>
-                                    {t["Conflict: this shortcut is already in use"]}
-                                </span>
-                            )}
-                            {!hasConflicts && hasMissingAccelerator && (
-                                <span className="text-xs" style={{color: dangerColor}}>
-                                    {t["At least one modifier key is required"]}
-                                </span>
-                            )}
-                        </div>
+                <SaveFooter
+                    isDisabled={!isDirty || hasConflicts || hasMissingAccelerator}
+                    saveLabel={t["Save"]}
+                    onPressSave={save}
+                    isDirty={isDirty}
+                    unsavedLabel={t["Unsaved changes"]}
+                    status={hasConflicts ? (
+                        <span className="text-xs" style={{color: dangerColor}}>
+                            {t["Conflict: this shortcut is already in use"]}
+                        </span>
+                    ) : hasMissingAccelerator ? (
+                        <span className="text-xs" style={{color: dangerColor}}>
+                            {t["At least one modifier key is required"]}
+                        </span>
+                    ) : undefined}
+                    trailing={
                         <Button variant="outline" onPress={handleReset}>
                             <RotateCcw size={15}/>
                             {t["Reset to Defaults"]}
                         </Button>
-                    </div>
-                </div>
+                    }
+                    borderColor={borderColor}
+                />
             }
         >
             <SectionTitle mb="0.5rem">{t["Keyboard Shortcuts"]}</SectionTitle>
@@ -180,8 +175,7 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
             <div
                 className="flex flex-row items-end gap-3 mb-5 px-3"
             >
-                <div className="flex flex-col gap-1.5 flex-1 min-w-0 max-w-xs">
-                    <Label>{t["Action"]}</Label>
+                <SettingRow className="flex-1 min-w-0 max-w-xs" label={<Label>{t["Action"]}</Label>}>
                     <Select
                         selectedKey={newAction}
                         onSelectionChange={(key) => {
@@ -202,11 +196,10 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                             </ListBox>
                         </Select.Popover>
                     </Select>
-                </div>
+                </SettingRow>
 
                 {newAction === "toTab" && (
-                    <div className="flex flex-col gap-1.5 w-28">
-                        <Label>{t["Switch to Tab"]}</Label>
+                    <SettingRow className="w-28" label={<Label>{t["Switch to Tab"]}</Label>}>
                         <Select
                             selectedKey={newTabIndex}
                             onSelectionChange={(key) => {
@@ -230,12 +223,11 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                                 </ListBox>
                             </Select.Popover>
                         </Select>
-                    </div>
+                    </SettingRow>
                 )}
 
                 {newAction === "newTab" && (
-                    <div className="flex flex-col gap-1.5 w-44">
-                        <Label>{t["Profile"]}</Label>
+                    <SettingRow className="w-44" label={<Label>{t["Profile"]}</Label>}>
                         <Select
                             selectedKey={newProfileName}
                             onSelectionChange={(key) => {
@@ -259,7 +251,7 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                                 </ListBox>
                             </Select.Popover>
                         </Select>
-                    </div>
+                    </SettingRow>
                 )}
 
                 <Button

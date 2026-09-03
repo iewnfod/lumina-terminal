@@ -22,6 +22,10 @@ export interface SaveFooterProps {
     isDirty?: boolean;
     /** Label for the unsaved-changes hint (i18n). */
     unsavedLabel?: string;
+    /** Optional status message next to Save, replacing the unsaved hint's
+     *  slot when set (e.g. Bindings' conflict / missing-modifier warnings —
+     *  callers style it, typically danger-colored). */
+    status?: ReactNode;
     /** Optional trailing action(s): About, Reset to Defaults, Delete, etc. */
     trailing?: ReactNode;
     /** Theme-derived top border color. */
@@ -35,6 +39,7 @@ export default function SaveFooter({
     onPressSave,
     isDirty,
     unsavedLabel,
+    status,
     trailing,
     borderColor,
     style,
@@ -53,9 +58,10 @@ export default function SaveFooter({
                     >
                         {saveLabel}
                     </Button>
-                    {isDirty && !isDisabled && unsavedLabel && (
+                    {isDirty && !isDisabled && unsavedLabel && !status && (
                         <span className="text-xs text-muted truncate">{unsavedLabel}</span>
                     )}
+                    {status}
                 </div>
                 {trailing && <div className="flex items-center gap-2 shrink-0">{trailing}</div>}
             </div>
