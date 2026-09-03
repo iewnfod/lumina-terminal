@@ -62,6 +62,12 @@ export interface GlobalConfig {
      *  - "dark"     → always dark
      *  Default "terminal" preserves existing behavior. */
     themeMode?: "system" | "terminal" | "light" | "dark";
+    /** When true (default), draw a 1px hairline around the window (via
+     *  lib/glass.ts windowOutline) so the borderless window's edge stays
+     *  visible on Linux desktop environments that add no compositor shadow.
+     *  Linux-only — the outline is never drawn on macOS/Windows, where the
+     *  system provides a shadow/border, so this flag is ignored there. */
+    windowOutline?: boolean;
     autoUpdateOnStartup?: boolean;
     /** When true, a new terminal tab inherits the ACTIVE terminal's current
      * working directory as its startup cwd (instead of the profile default).

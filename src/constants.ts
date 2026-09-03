@@ -212,6 +212,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     showTabBar: false,
     enableColorSpread: false,
     themeMode: "terminal",
+    windowOutline: true,
     autoUpdateOnStartup: true,
     inheritWorkingDirectory: false,
     imeDuplicateInputFix: true,

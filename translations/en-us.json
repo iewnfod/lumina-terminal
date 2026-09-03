@@ -163,6 +163,8 @@
     "Always Dark": "Always Dark",
     "Color Spread": "Color Spread",
     "Let fullscreen apps' background fill the whole window": "Let fullscreen apps' background fill the whole window",
+    "Window Outline": "Window Outline",
+    "Draw a thin line around the window for desktops that add no window shadow": "Draw a thin line around the window for desktops that add no window shadow",
     "Checking for updates...": "Checking for updates...",
     "A new version is available": "A new version is available",
     "You're up to date": "You're up to date",

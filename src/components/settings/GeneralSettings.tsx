@@ -3,6 +3,7 @@ import {languageNames, useI18n} from "../../hooks/i18n.tsx";
 import {useMemo} from "react";
 import {info} from "@tauri-apps/plugin-log";
 import {Label, ListBox, Select, Switch, Tooltip} from "@heroui/react";
+import {isLinux} from "../../lib/platform.ts";
 import {useIsWayland} from "../../hooks/useIsWayland.ts";
 import {useSettingsDraft} from "../../hooks/useSettingsDraft.ts";
 import SettingsShell from "../ui/SettingsShell.tsx";
@@ -16,6 +17,7 @@ interface GeneralDraft {
     closeWindowOnLastTab: boolean;
     defaultProfile: string;
     themeMode: "system" | "terminal" | "light" | "dark";
+    windowOutline: boolean;
     enableColorSpread: boolean;
     autoUpdateOnStartup: boolean;
     inheritWorkingDirectory: boolean;
@@ -55,6 +57,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         closeWindowOnLastTab: config.closeWindowOnLastTab !== false,
         defaultProfile: currentDefault,
         themeMode: config.themeMode ?? "terminal",
+        windowOutline: config.windowOutline !== false,
         enableColorSpread: config.enableColorSpread !== false,
         autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
         inheritWorkingDirectory: config.inheritWorkingDirectory ?? false,
@@ -76,6 +79,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 showTabBar: d.showTabBar,
                 closeWindowOnLastTab: d.closeWindowOnLastTab,
                 themeMode: d.themeMode,
+                windowOutline: d.windowOutline,
                 enableColorSpread: d.enableColorSpread,
                 autoUpdateOnStartup: d.autoUpdateOnStartup,
                 inheritWorkingDirectory: d.inheritWorkingDirectory,
@@ -98,7 +102,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
     );
 
     return (
@@ -259,6 +263,27 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                                 </Switch.Control>
                             </Switch>
                         </SettingRow>
+
+                        {/* Window Outline: Linux-only row — on macOS/Windows the
+                            system draws its own shadow/border, the outline is
+                            never rendered, and the toggle would be a no-op. */}
+                        {isLinux() && (
+                            <SettingRow
+                                variant="toggle"
+                                label={<Label className="cursor-pointer">{t["Window Outline"]}</Label>}
+                                description={t["Draw a thin line around the window for desktops that add no window shadow"]}
+                                onClick={() => setDraft((prev) => ({...prev, windowOutline: !prev.windowOutline}))}
+                            >
+                                <Switch
+                                    isSelected={draft.windowOutline}
+                                    onChange={(v) => setDraft((prev) => ({...prev, windowOutline: v}))}
+                                >
+                                    <Switch.Control>
+                                        <Switch.Thumb />
+                                    </Switch.Control>
+                                </Switch>
+                            </SettingRow>
+                        )}
                     </div>
                 </section>
 

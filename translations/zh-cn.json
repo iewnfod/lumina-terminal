@@ -163,6 +163,8 @@
     "Always Dark": "始终深色",
     "Color Spread": "颜色扩散",
     "Let fullscreen apps' background fill the whole window": "让全屏应用的背景色填充整个窗口",
+    "Window Outline": "窗口描线",
+    "Draw a thin line around the window for desktops that add no window shadow": "为不提供窗口阴影的桌面环境在窗口四周绘制细线",
     "Checking for updates...": "正在检查更新…",
     "A new version is available": "发现新版本",
     "You're up to date": "已是最新版本",

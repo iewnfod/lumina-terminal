@@ -518,8 +518,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                     box-shadow overlay (not border/outline) — no layout shift,
                     follows the rounded corners, and paints above the terminal
                     canvas which would otherwise cover a container-edge line.
-                    Hidden when maximized like the rounded-lg above. */}
-                {isLinux() && !isMaximized && (
+                    Hidden when maximized like the rounded-lg above; the
+                    windowOutline setting (default on) turns it off entirely. */}
+                {isLinux() && !isMaximized && config.windowOutline !== false && (
                     <div
                         aria-hidden
                         className="absolute inset-0 rounded-lg pointer-events-none"
