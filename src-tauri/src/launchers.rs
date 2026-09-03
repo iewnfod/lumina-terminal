@@ -22,12 +22,12 @@
 //! integration tests (`tests/launchers.rs`) can drive all three formats on
 //! every platform; only the real PowerShell execution is `cfg(windows)`.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
+
+use crate::utils::{content_hash_hex, prune_files_not_in, write_atomic};
 use tauri::Manager;
 
 /// Prefix every generated bundle id shares — the macOS ownership mark.
@@ -519,22 +519,17 @@ fn materialize_icon(
 /// Content-addressed storage name for an icon payload, so identical icons
 /// share one file and prune naturally.
 fn icon_storage_name(bytes: &[u8], ext: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    format!("icon-{:016x}{ext}", hasher.finish())
+    format!("icon-{}{ext}", content_hash_hex(bytes))
 }
 
 // ---------------------------------------------------------------------------
 // Generation + sync
 // ---------------------------------------------------------------------------
 
-/// Write `bytes` to `path`, creating parent directories as needed.
+/// Write `bytes` to `path` atomically (tmp+rename), creating parent
+/// directories as needed — a torn .desktop entry must never be visible.
 fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
-    }
-    std::fs::write(path, bytes).map_err(|e| format!("Failed to write {}: {e}", path.display()))
+    write_atomic(path, bytes).map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
 
 /// Store icon bytes in the launcher-icons cache under their content-hashed
@@ -856,21 +851,15 @@ fn prune_launchers(
 }
 
 /// Delete plain files in `dir` that are not in `keep`. A missing dir is a
-/// no-op (nothing generated yet).
+/// no-op (nothing generated yet). `keep` holds full paths from the same dir;
+/// only the file names participate in the comparison.
 fn prune_dir_files(dir: &Path, keep: &[PathBuf], removed: &mut Vec<String>) -> Result<(), String> {
-    if !dir.is_dir() {
-        return Ok(());
-    }
-    for entry in read_dir_entries(dir)? {
-        if !entry.is_file() || keep.contains(&entry) {
-            continue;
-        }
-        let name = entry.file_name().unwrap_or_default().to_string_lossy().to_string();
-        match std::fs::remove_file(&entry) {
-            Ok(()) => removed.push(name),
-            Err(e) => log::warn!("Failed to prune icon file {}: {e}", entry.display()),
-        }
-    }
+    let keep_names: Vec<String> = keep
+        .iter()
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .collect();
+    let pruned = prune_files_not_in(dir, &keep_names, "icon file")?;
+    removed.extend(pruned);
     Ok(())
 }
 

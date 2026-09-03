@@ -6,9 +6,9 @@
  * through the asset protocol, whose scope is limited to that directory
  * (tauri.conf.json).
  */
-import {convertFileSrc, invoke} from "@tauri-apps/api/core";
+import {convertFileSrc} from "@tauri-apps/api/core";
 import {appDataDir, join} from "@tauri-apps/api/path";
-import {error} from "@tauri-apps/plugin-log";
+import {invokeLogged} from "./apiCore.ts";
 
 /** Directory (under the app data dir) the backend stores imported icons in.
  *  Mirrors COMMAND_ICONS_DIR in src-tauri/src/command_icons.rs. */
@@ -18,18 +18,16 @@ const COMMAND_ICONS_DIR = "command-icons";
  *  file name to embed in a `custom:` icon id (lib/appIcon.ts). Rejects on
  *  unsupported format / oversize file / IO failure. */
 export function importCommandIcon(src: string): Promise<string> {
-    return invoke<string>("import_command_icon", {src}).catch((e) => {
-        error(`Failed to import command icon: ${e}`).catch(() => {});
-        throw e;
+    return invokeLogged<string>("import_command_icon", {src}, {
+        message: "Failed to import command icon",
     });
 }
 
 /** Delete stored icon files whose names are not in `keep` (the names the
  *  saved rules still reference). Call after committing rule changes. */
 export function pruneCommandIcons(keep: string[]): Promise<void> {
-    return invoke<void>("prune_command_icons", {keep}).catch((e) => {
-        error(`Failed to prune command icons: ${e}`).catch(() => {});
-        throw e;
+    return invokeLogged<void>("prune_command_icons", {keep}, {
+        message: "Failed to prune command icons",
     });
 }
 
@@ -37,9 +35,8 @@ export function pruneCommandIcons(keep: string[]): Promise<void> {
  *  stored icon, so a rule can be switched away and back without re-importing;
  *  files only disappear when a save prunes the unreferenced ones. */
 export function listCommandIcons(): Promise<string[]> {
-    return invoke<string[]>("list_command_icons").catch((e) => {
-        error(`Failed to list command icons: ${e}`).catch(() => {});
-        throw e;
+    return invokeLogged<string[]>("list_command_icons", {}, {
+        message: "Failed to list command icons",
     });
 }
 

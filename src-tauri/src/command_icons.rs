@@ -8,11 +8,11 @@
 //! piling up duplicates. Unreferenced files are pruned by the settings panel
 //! on save (`prune_command_icons` receives the still-referenced names).
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 use tauri::Manager;
+
+use crate::utils::{content_hash_hex, prune_files_not_in, write_atomic};
 
 /// Directory (under the app data dir) that holds imported icon files.
 pub const COMMAND_ICONS_DIR: &str = "command-icons";
@@ -95,18 +95,14 @@ pub fn import_icon_into(dir: &Path, src: &str) -> Result<String, String> {
         ));
     }
 
-    let mut hasher = DefaultHasher::new();
-    bytes.hash(&mut hasher);
     let stem = src_path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    let stored_name = format!("{}-{:016x}{}", sanitize_stem(&stem), hasher.finish(), ext);
+    let stored_name = format!("{}-{}{}", sanitize_stem(&stem), content_hash_hex(&bytes), ext);
 
-    std::fs::create_dir_all(dir)
-        .map_err(|e| format!("Failed to create icon directory {}: {e}", dir.display()))?;
     let dest = dir.join(&stored_name);
-    std::fs::write(&dest, &bytes)
+    write_atomic(&dest, &bytes)
         .map_err(|e| format!("Failed to write icon file {}: {e}", dest.display()))?;
 
     Ok(stored_name)
@@ -117,27 +113,7 @@ pub fn import_icon_into(dir: &Path, src: &str) -> Result<String, String> {
 /// yet); subdirectories are left alone — only files this module wrote are
 /// candidates for deletion.
 pub fn prune_icons(dir: &Path, keep: &[String]) -> Result<Vec<String>, String> {
-    if !dir.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut removed = Vec::new();
-    let entries = std::fs::read_dir(dir)
-        .map_err(|e| format!("Failed to list icon directory {}: {e}", dir.display()))?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().to_string();
-        if keep.iter().any(|k| k == &name) {
-            continue;
-        }
-        match std::fs::remove_file(&path) {
-            Ok(()) => removed.push(name),
-            Err(e) => log::warn!("Failed to prune unused icon {}: {e}", path.display()),
-        }
-    }
-    Ok(removed)
+    prune_files_not_in(dir, keep, "icon")
 }
 
 /// List the stored (imported) icon file names, sorted. A missing `dir` is an

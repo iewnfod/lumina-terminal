@@ -6,8 +6,8 @@
  * each call (idempotent overwrite + prune of orphaned files), so callers
  * just re-run {@link syncLaunchersFromConfig} after any config save.
  */
-import {invoke} from "@tauri-apps/api/core";
-import {error, info} from "@tauri-apps/plugin-log";
+import {info} from "@tauri-apps/plugin-log";
+import {invokeLogged} from "./apiCore.ts";
 import {LauncherIconPayload, resolveLauncherIcon} from "./launcherIcon.ts";
 import {GlobalConfig} from "../types/config.ts";
 
@@ -32,18 +32,16 @@ export interface LauncherSyncReport {
 
 /** Regenerate every launcher in `specs` and prune orphaned ones. */
 export function syncProfileLaunchers(specs: LauncherSpec[]): Promise<LauncherSyncReport> {
-    return invoke<LauncherSyncReport>("sync_profile_launchers", {specs}).catch((e) => {
-        error(`Failed to sync profile launchers: ${e}`).catch(() => {});
-        throw e;
+    return invokeLogged<LauncherSyncReport>("sync_profile_launchers", {specs}, {
+        message: "Failed to sync profile launchers",
     });
 }
 
 /** The directory launchers are written to on this platform (created if
  * missing) — for the settings page's "open launcher folder" action. */
 export function getLauncherDir(): Promise<string> {
-    return invoke<string>("get_launcher_dir").catch((e) => {
-        error(`Failed to resolve the launcher directory: ${e}`).catch(() => {});
-        throw e;
+    return invokeLogged<string>("get_launcher_dir", {}, {
+        message: "Failed to resolve the launcher directory",
     });
 }
 

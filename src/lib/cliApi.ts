@@ -1,5 +1,4 @@
-import {invoke} from "@tauri-apps/api/core";
-import {error} from "@tauri-apps/plugin-log";
+import {invokeLogged} from "./apiCore.ts";
 import type {CliArgs} from "../types/cli.ts";
 
 /**
@@ -12,8 +11,8 @@ import type {CliArgs} from "../types/cli.ts";
  * log-on-reject rather than a raw `invoke` in a component.
  */
 export function getCliArgs(): Promise<CliArgs> {
-    return invoke<CliArgs>("get_cli_args").catch((e) => {
-        error(`Failed to read CLI args: ${e}`).catch(() => {});
-        return {command: [], hold: false};
+    return invokeLogged<CliArgs>("get_cli_args", {}, {
+        message: "Failed to read CLI args",
+        fallback: {command: [], hold: false},
     });
 }

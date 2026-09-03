@@ -1,19 +1,17 @@
 import {invoke, Channel} from "@tauri-apps/api/core";
-import {error} from "@tauri-apps/plugin-log";
+import {invokeLogged} from "./apiCore.ts";
 import {TerminalProfile} from "../types/terminal.ts";
 
 /**
- * Run an invoke() and log any rejection as an error before rethrowing, so a
- * backend failure is always recorded even when a caller treats the promise as
- * fire-and-forget (most PTY call sites do). Callers that attach their own
- * `.catch` still see the rejection; the log happens exactly once here.
+ * PTY-flavored wrapper over the shared invokeLogged core (lib/apiCore.ts):
+ * merges the terminal id into the args and logs with the `[pty]` prefix.
+ * Rejections are logged here then rethrown, so a backend failure is always
+ * recorded even when a caller treats the promise as fire-and-forget (most PTY
+ * call sites do); callers that attach their own `.catch` still see it.
  */
 function invokeWithLog<T>(command: string, id: string, args: Record<string, unknown>): Promise<T> {
-    return invoke<T>(command, {...args, id}).catch((e) => {
-        // Re-log then rethrow so callers that catch (e.g. App.tsx killTerminal)
-        // still get the rejection, and fire-and-forget callers at least log it.
-        error(`[pty] ${command} failed for terminal ${id}: ${e}`).catch(() => {});
-        throw e;
+    return invokeLogged<T>(command, {...args, id}, {
+        message: `[pty] ${command} failed for terminal ${id}`,
     });
 }
 
@@ -101,8 +99,9 @@ export function setThrottle(id: string, throttled: boolean) {
  *  is focused (e.g. a settings/about tab). Best-effort: failures are logged
  *  but never block a tab switch. */
 export function setActiveTab(id: string | null) {
-    invoke<void>("set_active_tab", {id}).catch((e) => {
-        error(`Failed to mirror active tab to backend: ${e}`).catch(() => {});
+    invokeLogged<void>("set_active_tab", {id}, {
+        message: "Failed to mirror active tab to backend",
+        fallback: undefined, // fire-and-forget: log and swallow
     });
 }
 
@@ -110,8 +109,9 @@ export function setActiveTab(id: string | null) {
  *  read-only MCP server's `list_command_history` can see it. Called when shell
  *  integration reports the previous command's exit code (OSC CurrentCommandExit). */
 export function reportCommandFinished(id: string, command: string | null, exitCode: number) {
-    invoke<void>("report_command_finished", {id, command, exitCode}).catch((e) => {
-        error(`Failed to report command finished: ${e}`).catch(() => {});
+    invokeLogged<void>("report_command_finished", {id, command, exitCode}, {
+        message: "Failed to report command finished",
+        fallback: undefined, // fire-and-forget: log and swallow
     });
 }
 

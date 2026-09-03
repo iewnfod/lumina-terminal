@@ -526,18 +526,6 @@ fn proxy_env_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> 
     Ok(crate::shell_integration::integration_dir(app)?.join("proxy.env"))
 }
 
-/// Write via tmp+rename so a hook never reads a half-written file. POSIX
-/// rename overwrites atomically; Windows' does not, so drop the target first
-/// (the window between remove and rename is harmless — hooks treat a missing
-/// file as "keep current state until next prompt").
-fn write_atomic(path: &std::path::Path, content: &str) -> std::io::Result<()> {
-    let tmp = path.with_extension("env.tmp");
-    std::fs::write(&tmp, content)?;
-    #[cfg(windows)]
-    let _ = std::fs::remove_file(path);
-    std::fs::rename(&tmp, path)
-}
-
 fn watcher_loop(
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
     env_path: std::path::PathBuf,
@@ -552,7 +540,9 @@ fn watcher_loop(
         let snap = detect_snapshot(source);
         if last.as_ref() != Some(&snap) {
             last = Some(snap.clone());
-            if let Err(e) = write_atomic(&env_path, &render_proxy_env(&snap)) {
+            // utils::write_atomic (tmp+rename) so a hook never reads a
+            // half-written env-file.
+            if let Err(e) = crate::utils::write_atomic(&env_path, render_proxy_env(&snap).as_bytes()) {
                 log::warn!(
                     "Proxy watcher failed to write {}: {} (will retry on next change)",
                     env_path.display(),
