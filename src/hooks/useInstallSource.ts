@@ -25,6 +25,11 @@ let pending: Promise<InstallSource | null> | null = null;
 // Notified by invalidateInstallSourceCache so mounted hooks re-read.
 const invalidateListeners = new Set<() => void>();
 
+/** localStorage key driving the DEV MOCK below. Exported so the Developer
+ *  settings picker writes the same key this hook reads (single definition —
+ *  previously the string was duplicated in both files). */
+export const MOCK_INSTALL_SOURCE_KEY = "LUMINA_MOCK_INSTALL_SOURCE";
+
 /** Resolve the install source once, memoized module-wide. */
 function resolveInstallSource(): Promise<InstallSource | null> {
 	if (cached !== undefined) return Promise.resolve(cached);
@@ -34,7 +39,7 @@ function resolveInstallSource(): Promise<InstallSource | null> {
 		// LUMINA_MOCK_UPDATE; applies live via the Developer settings picker.
 		if (import.meta.env.DEV) {
 			const mock = typeof localStorage !== "undefined"
-				? localStorage.getItem("LUMINA_MOCK_INSTALL_SOURCE")
+				? localStorage.getItem(MOCK_INSTALL_SOURCE_KEY)
 				: null;
 			if (mock === "pacman" || mock === "dpkg" || mock === "rpm") {
 				info(`[install-source] DEV MOCK: forcing ${mock}-managed install`).catch(() => {});

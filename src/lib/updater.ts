@@ -58,6 +58,11 @@ export interface DownloadProgress {
  */
 let pendingUpdate: Update | null = null;
 
+/** localStorage key driving the DEV MOCK below. Exported so the Developer
+ *  settings picker writes the same key this module reads (single definition —
+ *  previously the string was duplicated in both files). */
+export const MOCK_UPDATE_KEY = "LUMINA_MOCK_UPDATE";
+
 /**
  * Check the configured endpoints for an update.
  *
@@ -84,7 +89,7 @@ export async function checkForUpdate(
 	// without publishing a release. See the doc comment above.
 	if (import.meta.env.DEV) {
 		const mock = (typeof localStorage !== "undefined"
-			? localStorage.getItem("LUMINA_MOCK_UPDATE")
+			? localStorage.getItem(MOCK_UPDATE_KEY)
 			: null) as "available" | "upToDate" | "error" | null;
 		if (mock === "available") {
 			await info("[updater] DEV MOCK: returning fake available update");
@@ -147,9 +152,11 @@ export async function checkForUpdate(
 	} catch (e) {
 		const elapsed = Date.now() - start;
 		const msg = e instanceof Error ? e.message : String(e);
-		await error(`[updater] check() failed after ${elapsed}ms: ${msg}`);
-		// also dump the full error for stack traces / unexpected shapes
-		console.error("[updater] check failed:", e);
+		// The stack (when present) rides along in the same log line — the log
+		// file is the one place users actually look (console.* never reaches
+		// it).
+		const stack = e instanceof Error && e.stack ? `\n${e.stack}` : "";
+		await error(`[updater] check() failed after ${elapsed}ms: ${msg}${stack}`);
 		return {
 			status: "error",
 			error: msg,
@@ -207,8 +214,8 @@ export async function downloadAndInstall(
 		await relaunch();
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
-		await error(`[updater] download/install failed after ${Date.now() - start}ms: ${msg}`);
-		console.error("[updater] download/install failed:", e);
+		const stack = e instanceof Error && e.stack ? `\n${e.stack}` : "";
+		await error(`[updater] download/install failed after ${Date.now() - start}ms: ${msg}${stack}`);
 		throw e;
 	}
 }

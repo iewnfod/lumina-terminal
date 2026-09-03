@@ -2,7 +2,7 @@ import {useMemo} from "react";
 import {Button, Input, Label, ListBox, Select} from "@heroui/react";
 import {useI18n} from "../../hooks/i18n.tsx";
 import {useShells} from "../../hooks/useShells.ts";
-import {platform} from "@tauri-apps/plugin-os";
+import {isWindows} from "../../lib/platform.ts";
 import {open} from "@tauri-apps/plugin-dialog";
 import {info} from "@tauri-apps/plugin-log";
 
@@ -43,11 +43,10 @@ export default function ShellSelector({exePath, onChange, idPrefix = "shell", cl
     };
 
     const browse = async () => {
-        const os = platform();
         const exe = await open({
             multiple: false,
             directory: false,
-            filters: os === "windows"
+            filters: isWindows()
                 ? [{name: "Executable File", extensions: ["exe"]}]
                 : [],
         });
