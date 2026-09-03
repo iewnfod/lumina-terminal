@@ -389,13 +389,18 @@ src-tauri/src/
 ├── install_source.rs # install_source — pacman/dpkg/rpm package-ownership detection;
 │                  #   stdout parsers extracted pure (tested in tests/install_source.rs)
 ├── file_manager.rs # open_in_file_manager — xdg-open / open -R / explorer (per-OS)
-├── launchers.rs    # Profile "wrap as app" generation: sync_profile_launchers regenerates every
-│                  #   launcher (Linux .desktop / macOS .app bundle / Windows .lnk via one-shot
-│                  #   PowerShell WScript.Shell — no COM crates) from the frontend's full spec list
-│                  #   and prunes orphaned files, proving ownership before any delete (lumina-
-│                  #   prefix / bundle-id-in-plist / dedicated Start-Menu subdir). exe resolution
-│                  #   prefers $APPIMAGE on Linux (AppImage current_exe is a temp mount). PNG→
-│                  #   icns/ico wrapping is hand-rolled (no image deps). Tested in tests/launchers.rs
+├── launchers/      # Profile "wrap as app" generation, split by concern:
+│   │               #   mod.rs — spec/dirs types, icon materialization + content-hash cache,
+│   │               #   generate/sync/prune orchestration, and the Tauri command layer
+│   │               #   (sync_profile_launchers regenerates every launcher from the frontend's
+│   │               #   full spec list and prunes orphaned files, proving ownership before any
+│   │               #   delete: lumina- prefix / bundle-id-in-plist / dedicated Start-Menu
+│   │               #   subdir; exe resolution prefers $APPIMAGE on Linux — AppImage
+│   │               #   current_exe is a temp mount). desktop.rs / bundle.rs / shortcut.rs —
+│   │               #   the per-platform content builders (.desktop, exec script + Info.plist,
+│   │               #   PowerShell WScript.Shell — no COM crates). icons.rs — hand-rolled
+│   │               #   PNG→icns/ico byte wrapping (no image deps). Re-exported through mod.rs
+│                  #   so tests/lib.rs keep the `launchers::` paths. Tested in tests/launchers.rs
 ├── fonts.rs       # find_font — CSS font-family → font file bytes for ligature parsing;
 │                  #   first_concrete_family pure (tested in tests/fonts.rs)
 └── utils.rs       # path_exist, read_file (frontend-facing fs helpers) + the shared fs idioms
@@ -424,7 +429,8 @@ tests/             # Backend integration tests (mandatory for backend work — s
 ├── command_icons.rs # import (ext/size validation, hash-named dedup) + prune over temp dirs;
 │                  #   sanitize_stem / ext_of pure helpers
 ├── install_source.rs # pacman/dpkg/rpm stdout sample shapes (hit and miss)
-├── launchers.rs    # Exec escaping, plist/script/ps1 content, png_width, icns/ico byte wrapping,
+├── launchers.rs    # Exec escaping, plist/script/ps1 content, png_width, icns/ico byte wrapping (via the
+│                  #   launchers/ submodule re-exports),
 │                  #   sanitize helpers + sync over temp dirs for all three formats (generate,
 │                  #   idempotent re-run, prune, macOS bundle-ownership protection, custom-icon
 │                  #   resolution + traversal rejection)

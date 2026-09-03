@@ -22,6 +22,20 @@
 //! integration tests (`tests/launchers.rs`) can drive all three formats on
 //! every platform; only the real PowerShell execution is `cfg(windows)`.
 
+mod bundle;
+mod desktop;
+mod icons;
+mod shortcut;
+
+// The platform content builders live in their own files; re-exported here so
+// `crate::launchers::*` (lib.rs) and the integration tests keep their
+// existing paths.
+pub use bundle::{launcher_script_content, plist_content, quote_sh};
+pub use desktop::{desktop_entry_content, escape_desktop_exec_arg};
+pub use icons::{icns_from_png, ico_from_png, png_width};
+pub use shortcut::shortcut_ps1;
+use shortcut::write_shortcut_file;
+
 use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
@@ -121,10 +135,6 @@ pub enum LauncherFormat {
     Shortcut,
 }
 
-// ---------------------------------------------------------------------------
-// Pure content builders
-// ---------------------------------------------------------------------------
-
 /// Display name for the launcher: the trimmed title, falling back to the
 /// profile name.
 pub fn display_name(spec: &LauncherSpec) -> &str {
@@ -162,255 +172,6 @@ pub fn launcher_cli_args(spec: &LauncherSpec) -> Vec<String> {
         }
     }
     args
-}
-
-/// Escape one argv token for a Desktop Entry `Exec=` value, per the spec:
-/// `%` doubles (field codes are reserved), a token containing any reserved
-/// character is double-quoted, and `"` `` ` `` `$` `\` gain a backslash
-/// inside quotes. Pure — tests drive the nasty inputs.
-pub fn escape_desktop_exec_arg(arg: &str) -> String {
-    let doubled = arg.replace('%', "%%");
-    let reserved = |c: char| {
-        matches!(
-            c,
-            ' ' | '\t'
-                | '\n'
-                | '\r'
-                | '"'
-                | '\''
-                | '\\'
-                | '>'
-                | '<'
-                | '~'
-                | '|'
-                | '&'
-                | ';'
-                | '$'
-                | '*'
-                | '?'
-                | '#'
-                | '('
-                | ')'
-                | '`'
-        )
-    };
-    if !doubled.chars().any(reserved) {
-        return doubled;
-    }
-    let mut out = String::with_capacity(doubled.len() + 2);
-    out.push('"');
-    for c in doubled.chars() {
-        if matches!(c, '"' | '`' | '$' | '\\') {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out.push('"');
-    out
-}
-
-/// A `[Desktop Entry]` document for one launcher. `icon_path` may be None
-/// (no icon resource available → the entry renders with a generic icon).
-pub fn desktop_entry_content(
-    exe: &str,
-    args: &[String],
-    name: &str,
-    icon_path: Option<&str>,
-) -> String {
-    let exec = std::iter::once(exe.to_string())
-        .chain(args.iter().cloned())
-        .map(|a| escape_desktop_exec_arg(&a))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let mut out = String::new();
-    out.push_str("[Desktop Entry]\n");
-    out.push_str("Type=Application\n");
-    out.push_str(&format!("Name={}\n", desktop_value(name)));
-    out.push_str(&format!("Exec={}\n", exec));
-    if let Some(icon) = icon_path {
-        out.push_str(&format!("Icon={}\n", desktop_value(icon)));
-    }
-    out.push_str("Terminal=false\n");
-    out.push_str("Categories=System;TerminalEmulator;\n");
-    out.push_str(&format!(
-        "Comment=Lumina Terminal profile: {}\n",
-        desktop_value(name)
-    ));
-    out
-}
-
-/// Escape a desktop-file value: control characters become spaces (the spec
-/// forbids them outright; a space keeps the file parseable).
-fn desktop_value(value: &str) -> String {
-    value
-        .chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .collect()
-}
-
-/// Quote a token for a POSIX shell script. Unquoted when it is plainly safe
-/// (the classic `[A-Za-z0-9_@%+=:,./-]` set); otherwise single-quoted with
-/// `'\''` escapes.
-pub fn quote_sh(s: &str) -> String {
-    let safe = !s.is_empty()
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || "@%+=:,./-_".contains(c));
-    if safe {
-        return s.to_string();
-    }
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
-/// The macOS bundle executable: a `/bin/sh` script that `exec`s the real
-/// binary with the launcher's CLI args. (The window belongs to the Lumina
-/// process, so the Dock shows Lumina's icon — a documented v1 tradeoff.)
-pub fn launcher_script_content(exe: &str, args: &[String]) -> String {
-    let mut line = String::from("exec ");
-    line.push_str(&quote_sh(exe));
-    for a in args {
-        line.push(' ');
-        line.push_str(&quote_sh(a));
-    }
-    format!("#!/bin/sh\n{line}\n")
-}
-
-/// XML-escape a plist string value.
-fn xml_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
-/// The bundle's `Info.plist`. `icon_file` is a file *name* inside
-/// `Contents/Resources` (None = no `CFBundleIconFile` key).
-pub fn plist_content(
-    bundle_executable: &str,
-    bundle_id: &str,
-    display_name: &str,
-    icon_file: Option<&str>,
-) -> String {
-    let mut out = String::new();
-    out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-    out.push_str("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n");
-    out.push_str("<plist version=\"1.0\">\n<dict>\n");
-    fn key(out: &mut String, k: &str, v: &str) {
-        out.push_str(&format!(
-            "    <key>{k}</key>\n    <string>{}</string>\n",
-            xml_escape(v)
-        ));
-    }
-    key(&mut out, "CFBundlePackageType", "APPL");
-    key(&mut out, "CFBundleName", display_name);
-    key(&mut out, "CFBundleDisplayName", display_name);
-    key(&mut out, "CFBundleIdentifier", bundle_id);
-    key(&mut out, "CFBundleExecutable", bundle_executable);
-    if let Some(icon) = icon_file {
-        key(&mut out, "CFBundleIconFile", icon);
-    }
-    key(&mut out, "CFBundleVersion", "1");
-    out.push_str("</dict>\n</plist>\n");
-    out
-}
-
-/// Big-endian width from a PNG's IHDR chunk, or None when the bytes are not
-/// a PNG (or too short to carry an IHDR).
-pub fn png_width(png: &[u8]) -> Option<u32> {
-    const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n'];
-    if png.len() < 24 || png[..8] != SIGNATURE || &png[12..16] != b"IHDR" {
-        return None;
-    }
-    Some(u32::from_be_bytes([png[16], png[17], png[18], png[19]]))
-}
-
-/// The icns chunk type for a given pixel width (ic07=128, ic08=256,
-/// ic09=512, ic10=1024/retina-512).
-fn icns_chunk_type(width: u32) -> &'static [u8; 4] {
-    match width {
-        ..=128 => b"ic07",
-        ..=256 => b"ic08",
-        ..=512 => b"ic09",
-        _ => b"ic10",
-    }
-}
-
-/// Wrap PNG bytes in a minimal Apple ICNS container (one PNG-compressed
-/// entry). Modern macOS reads PNG-in-ICNS directly, so no real encoder is
-/// needed. Pure — tests byte-compare against the source PNG.
-pub fn icns_from_png(png: &[u8]) -> Vec<u8> {
-    let chunk_type = icns_chunk_type(png_width(png).unwrap_or(256));
-    let chunk_len = (8 + png.len()) as u32;
-    let total = (8 + chunk_len) as u32;
-
-    let mut out = Vec::with_capacity(png.len() + 16);
-    out.extend_from_slice(b"icns");
-    out.extend_from_slice(&total.to_be_bytes());
-    out.extend_from_slice(chunk_type);
-    out.extend_from_slice(&chunk_len.to_be_bytes());
-    out.extend_from_slice(png);
-    out
-}
-
-/// Wrap PNG bytes in a minimal ICO container (one PNG-compressed entry;
-/// supported since Vista). Pure — tests byte-compare against the source PNG.
-pub fn ico_from_png(png: &[u8]) -> Vec<u8> {
-    let width = png_width(png).unwrap_or(256);
-    let mut out = Vec::with_capacity(png.len() + 22);
-    out.extend_from_slice(&0u16.to_le_bytes()); // reserved
-    out.extend_from_slice(&1u16.to_le_bytes()); // type: icon
-    out.extend_from_slice(&1u16.to_le_bytes()); // entry count
-    out.push(if width >= 256 { 0 } else { width as u8 }); // width; 0 encodes 256
-    out.push(if width >= 256 { 0 } else { width as u8 }); // height (square source)
-    out.push(0); // palette size
-    out.push(0); // reserved
-    out.extend_from_slice(&1u16.to_le_bytes()); // color planes
-    out.extend_from_slice(&32u16.to_le_bytes()); // bits per pixel
-    out.extend_from_slice(&(png.len() as u32).to_le_bytes()); // data size
-    out.extend_from_slice(&22u32.to_le_bytes()); // data offset (after header)
-    out.extend_from_slice(png);
-    out
-}
-
-/// Escape a PowerShell single-quoted string literal (quote doubling).
-fn ps_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "''"))
-}
-
-/// A one-line PowerShell script that creates a `.lnk` via the
-/// `WScript.Shell` COM object. Single line + `;` separators so it can be
-/// passed as one `-Command` argument without newline quoting concerns.
-/// `icon` is an optional `IconLocation` value (the `<path>,0` form is
-/// expected from the caller). Pure — the string shape is tested on every
-/// platform; the Windows-only test executes it for real.
-pub fn shortcut_ps1(
-    lnk_path: &str,
-    exe: &str,
-    args: &[String],
-    working_directory: Option<&str>,
-    icon: Option<&str>,
-) -> String {
-    let mut script = format!(
-        "$ErrorActionPreference='Stop';$s=(New-Object -ComObject WScript.Shell).CreateShortcut({});$s.TargetPath={};$s.Arguments={}",
-        ps_quote(lnk_path),
-        ps_quote(exe),
-        ps_quote(&args.join(" ")),
-    );
-    if let Some(wd) = working_directory.filter(|s| !s.is_empty()) {
-        script.push_str(&format!(";$s.WorkingDirectory={}", ps_quote(wd)));
-    }
-    if let Some(icon) = icon.filter(|s| !s.is_empty()) {
-        script.push_str(&format!(";$s.IconLocation={}", ps_quote(icon)));
-    }
-    script.push_str(";$s.Save()");
-    script
 }
 
 /// File-name-safe stem for launcher files: reuses the command-icon
@@ -503,10 +264,9 @@ fn materialize_icon(
         let bytes = std::fs::read(&path)
             .map_err(|e| format!("Failed to read launcher icon {}: {e}", path.display()))?;
         return match ext.as_str() {
-            ".svg" => Ok(Some(IconMaterial::Svg(
-                String::from_utf8(bytes)
-                    .map_err(|_| format!("Launcher icon {file} is not valid UTF-8 SVG"))?,
-            ))),
+            ".svg" => Ok(Some(IconMaterial::Svg(String::from_utf8(bytes).map_err(
+                |_| format!("Launcher icon {file} is not valid UTF-8 SVG"),
+            )?))),
             ".png" => Ok(Some(IconMaterial::Png(bytes))),
             _ => Err(format!(
                 "Unsupported launcher icon extension {ext:?} — use SVG or PNG"
@@ -528,7 +288,7 @@ fn icon_storage_name(bytes: &[u8], ext: &str) -> String {
 
 /// Write `bytes` to `path` atomically (tmp+rename), creating parent
 /// directories as needed — a torn .desktop entry must never be visible.
-fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     write_atomic(path, bytes).map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
 
@@ -567,27 +327,22 @@ fn generate_launcher(
             // bundled app png. No resource at all → no Icon key.
             let icon_path = match icon {
                 Some(IconMaterial::Svg(svg)) => Some(
-                    store_icon(&dirs.launcher_icons, svg.as_bytes(), ".svg")
-                        .map(|p| {
-                            extras.push(p.clone());
-                            p
-                        })?,
+                    store_icon(&dirs.launcher_icons, svg.as_bytes(), ".svg").map(|p| {
+                        extras.push(p.clone());
+                        p
+                    })?,
                 ),
-                Some(IconMaterial::Png(png)) => Some(
-                    store_icon(&dirs.launcher_icons, png, ".png")
-                        .map(|p| {
-                            extras.push(p.clone());
-                            p
-                        })?,
-                ),
+                Some(IconMaterial::Png(png)) => {
+                    Some(store_icon(&dirs.launcher_icons, png, ".png").map(|p| {
+                        extras.push(p.clone());
+                        p
+                    })?)
+                }
                 None => match resources.png.as_ref() {
-                    Some(png) => Some(
-                        store_icon(&dirs.launcher_icons, png, ".png")
-                            .map(|p| {
-                                extras.push(p.clone());
-                                p
-                            })?,
-                    ),
+                    Some(png) => Some(store_icon(&dirs.launcher_icons, png, ".png").map(|p| {
+                        extras.push(p.clone());
+                        p
+                    })?),
                     None => None,
                 },
             };
@@ -595,7 +350,9 @@ fn generate_launcher(
                 exe,
                 &args,
                 name,
-                icon_path.map(|p| p.to_string_lossy().to_string()).as_deref(),
+                icon_path
+                    .map(|p| p.to_string_lossy().to_string())
+                    .as_deref(),
             );
             let path = dirs.applications.join(format!("{stem}.desktop"));
             write_file(&path, content.as_bytes())?;
@@ -618,17 +375,12 @@ fn generate_launcher(
             let icon_file = icns_bytes.as_ref().map(|_| format!("{stem}.icns"));
 
             let script_path = macos.join(&stem);
-            write_file(
-                &script_path,
-                launcher_script_content(exe, &args).as_bytes(),
-            )?;
+            write_file(&script_path, launcher_script_content(exe, &args).as_bytes())?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(
-                    &script_path,
-                    std::fs::Permissions::from_mode(0o755),
-                );
+                let _ =
+                    std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755));
             }
             if let Some(bytes) = icns_bytes.as_ref() {
                 write_file(&resources_dir.join(format!("{stem}.icns")), bytes)?;
@@ -651,11 +403,10 @@ fn generate_launcher(
             let icon_location = match icon {
                 Some(IconMaterial::Png(png)) => {
                     let ico = ico_from_png(png);
-                    let path = store_icon(&dirs.programs, &ico, ".ico")
-                        .map(|p| {
-                            extras.push(p.clone());
-                            p
-                        })?;
+                    let path = store_icon(&dirs.programs, &ico, ".ico").map(|p| {
+                        extras.push(p.clone());
+                        p
+                    })?;
                     format!("{},0", path.to_string_lossy())
                 }
                 _ => format!("{exe},0"),
@@ -673,32 +424,6 @@ fn generate_launcher(
             write_shortcut_file(&lnk, &script)?;
             Ok(Generated { path: lnk, extras })
         }
-    }
-}
-
-/// Create a `.lnk`. On Windows, run the PowerShell script for real; on other
-/// hosts, write the script text into the file — production never reaches
-/// this branch (the command layer picks the format via `cfg!`), but tests
-/// on every platform exercise the sync/prune flow for the Shortcut format.
-fn write_shortcut_file(lnk: &Path, script: &str) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let output = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", script])
-            .output()
-            .map_err(|e| format!("Failed to spawn powershell for {}: {e}", lnk.display()))?;
-        if !output.status.success() {
-            return Err(format!(
-                "powershell failed to create {}: {}",
-                lnk.display(),
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
-        }
-        Ok(())
-    }
-    #[cfg(not(windows))]
-    {
-        write_file(lnk, script.as_bytes())
     }
 }
 
@@ -728,7 +453,11 @@ pub fn sync_launchers(
             log::warn!("Skipping launcher spec with an empty profile name");
             continue;
         }
-        let icon = match spec.icon.as_ref().map(|i| materialize_icon(i, &dirs.command_icons)) {
+        let icon = match spec
+            .icon
+            .as_ref()
+            .map(|i| materialize_icon(i, &dirs.command_icons))
+        {
             Some(Ok(icon)) => icon,
             Some(Err(e)) => {
                 log::warn!(
@@ -796,7 +525,11 @@ fn prune_launchers(
         LauncherFormat::DesktopEntry => {
             // Ownership = the `lumina-` filename prefix.
             for entry in read_dir_entries(target_dir)? {
-                let name = entry.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let name = entry
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 if name.starts_with("lumina-")
                     && name.ends_with(".desktop")
                     && !keep.contains(&entry)
@@ -834,7 +567,11 @@ fn prune_launchers(
                 if !entry.is_file() {
                     continue;
                 }
-                let name = entry.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let name = entry
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 let ours = (name.ends_with(".lnk") || name.ends_with(".ico"))
                     && !keep.contains(&entry)
                     && !keep_files.contains(&entry);
