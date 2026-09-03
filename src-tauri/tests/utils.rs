@@ -76,7 +76,11 @@ fn prune_files_not_in_removes_unreferenced_and_keeps_referenced() {
     // Subdirectories must be left alone even when unreferenced.
     std::fs::create_dir_all(dir.join("subdir")).unwrap();
 
-    let removed = prune_files_not_in(&dir, &["keep.svg".to_string()], "test icon").unwrap();
+    // read_dir yields entries in filesystem order (differs across
+    // filesystems — e.g. ext4 hash order), so the removed list has no
+    // ordering contract; compare order-insensitively.
+    let mut removed = prune_files_not_in(&dir, &["keep.svg".to_string()], "test icon").unwrap();
+    removed.sort();
     assert_eq!(removed, vec!["drop.png".to_string(), "drop.svg".to_string()]);
 
     assert!(dir.join("keep.svg").is_file());
