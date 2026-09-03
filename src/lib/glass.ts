@@ -137,6 +137,20 @@ export function glassBorder(bg: string): string {
 }
 
 /**
+ * A 1px window outline for Linux, where some desktop environments draw no
+ * compositor shadow — without it a dark window on a dark wallpaper has no
+ * visible edge. Like {@link glassBorder} it derives from the surface bg so it
+ * reads on both light and dark windows, but with more contrast since it
+ * competes with the desktop behind the window, not a known chrome bg.
+ */
+export function windowOutline(bg: string): string {
+    const dark = isColorDark(bg);
+    return dark
+        ? "rgba(255,255,255,0.22)"
+        : "rgba(0,0,0,0.18)";
+}
+
+/**
  * Soft elevation shadow. Pure black at low alpha so it works on any bg; the
  * blur gives the "floating" feel without a heavy drop shadow.
  */

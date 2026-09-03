@@ -69,8 +69,10 @@ src/
 │   │                        #   settings rewrites; nullish pruning) + legacy JSON unwrap — zero
 │   │                        #   internal imports so node --test loads it directly
 │   ├── color.ts             # isColorDark, foregroundFor, adjustColor, visibleRed
-│   ├── glass.ts             # glassSurface / glassBorder / elevationShadow — backdrop-filter material
-│   │                        #   + Wayland/WebKitGTK opaque fallback (single source for the glass look)
+│   ├── glass.ts             # glassSurface / glassBorder / elevationShadow / windowOutline —
+│   │                        #   backdrop-filter material + Wayland/WebKitGTK opaque fallback
+│   │                        #   (single source for the glass look; windowOutline is the Linux
+│   │                        #   1px window hairline for DEs without compositor shadows)
 │   ├── motion.ts            # framer-motion variants/transitions presets (one spring curve for all chrome)
 │   ├── ssh.ts               # formatSshAddress / formatSshEntry
 │   ├── term.ts              # parseProfile, parseProfileTheme, parseProfilePadding

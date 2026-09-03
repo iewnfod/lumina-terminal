@@ -23,7 +23,8 @@ import { info, error } from "@tauri-apps/plugin-log";
 import {usePaddingOffset} from "./hooks/paddingOffset.ts";
 import {useMaximized} from "./hooks/maximized.ts";
 import {useGlass} from "./hooks/useGlass.ts";
-import {glassSurface} from "./lib/glass.ts";
+import {glassSurface, windowOutline} from "./lib/glass.ts";
+import {isLinux} from "./lib/platform.ts";
 import {useStartupUpdateCheck} from "./hooks/useStartupUpdateCheck.ts";
 import {useUpdater} from "./hooks/useUpdater.ts";
 import {useInstallSource} from "./hooks/useInstallSource.ts";
@@ -315,7 +316,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
 
         return (
             <div
-                className="w-full h-full overflow-hidden flex flex-row"
+                className="relative w-full h-full overflow-hidden flex flex-row"
                 style={{background: effectiveBg ?? "black"}}
             >
                 <CommandPalette
@@ -511,6 +512,23 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                         })}
                     </div>
                 </div>
+                {/* Linux window outline: some desktop environments draw no
+                    compositor shadow, so the borderless window's edge is
+                    invisible against a matching wallpaper. An inset
+                    box-shadow overlay (not border/outline) — no layout shift,
+                    follows the rounded corners, and paints above the terminal
+                    canvas which would otherwise cover a container-edge line.
+                    Hidden when maximized like the rounded-lg above. */}
+                {isLinux() && !isMaximized && (
+                    <div
+                        aria-hidden
+                        className="absolute inset-0 rounded-lg pointer-events-none"
+                        style={{
+                            boxShadow: `inset 0 0 0 1px ${windowOutline(effectiveBg ?? "#000000")}`,
+                            zIndex: 9999,
+                        }}
+                    />
+                )}
             </div>
         );
     } else {
