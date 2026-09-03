@@ -41,14 +41,18 @@ next stable xterm release containing both ships.
 ```
 src/
 ├── App.tsx                  # Root: composes chrome (TabBar/TitleBar/Term) + non-terminal key dispatch.
-│                            #   Sidebar visibility chain lives here: explicit toggle (local override)
-│                            #   → one-shot CLI --sidebar (main window only) → the showTabBar setting;
-│                            #   setTabBarVisible is the single write path (drops any CLI override).
+│                            #   Sidebar visibility lives in useSidebarVisibility (explicit toggle →
+│                            #   one-shot CLI --sidebar → the showTabBar setting; setTabBarVisible
+│                            #   is the single write path); theme-mode translation in lib/themeMode.ts.
 │                            #   Tab lifecycle/state live in useTerminalManager; geometry in useWindowGeometry.
+│                            #   Non-first-screen pages (Settings/About/Welcome) are React.lazy so
+│                            #   Settings' subtree + the markdown renderer stay out of the startup chunk.
 ├── main.tsx                 # ReactDOM entry; wraps App in GlobalConfigProvider
 ├── constants.ts             # Default config, default bindings, tab-id sentinels
 ├── types/
-│   ├── config.ts            # GlobalConfig, Binding, Actions, WithKeys
+│   ├── config.ts            # GlobalConfig, Binding, Actions, WithKeys, CommandIconRule +
+│                            #   Languages (the UI-language union lives here so GlobalConfig can
+│                            #   reference it without types/ reaching into hooks/i18n.tsx)
 │   ├── cli.ts               # CliArgs — parsed launch flags (mirrors src-tauri/src/cli.rs CliArgs)
 │   └── terminal.ts          # TerminalProfile (+ keepAfterExit: "exit"|"freeze"|"shell" — what
 │                            #   happens after startupCommand finishes) + ProfileLauncher (the
@@ -131,13 +135,33 @@ src/
 │   ├── imeCompositionGuard.ts # WebKitGTK/IBus normalization for xterm's unmatched keyCode-229 IME fallback
 │   │                        #   (config-gated: global imeDuplicateInputFix, default on — see GeneralSettings)
 │   ├── bindingsSettings.ts  # bindings-editor pure logic: actionLabel, detectConflicts, toDraft, …
+│   ├── setupTermAddons.ts   # setupTermAddons(term, profile, id) — assemble the standard xterm addon
+│   │                        #   stack (web links, Unicode 11, optional graphemes/WebGL, image, fit,
+│   │                        #   serialize, search) and return the handles Term keeps in refs
+│   ├── cliLaunch.ts         # hasLaunchArgs + deriveCliLaunchProfile — pure Alacritty-style
+│   │                        #   launch-flag → initial-profile shaping (--profile/-e/--working-directory/
+│   │                        #   --hold), consumed by useTerminalManager's seed effect
+│   ├── sessionRestore.ts    # mapSavedSession — SavedSession → RestoredEntry[] mapping (terminal
+│   │                        #   tabs re-parsed against the current globalProfile, chrome tabs via
+│   │                        #   sentinel id, deleted profiles skipped). The map half of the seed
+│   │                        #   effect's session-restore branch
+│   ├── themeMode.ts         # themeModeForces(themeMode, systemTheme) → {darkOverride, forceBg} —
+│   │                        #   the theme-mode setting translated for useEffectiveTheme + Term's
+│   │                        #   forceBg prop (extracted from App per §3.5: no inline theme derivation)
 │   └── FloatingFitAddon.ts  # xterm fit addon subclass (centered sub-cell fit)
 │
 ├── hooks/                   # React hooks (start with `use`)
 │   ├── config.tsx           # GlobalConfigProvider + useGlobalConfig — config.toml IO via
 │   │                        #   lib/configFile.ts + the config hot-reload watcher (dir watch +
-│   │                        #   debounce + own-write suppression via lastWrittenTextRef)
-│   ├── i18n.tsx             # useI18n, languageNames, Languages type
+│   │                        #   debounce + own-write suppression via lastWrittenTextRef). Children
+│   │                        #   are gated on isLoading: the app tree (and its side-effect hooks —
+│   │                        #   update check, proxy/MCP watchers) mounts only once the REAL config
+│   │                        # has loaded, so nothing acts on DEFAULT_CONFIG values
+│   ├── i18n.tsx             # useI18n, languageNames (Languages type re-exported from types/config.ts)
+│   ├── useTauriListen.ts    # useTauriListen(event, handler) + useTauriSubscription(subscribe|null,
+│   │                        #   handler, label) — the one Tauri event/subscription lifetime helper
+│   │                        #   (cancelled-guard unmount cleanup + latest-ref handlers). Replaces
+│   │                        #   the hand-rolled listen().then(cleanup) idiom everywhere
 │   ├── maximized.ts         # useMaximized (window resize → isMaximized)
 │   ├── useAlwaysOnTop.ts    # useAlwaysOnTop() → {pinned, toggle}: per-window always-on-top
 │   │                        #   (optimistic local state; no-op on Wayland, so the TitleBar
@@ -165,6 +189,18 @@ src/
 │   │                        #   (local state, never persisted; first explicit toggle drops it)
 │   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
 │   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
+│   ├── useCurrentCommand.ts # useCurrentCommand({ptyId, onCommandChange, onCommandExit}) →
+│   │                        #   {feedOutput} — tracks what command runs in a terminal, merging
+│   │                        #   shell-integration OSC sequences (parsed from output, precise) with
+│   │                        #   the backend /proc fallback (subpressed once OSC proves active)
+│   ├── useEdgeBackground.ts # useEdgeBackground(opts) → {containerBg} — polls the xterm buffer's
+│   │                        #   outer ring (a fullscreen TUI's bg), syncs the xterm layers +
+│   │                        #   padding fill, and reports the color up for chrome spread (active
+│   │                        #   tab only; honors forceBg/edgeCoverage/colorSpread)
+│   ├── useSidebarVisibility.ts # useSidebarVisibility(config, updateConfig, isMainWindow) →
+│   │                        #   {tabBarVisible, setTabBarVisible, toggleTabBar} — the sidebar
+│   │                        #   visibility chain: explicit toggle → one-shot --sidebar CLI flag
+│   │                        #   (main window only) → the persisted showTabBar setting
 │   ├── useProfileUsage.ts   # useProfileUsage() → {lastOpened, record}: the empty-state recency map
 │   │                        #   from lib/profileUsage.ts — one-shot load + immediate-stamp record with
 │   │                        #   async persist. Consumed by useTerminalManager, which exposes the map
@@ -173,7 +209,14 @@ src/
 │   │                        #   tear-off + cross-window merge/hover listeners (extracted from App.tsx)
 │   │                        #   + hot re-resolution: config/global-profile/OS-theme changes re-resolve
 │   │                        #   every live tab's snapshot by name (lib/profileSync.ts); records per-profile
-│   │                        #   open recency via useProfileUsage (profile-usage.json, not config.toml)
+│   │                        #   open recency via useProfileUsage (profile-usage.json, not config.toml).
+│   │                        #   Initial-tab seeding consumes lib/cliLaunch.ts (CLI flags) and
+│   │                        #   lib/sessionRestore.ts (saved-session mapping)
+│   ├── useTabDragController.ts # useTabDragController({tabIds, onReorder, onTearOff, …}) — the whole
+│   │                        #   sidebar drag domain extracted from TabBar.tsx: reorder preview +
+│   │                        #   drop commit, tear-off/merge dispatch on release outside the list,
+│   │                        #   and the foreign-drag sentinel overlay. Returns rowDragProps(id) +
+│   │                        #   sidebarDragProps; TabBar itself is pure rendering
 │   ├── useWindowGeometry.ts # useWindowGeometry(isMainWindow) — restore + persist window pos/size (Wayland-aware)
 │   ├── useEmptyStateWindowSize.ts # useEmptyStateWindowSize(opts) — when the app starts with no terminal, size the
 │   │                        #   main window to the default profile via profileWindowSize (same dummy-xterm measure
@@ -197,17 +240,18 @@ src/
 │   │   ├── SaveFooter.tsx       # Save (disabled-when-clean) + unsaved hint + trailing action slot
 │   │   └── ExternalLink.tsx     # <a> that opens via lib/openerApi.ts — every plain external
 │   │                            #   link goes through this (motion anchors call openExternal)
-│   ├── Term.tsx             # Single xterm instance: addons, PTY lifecycle, edge bg polling,
-│   │                        #   + hot-apply effect (render-option changes mutate the live
-│   │                        #   term.options + re-fit + ligature joiner re-register; cols/rows
-│   │                        #   and webgl are deliberately NOT hot-applied)
+│   ├── Term.tsx             # Single xterm instance: PTY lifecycle, addon assembly (via
+│   │                        #   lib/setupTermAddons.ts), the hot-apply effect (render-option
+│   │                        #   changes mutate the live term.options + re-fit + ligature joiner
+│   │                        #   re-register; cols/rows and webgl are deliberately NOT hot-applied),
+│   │                        #   + delegates current-command tracking to useCurrentCommand and
+│   │                        #   edge-background sampling to useEdgeBackground
 │   ├── SearchBar.tsx        # In-terminal search overlay (Ctrl+F): drives the headless
 │   │                        #   @xterm/addon-search via a glass top slide-down bar (case /
 │   │                        #   whole-word / regex toggles + result counter). Mounted in Term.
-│   ├── TabBar.tsx           # Sidebar tab list. One HTML5 drag serves two outcomes: dropped
-│   │                        #   inside the list it reorders (local preview order rearranged
-│   │                        #   via lib/tabReorder.ts, rows glide with framer `layout`,
-│   │                        #   committed on drop), released outside it tears off / merges.
+│   ├── TabBar.tsx           # Sidebar tab list — pure rendering. The whole drag domain (one
+│   │                        #   HTML5 drag serving reorder-inside / tear-off-outside, plus the
+│   │                        #   foreign-drag sentinel) lives in hooks/useTabDragController.ts
 │   ├── TitleBar.tsx         # Drag region + window controls (per-platform)
 │   ├── CommandPalette.tsx   # Ctrl+Shift+P modal
 │   ├── SessionSaveDialog.tsx # "Ask every time" close confirmation (Save / Don't Save + remember
@@ -271,10 +315,15 @@ src-tauri/src/
 │                  #   `--` switches to verbatim capture (escape hatch for `-e -- ssh -T h`)
 ├── state.rs       # TerminalState (HashMap of PTY pairs + writers + force_low_latency flags
 │                  #   + swappable output_channel for tab tear-off reattach)
-├── terminal.rs    # start/reattach/kill/write/resize_terminal, set_output_mode commands;
-│                  #   reader thread streams output over the entry's swappable Channel<String>
-│                  #   with streaming-UTF-8 decoding + two-mode burst coalescing;
-│                  #   reattach_terminal atomically swaps the channel for tab tear-off
+├── terminal.rs    # start/reattach/kill/write/resize_terminal, set_output_mode commands.
+│                  #   start_terminal is a thin orchestrator over: build_shell_command (+ pure
+│                  #   shell_family / startup_command_argv / ssh_remote_command helpers — the
+│                  #   keepAfterExit per-shell-family argv, tested in tests/terminal.rs), the
+│                  #   extracted spawn_reader_thread (streams output over the entry's swappable
+│                  #   Channel<String> with streaming-UTF-8 decoding + two-mode burst coalescing)
+│                  #   and spawn_watcher_thread (exit poll, foreground-command tracking, cleanup,
+│                  #   term-exit emit). reattach_terminal atomically swaps the channel for tab
+│                  #   tear-off
 ├── command_tracker.rs # CommandInfo type + foreground_command() /proc + ps + privileged-name logic
 ├── command_icons.rs # User-imported command icon storage: import_command_icon (validate ext/size,
 │                  #   copy into <app data dir>/command-icons with a content-hash name),
@@ -333,6 +382,8 @@ tests/             # Backend integration tests (mandatory for backend work — s
 ├── mcp.rs         # strip_ansi: CSI/OSC/DCS removal, control chars, torn escapes
 ├── terminal.rs    # flush_utf8_pass (split multi-byte chars, malformed safety net)
 │                  #   + process_cwd against this process's own /proc entry
+│                  #   + shell_family / startup_command_argv (keepAfterExit pwsh -NoExit vs
+│                  #   fish/nu/POSIX exec families) / ssh_remote_command pure helpers
 ├── command_tracker.rs # basename / privileged-name classification + real /proc & ps
 │                  #   argv resolution against a live child (Unix-only file)
 ├── command_icons.rs # import (ext/size validation, hash-named dedup) + prune over temp dirs;

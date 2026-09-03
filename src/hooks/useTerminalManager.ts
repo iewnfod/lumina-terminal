@@ -2,6 +2,8 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
 import {parseProfile} from "../lib/term.ts";
+import {deriveCliLaunchProfile} from "../lib/cliLaunch.ts";
+import {mapSavedSession} from "../lib/sessionRestore.ts";
 import {reResolveByName} from "../lib/profileSync.ts";
 import {reorderByDrop} from "../lib/tabReorder.ts";
 import {killTerminal, getTerminalCwd, setActiveTab} from "../lib/terminalApi.ts";
@@ -18,8 +20,11 @@ import {
     type TabDragHover,
     type TearoffPayload,
 } from "../lib/tearoff.ts";
+// `listen` is imported for the merge-ack handshake inside tearOffTab (an
+// awaited one-shot subscription, not a component-lifetime listener).
 import {emitTo, listen} from "@tauri-apps/api/event";
 import {useTearoffSession} from "./useTearoffSession.ts";
+import {useTauriListen} from "./useTauriListen.ts";
 import {useCliArgs} from "./useCliArgs.ts";
 import {useGlobalConfig} from "./config.tsx";
 import {useProfileUsage} from "./useProfileUsage.ts";
@@ -224,6 +229,33 @@ export function useTerminalManager(): TerminalManager {
         recordProfileOpened(profile.name);
     }, [config, addTerminal, systemTheme, recordProfileOpened]);
 
+    /** Shared "which tab becomes active after `removedId` leaves the list"
+     *  fallback for close/detach. Neighbor-aware for terminal tabs (stay next
+     *  to where you were); chrome-tab close picks the LAST tab (historical
+     *  behavior). When no tabs remain: `closeWindow` asks the caller to close
+     *  the window (closeWindowOnLastTab, default on) instead of returning an
+     *  id — callers differ in whether they still write state after that. */
+    const activeAfterRemove = useCallback((
+        removedId: string,
+        newIds: string[],
+        currentIds: string[],
+        currentActiveId: string | null,
+        neighborAware: boolean,
+    ): {next: string | null; closeWindow: boolean} => {
+        if (currentActiveId !== removedId) return {next: currentActiveId, closeWindow: false};
+        if (newIds.length > 0) {
+            const next = neighborAware
+                ? newIds[Math.min(currentIds.indexOf(removedId), newIds.length - 1)]
+                : newIds[newIds.length - 1];
+            return {next, closeWindow: false};
+        }
+        if (closeOnLastTabRef.current !== false) return {next: null, closeWindow: true};
+        // Keep the window open: no tabs remain, so clear the active id. Must
+        // be null (not the removed id) so the empty state renders and
+        // App-level key bindings stay live.
+        return {next: null, closeWindow: false};
+    }, []);
+
     const closeTerminal = useCallback((id: string) => {
         debug(`closeTerminal called for id=${id}`);
         const currentIds = idsRef.current;
@@ -233,25 +265,16 @@ export function useTerminalManager(): TerminalManager {
         if (id === SETTINGS_TAB_ID || id === ABOUT_TAB_ID) {
             info("Closing settings/about tab");
             const newIds = currentIds.filter((i) => i !== id);
-            let newCurrentId = currentActiveId;
-            if (currentActiveId === id) {
-                if (newIds.length > 0) {
-                    newCurrentId = newIds[newIds.length - 1];
-                } else if (closeOnLastTabRef.current !== false) {
-                    info("No tabs left, closing window");
-                    getCurrentWindow().close().catch((e) =>
-                        error(`Failed to close window on last tab: ${e}`)
-                    );
-                    return;
-                } else {
-                    // Keep the window open: no tabs remain, so clear the active
-                    // id. Must be null (not the closed id) so the empty state
-                    // renders and App-level key bindings stay live.
-                    newCurrentId = null;
-                }
+            const {next, closeWindow} = activeAfterRemove(id, newIds, currentIds, currentActiveId, false);
+            if (closeWindow) {
+                info("No tabs left, closing window");
+                getCurrentWindow().close().catch((e) =>
+                    error(`Failed to close window on last tab: ${e}`)
+                );
+                return;
             }
             setIds(newIds);
-            setCurrentId(newCurrentId);
+            setCurrentId(next);
             return;
         }
         // Kill the PTY process on the backend
@@ -263,24 +286,14 @@ export function useTerminalManager(): TerminalManager {
         const newIds = currentIds.filter((i) => i !== id);
 
         // Determine which tab should become active
-        let newCurrentId = currentActiveId;
-        if (currentActiveId === id) {
-            if (newIds.length > 0) {
-                const idx = currentIds.indexOf(id);
-                newCurrentId = newIds[Math.min(idx, newIds.length - 1)];
-            } else if (closeOnLastTabRef.current !== false) {
-                // No tabs left, close the window (default behavior)
-                info("No tabs left after close, closing window");
-                getCurrentWindow().close().catch((e) =>
-                    error(`Failed to close window on last tab: ${e}`)
-                );
-                return;
-            } else {
-                // closeWindowOnLastTab is off: keep the window open with no
-                // active tab. currentId MUST be null (not the closed id) so the
-                // empty state renders and App-level key bindings stay live.
-                newCurrentId = null;
-            }
+        const {next: newCurrentId, closeWindow} = activeAfterRemove(id, newIds, currentIds, currentActiveId, true);
+        if (closeWindow) {
+            // No tabs left, close the window (default behavior)
+            info("No tabs left after close, closing window");
+            getCurrentWindow().close().catch((e) =>
+                error(`Failed to close window on last tab: ${e}`)
+            );
+            return;
         }
 
         setTerminals((prevState) => {
@@ -291,7 +304,7 @@ export function useTerminalManager(): TerminalManager {
         setIds(newIds);
         setCurrentId(newCurrentId);
         info(`Terminal closed: id=${id}, remaining=${newIds.length}`);
-    }, []);
+    }, [activeAfterRemove]);
 
     const switchTab = useCallback((id: string) => {
         debug(`Switch tab to ${id}`);
@@ -317,26 +330,19 @@ export function useTerminalManager(): TerminalManager {
         const scrollback = serializeFns.current.get(id)?.() ?? "";
 
         // Shared detach: remove the tab from this window without killing the
-        // PTY. Index-aware active-tab fallback mirrors closeTerminal.
+        // PTY. Index-aware active-tab fallback mirrors closeTerminal; unlike
+        // it, state is still written after a "close the window" outcome (the
+        // close is async, and the payload stash has already been consumed).
         const detachTab = () => {
             const currentIds = idsRef.current;
             const currentActiveId = currentIdRef.current;
             const newIds = currentIds.filter((i) => i !== id);
-            let newCurrentId = currentActiveId;
-            if (currentActiveId === id) {
-                if (newIds.length > 0) {
-                    const idx = currentIds.indexOf(id);
-                    newCurrentId = newIds[Math.min(idx, newIds.length - 1)];
-                } else if (closeOnLastTabRef.current !== false) {
-                    info("No tabs left after detach, closing source window");
-                    getCurrentWindow().close().catch((e) =>
-                        error(`Failed to close source window after detach: ${e}`)
-                    );
-                } else {
-                    // Keep the source window open: no tabs remain, so clear the
-                    // active id (null, not the detached id) for the empty state.
-                    newCurrentId = null;
-                }
+            const {next: newCurrentId, closeWindow} = activeAfterRemove(id, newIds, currentIds, currentActiveId, true);
+            if (closeWindow) {
+                info("No tabs left after detach, closing source window");
+                getCurrentWindow().close().catch((e) =>
+                    error(`Failed to close source window after detach: ${e}`)
+                );
             }
             setTerminals((prevState) => {
                 const newState = {...prevState};
@@ -470,87 +476,52 @@ export function useTerminalManager(): TerminalManager {
     // We consume the stashed {profile, ptyId, scrollback}, seed a reattach tab,
     // and ack so the source can remove the tab from its state. The PTY is not
     // killed on the source's side — our Term reattaches to the live process.
-    useEffect(() => {
-        let unlisten: (() => void) | undefined;
-        let cancelled = false;
-
-        listen(MERGE_TAB_EVENT, async (event) => {
-            const payload = event.payload as {stashKey?: string; sourceLabel?: string} | null;
-            const stashKey = payload?.stashKey;
-            const sourceLabel = payload?.sourceLabel ?? "unknown";
-            if (!stashKey) {
-                warn(`Merge received with no stashKey from ${sourceLabel}`);
-                return;
-            }
-            let loaded: TearoffPayload | null = null;
-            try {
-                loaded = await consumeTearoff(stashKey);
-            } catch (e) {
-                error(`Merge consume failed for ${stashKey}: ${e}`).catch(() => {});
-            }
-            // Always ack so the source isn't stuck waiting for the 3s timeout.
-            // (Even on failure — the source keeps its tab; nothing is lost.)
-            emitTo(sourceLabel, MERGE_ACK_EVENT, {stashKey}).catch((e) =>
-                error(`Failed to ack merge ${stashKey} to ${sourceLabel}: ${e}`).catch(() => {})
-            );
-            if (!loaded) {
-                error(`Merge received but stash empty for ${stashKey}; tab not seeded`).catch(() => {});
-                return;
-            }
-            const {ptyId, profile: seedProfile, scrollback} = loaded;
-            info(`Merge tab received: ptyId=${ptyId} from ${sourceLabel}`);
-            setTerminals((s) => ({...s, [ptyId]: seedProfile}));
-            setIds((s) => (s.includes(ptyId) ? s : [...s, ptyId]));
-            setReattachTabs((s) => ({...s, [ptyId]: {ptyId, scrollback}}));
-            setCurrentId(ptyId);
-        }).then((cleanup) => {
-            if (cancelled) {
-                cleanup();
-            } else {
-                unlisten = cleanup;
-            }
-        }).catch((e) => {
-            error(`Failed to listen for ${MERGE_TAB_EVENT}: ${e}`);
-        });
-
-        return () => {
-            cancelled = true;
-            unlisten?.();
-        };
-    }, []);
+    useTauriListen<{stashKey?: string; sourceLabel?: string}>(MERGE_TAB_EVENT, async (payload) => {
+        const stashKey = payload?.stashKey;
+        const sourceLabel = payload?.sourceLabel ?? "unknown";
+        if (!stashKey) {
+            warn(`Merge received with no stashKey from ${sourceLabel}`);
+            return;
+        }
+        let loaded: TearoffPayload | null = null;
+        try {
+            loaded = await consumeTearoff(stashKey);
+        } catch (e) {
+            error(`Merge consume failed for ${stashKey}: ${e}`).catch(() => {});
+        }
+        // Always ack so the source isn't stuck waiting for the 3s timeout.
+        // (Even on failure — the source keeps its tab; nothing is lost.)
+        emitTo(sourceLabel, MERGE_ACK_EVENT, {stashKey}).catch((e) =>
+            error(`Failed to ack merge ${stashKey} to ${sourceLabel}: ${e}`).catch(() => {})
+        );
+        if (!loaded) {
+            error(`Merge received but stash empty for ${stashKey}; tab not seeded`).catch(() => {});
+            return;
+        }
+        const {ptyId, profile: seedProfile, scrollback} = loaded;
+        info(`Merge tab received: ptyId=${ptyId} from ${sourceLabel}`);
+        setTerminals((s) => ({...s, [ptyId]: seedProfile}));
+        setIds((s) => (s.includes(ptyId) ? s : [...s, ptyId]));
+        setReattachTabs((s) => ({...s, [ptyId]: {ptyId, scrollback}}));
+        setCurrentId(ptyId);
+    });
 
     // Track which other window the cursor is hovering during a drag FROM this
     // window. TabBar's dragend reads mergeTargetRef to pick merge vs. cancel
     // vs. new-window (`merge` is true only over a foreign sidebar).
-    useEffect(() => {
-        let unlisten: (() => void) | undefined;
-        let cancelled = false;
-        listen<{label?: string; merge?: boolean}>(DRAG_HOVER_EVENT, (event) => {
-            const label = event.payload?.label;
-            if (label) {
-                mergeTargetRef.current = {
-                    label,
-                    time: Date.now(),
-                    // Default false so a stale payload shape never merges by accident.
-                    merge: event.payload?.merge === true,
-                };
-            }
-            // Ignore empty reports — the heartbeat model only relies on the
-            // freshness of positive reports, so explicit leaves aren't needed.
-        }).then((cleanup) => {
-            if (cancelled) {
-                cleanup();
-            } else {
-                unlisten = cleanup;
-            }
-        }).catch((e) => {
-            error(`Failed to listen for ${DRAG_HOVER_EVENT}: ${e}`);
-        });
-        return () => {
-            cancelled = true;
-            unlisten?.();
-        };
-    }, []);
+    useTauriListen<{label?: string; merge?: boolean}>(DRAG_HOVER_EVENT, (payload) => {
+        const label = payload?.label;
+        if (label) {
+            mergeTargetRef.current = {
+                label,
+                time: Date.now(),
+                // Default false so a stale payload shape never merges by accident.
+                merge: payload?.merge === true,
+            };
+        }
+        // Ignore empty reports — the heartbeat model only relies on the
+        // freshness of positive reports, so explicit leaves aren't needed.
+    });
 
     // Initial tab seeding. Four cases:
     //   - tear-off window (tearoff carries payload): seed ONE reattach-mode
@@ -584,47 +555,26 @@ export function useTerminalManager(): TerminalManager {
                 // all falls through to the normal session-restore / default
                 // path below, preserving today's behavior. (--sidebar is
                 // deliberately excluded: it's a chrome-only override that App
-                // applies without shaping the initial tab.)
-                const hasLaunchArgs =
-                    cliArgs.command.length > 0 ||
-                    !!cliArgs.workingDirectory ||
-                    cliArgs.hold ||
-                    !!cliArgs.title ||
-                    !!cliArgs.profile;
-                if (hasLaunchArgs) {
+                // applies without shaping the initial tab.) The flag→profile
+                // shaping itself lives in lib/cliLaunch.ts.
+                const cliProfile = deriveCliLaunchProfile(
+                    cliArgs,
+                    config.profiles,
+                    defaultProfile,
+                    (name) => warn(`CLI --profile "${name}" not found; using default profile`),
+                );
+                if (cliProfile) {
                     session.markRestored();
-                    // Base profile: --profile if it resolves, else default.
-                    let base = defaultProfile;
-                    if (cliArgs.profile) {
-                        const found = config.profiles.find(p => p.name === cliArgs.profile);
-                        if (found) {
-                            base = found;
-                        } else {
-                            warn(`CLI --profile "${cliArgs.profile}" not found; using default profile`);
-                        }
-                    }
-                    const p: TerminalProfile = {...base};
-                    if (cliArgs.workingDirectory) p.cwd = cliArgs.workingDirectory;
-                    if (cliArgs.command.length > 0) {
-                        // -e runs through the configured shell (Lumina's
-                        // startupCommand model). Without --hold the tab closes
-                        // when the command exits (Alacritty-faithful); --hold
-                        // freezes the output instead.
-                        p.startupCommand = cliArgs.command.join(" ");
-                        p.keepAfterExit = cliArgs.hold ? "freeze" : "exit";
-                    } else if (cliArgs.hold) {
-                        p.keepAfterExit = "freeze";
-                    }
                     if (cliArgs.title) {
                         getCurrentWindow().setTitle(cliArgs.title).catch((e) =>
                             error(`Failed to set window title to "${cliArgs.title}": ${e}`).catch(() => {})
                         );
                     }
                     info(
-                        `CLI launch: profile=${p.name} cwd=${p.cwd ?? "(default)"} ` +
-                        `cmd=${p.startupCommand ?? "(none)"} hold=${cliArgs.hold}`,
+                        `CLI launch: profile=${cliProfile.name} cwd=${cliProfile.cwd ?? "(default)"} ` +
+                        `cmd=${cliProfile.startupCommand ?? "(none)"} hold=${cliArgs.hold}`,
                     );
-                    newTerminal(p).catch((e) =>
+                    newTerminal(cliProfile).catch((e) =>
                         error(`Failed to create CLI-launched terminal: ${e}`).catch(() => {})
                     );
                     return;
@@ -635,33 +585,18 @@ export function useTerminalManager(): TerminalManager {
                     saved &&
                     saved.tabs.length > 0;
                 if (canRestore && saved) {
-                    // Map each saved tab back to a restorable entry. Terminal
-                    // tabs are re-parsed against the CURRENT globalProfile so
-                    // global render options (font/theme/…) changes still apply;
-                    // a terminal tab whose profile was deleted/renamed is
-                    // skipped + warned. Chrome tabs (Settings/About) restore
-                    // directly via their sentinel id. Order is preserved so the
+                    // Map each saved tab back to a restorable entry
+                    // (lib/sessionRestore.ts): terminal tabs are re-parsed
+                    // against the CURRENT globalProfile so global render
+                    // options (font/theme/…) changes still apply; a terminal
+                    // tab whose profile was deleted/renamed is skipped +
+                    // warned. Chrome tabs (Settings/About) restore directly
+                    // via their sentinel id. Order is preserved so the
                     // restored tab bar matches what the user left.
-                    type RestoredEntry =
-                        | {kind: "terminal"; id: string; profile: TerminalProfile; scrollback?: string}
-                        | {kind: "chrome"; id: string};
-                    Promise.all(saved.tabs.map(async (tab): Promise<RestoredEntry | null> => {
-                        if (tab.kind === "chrome") {
-                            return {kind: "chrome", id: tab.chromeId};
-                        }
-                        const base = config.profiles.find(p => p.name === tab.profileName);
-                        if (!base) {
-                            warn(`Session restore: profile "${tab.profileName}" no longer exists; skipping tab`);
-                            return null;
-                        }
-                        const resolved = await parseProfile(
-                            tab.cwd ? {...base, cwd: tab.cwd} : base,
-                            config.globalProfile,
-                            systemTheme,
-                        );
-                        return {kind: "terminal", id: "", profile: resolved, scrollback: tab.scrollback};
-                    })).then((entries) => {
-                        const valid = entries.filter((e): e is RestoredEntry => e !== null);
+                    mapSavedSession(saved, config, systemTheme, (profileName) =>
+                        warn(`Session restore: profile "${profileName}" no longer exists; skipping tab`),
+                    ).then((entries) => {
+                        const valid = entries ?? [];
                         if (valid.length === 0) {
                             info("Session restore yielded no valid tabs; opening default profile");
                             session.markRestored();

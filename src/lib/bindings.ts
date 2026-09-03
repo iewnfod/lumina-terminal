@@ -12,6 +12,15 @@ export function actionSignature(b: Binding): string {
     return `${b.action}|${args}`;
 }
 
+/** Parse the `toTab` action's `args.index`: "last" → -1 (the final tab),
+ *  otherwise the 0-based index; NaN when absent/invalid (callers ignore the
+ *  action then). Shared by App's and Term's action dispatchers so the
+ *  semantics cannot drift. */
+export function parseTabIndex(args?: Record<string, string>): number {
+    if (args?.index === undefined) return NaN;
+    return args.index === "last" ? -1 : parseInt(args.index, 10);
+}
+
 export function parseBindings(configBindings?: Binding[]): Binding[] {
     if (!configBindings?.length) return [...DEFAULT_BINDINGS];
 

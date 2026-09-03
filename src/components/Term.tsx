@@ -1,19 +1,16 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {AnimatePresence} from "framer-motion";
 import {Terminal} from "@xterm/xterm";
-import {listen} from "@tauri-apps/api/event";
+import type {Event} from "@tauri-apps/api/event";
 import {Channel} from "@tauri-apps/api/core";
 import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
-import {FloatingFitAddon} from "../lib/FloatingFitAddon.ts";
-import {WebglAddon} from "@xterm/addon-webgl";
+import type {FloatingFitAddon} from "../lib/FloatingFitAddon.ts";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {parseProfilePadding} from "../lib/term.ts";
 import {profileWindowSize} from "../lib/terminalGeometry.ts";
 import {isInitialWindowSizeApplied, markInitialWindowSizeApplied} from "../lib/initialWindowSize.ts";
 import {ChunkedWriter} from "../lib/chunkedWriter.ts";
-import {sampleEdgeBackground} from "../lib/edgeBackground.ts";
-import {loadBindings} from "../lib/bindings.ts";
-import {foregroundFor, isColorDark} from "../lib/color.ts";
+import {loadBindings, parseTabIndex} from "../lib/bindings.ts";
 import type {Binding} from "../types/config.ts";
 import {Actions} from "../types/config.ts";
 import {isMacOS} from "../lib/platform.ts";
@@ -21,19 +18,16 @@ import {openConfigFile} from "../lib/configFile.ts";
 import {useGlobalConfig} from "../hooks/config.tsx";
 import {useI18n} from "../hooks/i18n.tsx";
 import {useOutputMode} from "../hooks/useOutputMode.ts";
+import {useCurrentCommand} from "../hooks/useCurrentCommand.ts";
+import {useEdgeBackground} from "../hooks/useEdgeBackground.ts";
+import {setupTermAddons} from "../lib/setupTermAddons.ts";
+import {useTauriListen, useTauriSubscription} from "../hooks/useTauriListen.ts";
 import { info, debug, error, warn } from "@tauri-apps/plugin-log";
-import {getCurrentWebview} from "@tauri-apps/api/webview";
-import {WebLinksAddon} from "@xterm/addon-web-links";
-import {openExternal} from "../lib/openerApi.ts";
+import {getCurrentWebview, type DragDropEvent} from "@tauri-apps/api/webview";
+import type {SerializeAddon} from "@xterm/addon-serialize";
+import type {SearchAddon} from "@xterm/addon-search";
 import {readClipboardText} from "../lib/clipboardApi.ts";
-import {ImageAddon} from "@xterm/addon-image";
-import {SerializeAddon} from "@xterm/addon-serialize";
-import {SearchAddon} from "@xterm/addon-search";
-import {Unicode11Addon} from "@xterm/addon-unicode11";
-import {UnicodeGraphemesAddon} from "@xterm/addon-unicode-graphemes";
-import {IMAGE_ADDON_SETTINGS} from "../constants.ts";
 import {reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
-import {CurrentCommandParser} from "../lib/currentCommand.ts";
 import {installImeCompositionGuard} from "../lib/imeCompositionGuard.ts";
 import SearchBar from "./SearchBar.tsx";
 
@@ -120,6 +114,11 @@ const FONT_METRIC_KEYS: ReadonlySet<string> = new Set([
 
 export default function Term(props : TermProps) {
     const {id, profile, isActive, bindings, paddingOffset} = props;
+    // The PTY id used for backend calls. In reattach mode the canonical id
+    // is the torn-off tab's original PTY (still alive on the backend); in
+    // normal mode it is this tab's own freshly-minted id. Shared by the init
+    // effect (onData/onResize routing), the listeners, and reattach calls.
+    const ptyId = props.reattach?.ptyId ?? id;
     const term = useRef<Terminal | null>(null);
     const termRef = useRef<HTMLDivElement>(null);
     const isInitialized = useRef<boolean>(false);
@@ -187,12 +186,11 @@ export default function Term(props : TermProps) {
             case "toggleSidebar":
                 props.onToggleSidebar?.();
                 break;
-            case "toTab":
-                if (args?.index !== undefined) {
-                    const idx = args.index === "last" ? -1 : parseInt(args.index, 10);
-                    if (!isNaN(idx)) props.onToTab?.(idx);
-                }
+            case "toTab": {
+                const idx = parseTabIndex(args);
+                if (!isNaN(idx)) props.onToTab?.(idx);
                 break;
+            }
             case "tearOffTab":
                 props.onTearOff?.();
                 break;
@@ -232,68 +230,43 @@ export default function Term(props : TermProps) {
     keepAfterExitRef.current = profile.keepAfterExit;
     const frozenRef = useRef(false);
 
-    // Keep onCommandChange ref fresh and track the current command.
-    const onCommandChangeRef = useRef(props.onCommandChange);
-    onCommandChangeRef.current = props.onCommandChange;
-    const onCommandExitRef = useRef<((payload: {command: string | null; exitCode: number}) => void) | undefined>(undefined);
-    onCommandExitRef.current = props.onCommandExit;
-    // Last command reported upward. `null` = nothing reported yet / idle.
-    const currentCommandRef = useRef<CurrentCommand | null>(null);
-    const commandParserRef = useRef<CurrentCommandParser | null>(null);
-    // True once the shell has emitted an OSC sequence this session — used to
-    // decide whether the backend's process-group fallback should be honored.
-    const oscActiveRef = useRef<boolean>(false);
-
-    const reportCommand = useCallback((cmd: CurrentCommand | null) => {
-        // Compare structurally (command name + privileged flag) before notifying.
-        const prev = currentCommandRef.current;
-        const changed =
-            prev === null
-                ? cmd !== null
-                : cmd === null
-                    ? true
-                    : prev.command !== cmd.command || prev.privileged !== cmd.privileged;
-        if (changed) {
-            currentCommandRef.current = cmd;
-            onCommandChangeRef.current?.(cmd);
-        }
-    }, []);
+    // Current-command tracking: parses shell-integration OSC sequences from
+    // the output stream (feedOutput below) and subscribes to the backend's
+    // /proc fallback (suppressed once OSC integration proves active). See
+    // hooks/useCurrentCommand.ts.
+    const {feedOutput} = useCurrentCommand({
+        ptyId,
+        onCommandChange: props.onCommandChange,
+        onCommandExit: props.onCommandExit,
+    });
 
     // Drag-and-drop: insert file path into terminal
     const lastDropRef = useRef(0);
-    useEffect(() => {
-        let unlistenFn: (() => void) | undefined;
+    const subscribeDragDrop = useCallback(
+        (handler: (event: Event<DragDropEvent>) => void) => getCurrentWebview().onDragDropEvent(handler),
+        [],
+    );
+    useTauriSubscription(subscribeDragDrop, (event) => {
+        if (!isActiveRef.current) return;
 
-        getCurrentWebview().onDragDropEvent((event) => {
-            if (!isActiveRef.current) return;
-
-            if (event.payload.type === 'enter' || event.payload.type === 'over') {
-                setIsDragOver(true);
-            } else if (event.payload.type === 'drop') {
-                setIsDragOver(false);
-                if (event.payload.paths.length > 0) {
-                    markInteractive();
-                    const now = Date.now();
-                    if (now - lastDropRef.current < 200) return;
-                    lastDropRef.current = now;
-                    const filePaths = event.payload.paths.map(p =>
-                        p.includes(' ') ? `"${p}"` : p
-                    ).join(' ');
-                    writeToTerminal(id, filePaths + ' ').then();
-                }
-            } else if (event.payload.type === 'leave') {
-                setIsDragOver(false);
+        if (event.payload.type === 'enter' || event.payload.type === 'over') {
+            setIsDragOver(true);
+        } else if (event.payload.type === 'drop') {
+            setIsDragOver(false);
+            if (event.payload.paths.length > 0) {
+                markInteractive();
+                const now = Date.now();
+                if (now - lastDropRef.current < 200) return;
+                lastDropRef.current = now;
+                const filePaths = event.payload.paths.map(p =>
+                    p.includes(' ') ? `"${p}"` : p
+                ).join(' ');
+                writeToTerminal(id, filePaths + ' ').then();
             }
-        }).then((fn) => {
-            unlistenFn = fn;
-        }).catch((e) => {
-            error(`Failed to attach drag-drop listener for terminal ${id}: ${e}`).catch(() => {});
-        });
-
-        return () => {
-            unlistenFn?.();
-        };
-    }, [id]);
+        } else if (event.payload.type === 'leave') {
+            setIsDragOver(false);
+        }
+    }, `drag-drop listener for terminal ${id}`);
 
     // Initialize terminal
     useEffect(() => {
@@ -314,12 +287,6 @@ export default function Term(props : TermProps) {
             allowProposedApi: true,
             ...xtermOptions,
         });
-
-        // The PTY id used for backend calls. In reattach mode the canonical id
-        // is the torn-off tab's original PTY (still alive on the backend); in
-        // normal mode it is this tab's own freshly-minted id. Declared up here
-        // so onData/onResize/loadBindings all route to the right PTY.
-        const ptyId = props.reattach?.ptyId ?? id;
 
         // Only the main window applies the profile's default rows/cols as an
         // initial OS window size. Torn-off windows keep whatever size the
@@ -354,65 +321,11 @@ export default function Term(props : TermProps) {
             term.current!.options.theme = profile.theme;
         }
 
-        const webLinksAddon = new WebLinksAddon((event, uri) => {
-            if ((event.metaKey && isMacOS()) || event.ctrlKey) {
-                openExternal(uri);
-            }
-        });
-        term.current.loadAddon(webLinksAddon);
-
-        // Unicode 11 width table. xterm ships only Unicode 6 by default, which
-        // mis-measures the width of newer emoji / symbols (renders them as 1
-        // column instead of 2, scrambling cursor position and forcing extra
-        // repaints). Switching the active version to 11 fixes that for any
-        // non-ASCII-heavy output (the vtebench unicode bench in particular).
-        const unicode11Addon = new Unicode11Addon();
-        term.current.loadAddon(unicode11Addon);
-        term.current.unicode.activeVersion = "11";
-
-        // Optional grapheme-cluster width rules (experimental). Unicode 11 still
-        // splits wide grapheme clusters — emoji ZWJ sequences (🏳️‍🌈), flag pairs,
-        // combining marks — each part on its own cell, which mis-aligns them.
-        // This addon switches to a grapheme-based provider ("15-graphemes") that
-        // treats such a cluster as one cell. On activate it remembers the current
-        // version ("11") and restores it on dispose. Higher CPU than 11, so it's
-        // opt-in via the profile's `graphemeClusters` render setting.
-        if (profile.graphemeClusters) {
-            try {
-                term.current.loadAddon(new UnicodeGraphemesAddon());
-            } catch (e) {
-                info(`Grapheme clusters addon failed to load: ${e}`);
-            }
-        }
-
-        const imageAddon = new ImageAddon(IMAGE_ADDON_SETTINGS);
-        term.current.loadAddon(imageAddon);
-
-        const fitAddon = new FloatingFitAddon();
-        term.current.loadAddon(fitAddon);
+        // Standard addon stack (web links, Unicode 11, optional graphemes/
+        // WebGL, image, fit, serialize, search). See lib/setupTermAddons.ts.
+        const {fitAddon, serializeAddon, searchAddon} = setupTermAddons(term.current, profile, id);
         fitAddonRef.current = fitAddon;
-
-        if (profile.webgl) {
-            try {
-                const webglAddon = new WebglAddon();
-                term.current.loadAddon(webglAddon);
-                debug(`WebGL addon loaded for terminal id=${id}`);
-            } catch (e) {
-                info(`WebGL addon failed to load, falling back to canvas: ${e}`);
-            }
-        }
-
-        // SerializeAddon captures the xterm buffer (scrollback + viewport) so a
-        // torn-off tab can replay its history in the new window. Loaded for
-        // every terminal since any tab can be torn off at any time.
-        const serializeAddon = new SerializeAddon();
-        term.current.loadAddon(serializeAddon);
         serializeAddonRef.current = serializeAddon;
-
-        // SearchAddon powers the in-terminal search bar overlay. Headless: we
-        // drive findNext/findPrevious from our own SearchBar component.
-        const searchAddon = new SearchAddon();
-        term.current.loadAddon(searchAddon);
         searchAddonRef.current = searchAddon;
 
         if (termRef.current) {
@@ -480,11 +393,6 @@ export default function Term(props : TermProps) {
             setThrottle(ptyId, throttled).then();
         });
 
-        // Lazily create the OSC parser (one per terminal, kept in a ref).
-        if (!commandParserRef.current) {
-            commandParserRef.current = new CurrentCommandParser();
-        }
-
         // Backend streams PTY output over this Channel (low-overhead,
         // binary-safe UTF-8, with dynamic burst coalescing). The handler does
         // the same OSC parse → writer.push the old `term-write` event
@@ -492,23 +400,7 @@ export default function Term(props : TermProps) {
         const outputChannel = new Channel<string>();
         outputChannel.onmessage = (data: string) => {
             if (term.current && data) {
-                // Parse shell-integration sequences BEFORE writing to xterm;
-                // xterm drops unknown OSC, so the visible output is unaffected.
-                for (const ev of commandParserRef.current!.feed(data)) {
-                    if (ev.type === "command") {
-                        oscActiveRef.current = true;
-                        reportCommand({command: ev.value, privileged: false});
-                    } else {
-                        // Command finished: pair the just-run command text with
-                        // its exit code, forward to the backend history, then
-                        // clear the current command (shell is back at prompt).
-                        onCommandExitRef.current?.({
-                            command: currentCommandRef.current?.command ?? null,
-                            exitCode: ev.code,
-                        });
-                        reportCommand(null);
-                    }
-                }
+                feedOutput(data);
                 writer.push(data);
             }
         };
@@ -704,63 +596,37 @@ export default function Term(props : TermProps) {
         };
     }, [id]);
 
-    // term-command / term-exit event listeners. Lives in its own effect (with
-    // a real cleanup) for the same StrictMode + real-unmount reasons as the
-    // ResizeObserver above. Critical for tear-off: when a tab is torn off, the
-    // source Term unmounts WITHOUT the PTY exiting, so a leaked term-exit
-    // listener would later fire onClose on an unmounted component. The cleanup
-    // here unregisters both listeners so only the currently-mounted Term (in
-    // whichever window owns the PTY now) reacts to events.
-    useEffect(() => {
-        const ptyId = props.reattach?.ptyId ?? id;
-        let unlistenCommand: (() => void) | undefined;
-        let unlistenExit: (() => void) | undefined;
-
-        listen<CurrentCommand>(`term-command-${ptyId}`, (event) => {
-            if (oscActiveRef.current) return;
-            const cmdInfo = event.payload;
-            const cmd = (cmdInfo?.command ?? "").trim();
-            reportCommand(cmd === "" ? null : { command: cmd, privileged: !!cmdInfo?.privileged });
-        }).then((fn) => {
-            unlistenCommand = fn;
-        }).catch((e) => {
-            error(`Failed to listen for term-command-${ptyId}: ${e}`).catch(() => {});
-        });
-
-        listen(`term-exit-${ptyId}`, () => {
-            // A PTY can legitimately emit term-exit more than once: React
-            // StrictMode (dev) mounts the listener twice before the first
-            // cleanup runs, and an old listener can also linger briefly across
-            // a fast tab teardown. So this handler MUST be idempotent — a
-            // duplicate event must never close a tab we decided to keep.
-            if (frozenRef.current) {
-                debug(`term-exit duplicate for frozen ptyId=${ptyId}, ignoring`);
-                return;
-            }
-            info(`Terminal exited: ptyId=${ptyId}`);
-            // "freeze": suppress the auto-close so the user can read the
-            // command's final output. The PTY is gone (so the terminal is
-            // read-only), but the xterm buffer + scrollback stay on screen
-            // until the user closes the tab manually (Ctrl+W / tab close).
-            // "shell" never reaches here until the user exits the dropped-to
-            // shell, so it falls through to the normal close.
-            if (keepAfterExitRef.current === "freeze") {
-                frozenRef.current = true;
-                info(`Terminal frozen after exit (keepAfterExit=freeze): ptyId=${ptyId}`);
-                return;
-            }
-            onCloseRef.current?.();
-        }).then((fn) => {
-            unlistenExit = fn;
-        }).catch((e) => {
-            error(`Failed to listen for term-exit-${ptyId}: ${e}`).catch(() => {});
-        });
-
-        return () => {
-            unlistenCommand?.();
-            unlistenExit?.();
-        };
-    }, [id, props.reattach, reportCommand]);
+    // term-exit subscription (useTauriListen handles the unlisten +
+    // unmount-race cleanup). Critical for tear-off: when a tab is torn off,
+    // the source Term unmounts WITHOUT the PTY exiting, so a leaked term-exit
+    // listener would later fire onClose on an unmounted component — the
+    // hook's cleanup keeps only the currently-mounted Term (in whichever
+    // window owns the PTY now) subscribed. The term-command fallback listener
+    // lives in useCurrentCommand.
+    useTauriListen(`term-exit-${ptyId}`, () => {
+        // A PTY can legitimately emit term-exit more than once: React
+        // StrictMode (dev) mounts the listener twice before the first
+        // cleanup runs, and an old listener can also linger briefly across
+        // a fast tab teardown. So this handler MUST be idempotent — a
+        // duplicate event must never close a tab we decided to keep.
+        if (frozenRef.current) {
+            debug(`term-exit duplicate for frozen ptyId=${ptyId}, ignoring`);
+            return;
+        }
+        info(`Terminal exited: ptyId=${ptyId}`);
+        // "freeze": suppress the auto-close so the user can read the
+        // command's final output. The PTY is gone (so the terminal is
+        // read-only), but the xterm buffer + scrollback stay on screen
+        // until the user closes the tab manually (Ctrl+W / tab close).
+        // "shell" never reaches here until the user exits the dropped-to
+        // shell, so it falls through to the normal close.
+        if (keepAfterExitRef.current === "freeze") {
+            frozenRef.current = true;
+            info(`Terminal frozen after exit (keepAfterExit=freeze): ptyId=${ptyId}`);
+            return;
+        }
+        onCloseRef.current?.();
+    });
 
     // Hot-reload keybindings when the config changes (e.g. after the user edits
     // a shortcut in Settings). attachCustomKeyEventHandler replaces the previous handler, so
@@ -782,170 +648,34 @@ export default function Term(props : TermProps) {
 
     // Re-focus xterm when the OS window itself regains focus and this tab is
     // the active one — so clicking into the window (or alt-tabbing back) puts
-    // keyboard input straight into the terminal without an extra click. Each
-    // Term registers its own listener; only the active one's `isActive` gate
-    // fires the focus(). Cleanup on unmount.
-    useEffect(() => {
-        if (!isActive) return;
-        let unlisten: (() => void) | undefined;
-        let cancelled = false;
-        getCurrentWindow().onFocusChanged(({payload: focused}) => {
-            if (focused && isActiveRef.current && term.current) {
-                term.current.focus();
-            }
-        }).then((un) => {
-            if (cancelled) un();
-            else unlisten = un;
-        }).catch((e) => {
-            error(`Failed to listen for window focus for terminal ${id}: ${e}`).catch(() => {});
-        });
-        return () => {
-            cancelled = true;
-            unlisten?.();
-        };
-    }, [id, isActive]);
+    // keyboard input straight into the terminal without an extra click. Only
+    // the active Term subscribes; the handler still gates on isActiveRef so a
+    // tab switch between subscribe and fire can never steal focus.
+    const subscribeFocus = useCallback(
+        (handler: (event: Event<boolean>) => void) => getCurrentWindow().onFocusChanged(handler),
+        [],
+    );
+    useTauriSubscription(isActive ? subscribeFocus : null, ({payload: focused}) => {
+        if (focused && isActiveRef.current && term.current) {
+            term.current.focus();
+        }
+    }, `window focus listener for terminal ${id}`);
 
-    // Poll the outermost ring of the buffer. When one explicit color
-    // dominates it (a fullscreen TUI's own bg; a few edge-touching
-    // stragglers are tolerated per config edgeBackgroundCoverage), sync the xterm-owned layers (.xterm
-    // and .xterm-viewport, which otherwise paint theme.background over the
-    // sub-cell gap to the right/bottom of the canvas) and fill this surface's
-    // own padding region with it, so the terminal interior has no seams
-    // regardless of the spread setting. The color is also reported up so the
-    // whole app chrome (TabBar/TitleBar/window bg) can follow it — but ONLY
-    // when color spread is on; off, sampling + interior sync still happen, the
-    // chrome spread is just suppressed (null reported). Only the active tab
-    // samples/reports; inactive tabs clear it.
-    const onEdgeRef = useRef(props.onEdgeBackgroundChange);
-    onEdgeRef.current = props.onEdgeBackgroundChange;
-    const colorSpreadRef = useRef(config.enableColorSpread !== false);
-    colorSpreadRef.current = config.enableColorSpread !== false;
-    // Required edge-cell coverage for a color to count as the TUI background
-    // (config edgeBackgroundCoverage; lib/edgeBackground.ts sanitizes it).
-    const edgeCoverageRef = useRef(config.edgeBackgroundCoverage);
-    edgeCoverageRef.current = config.edgeBackgroundCoverage;
-    // Forced bg (theme mode system/light/dark). When set, the canvas takes
-    // this color and TUI edge sampling is suppressed so a light TUI can't
-    // override a "always dark" window.
-    const forceBgRef = useRef<string | null>(props.forceBg ?? null);
-    forceBgRef.current = props.forceBg ?? null;
-    // Background painted into this surface's padding region (the gap between the
-    // canvas and the rounded shell). Follows the sampled edge color so the
-    // terminal bleeds seamlessly to its own edges; falls back to props.fillBg
-    // (theme bg / chrome spread color) when nothing is sampled.
-    const [containerBg, setContainerBg] = useState<string | null>(null);
-    useEffect(() => {
-        if (!term.current) return;
-        const xtermEl = termRef.current?.querySelector(".xterm") as HTMLElement | null;
-        const viewportEl = termRef.current?.querySelector(".xterm-viewport") as HTMLElement | null;
-        // The profile theme's original canvas background is read from
-        // profileThemeBgRef (NOT snapshotted here) so the hot-apply effect
-        // can update it when the user changes the theme: the sampled edge
-        // color overrides this base while a fullscreen TUI is active (so the
-        // canvas itself follows the TUI); on clear we restore it so the
-        // terminal falls back to the configured theme instead of xterm's
-        // built-in default (black). Without this, applying an empty/invalid
-        // background would reset theme.background and drop the whole custom
-        // theme.
-
-        const apply = (next: string | null) => {
-            // When clearing, fall back to the (current) theme bg so the xterm
-            // layers and canvas show the configured theme again (NOT "" — an
-            // empty background makes xterm drop the theme and revert to its
-            // built-in black default).
-            const value = next ?? profileThemeBgRef.current ?? "";
-            if (xtermEl && xtermEl.style.backgroundColor !== value) {
-                xtermEl.style.backgroundColor = value;
-            }
-            if (viewportEl && viewportEl.style.backgroundColor !== value) {
-                viewportEl.style.backgroundColor = value;
-            }
-            if (term.current) {
-                const cur = term.current.options.theme;
-                const bgChanged = cur?.background !== value;
-                // If the new background and the current foreground fall on the
-                // same luminance side, text would be unreadable — pick a
-                // contrasting foreground. This covers the forced-bg case where
-                // a light-theme profile (dark fg) is repainted onto a dark bg.
-                const fg = cur?.foreground;
-                const contrastFg = fg && isColorDark(value) === isColorDark(fg)
-                    ? foregroundFor(value)
-                    : fg;
-                const fgChanged = contrastFg !== fg;
-                if (bgChanged || fgChanged) {
-                    term.current.options.theme = {
-                        ...cur,
-                        background: value,
-                        ...(fgChanged ? {foreground: contrastFg} : {}),
-                    };
-                }
-            }
-            setContainerBg(next);
-        };
-
-        let lastApplied: string | null = null;
-        let lastReported: string | null = null;
-        const tick = () => {
-            if (!term.current) return;
-            if (!isActiveRef.current) {
-                if (lastApplied !== null) {
-                    lastApplied = null;
-                    apply(null);
-                }
-                if (lastReported !== null) {
-                    lastReported = null;
-                    onEdgeRef.current?.(null);
-                }
-                return;
-            }
-            // Forced bg (theme mode system/light/dark): paint the canvas with
-            // the forced color and suppress both TUI edge sampling and chrome
-            // spread, so a light TUI can't break an "always dark" window.
-            const forced = forceBgRef.current;
-            if (forced) {
-                if (lastApplied !== forced) {
-                    lastApplied = forced;
-                    apply(forced);
-                }
-                if (lastReported !== null) {
-                    lastReported = null;
-                    onEdgeRef.current?.(null);
-                }
-                return;
-            }
-            const next = sampleEdgeBackground(term.current, edgeCoverageRef.current);
-            // Always keep xterm's own layers + this surface's padding in sync
-            // with the edge color so the terminal interior has no seams,
-            // regardless of the spread setting.
-            if (next !== lastApplied) {
-                lastApplied = next;
-                apply(next);
-            }
-            // Only report the color up (to spread it across the chrome) when
-            // color spread is enabled. The "reported" color is also tracked so
-            // toggling spread on re-reports without waiting for the edge to
-            // change, and toggling off clears it.
-            const wantReport = colorSpreadRef.current ? next : null;
-            if (wantReport !== lastReported) {
-                lastReported = wantReport;
-                onEdgeRef.current?.(wantReport);
-            }
-        };
-        tick();
-        const handle = setInterval(tick, 200);
-        return () => {
-            clearInterval(handle);
-            if (xtermEl) xtermEl.style.backgroundColor = "";
-            if (viewportEl) viewportEl.style.backgroundColor = "";
-            // Restore the terminal theme's original canvas background so a
-            // remount/tab switch doesn't inherit the last sampled TUI color.
-            if (term.current && profileThemeBgRef.current !== undefined
-                && term.current.options.theme?.background !== profileThemeBgRef.current) {
-                term.current.options.theme = {...term.current.options.theme, background: profileThemeBgRef.current};
-            }
-            setContainerBg(null);
-        };
-    }, [id]);
+    // Edge-background sampling: poll the outermost ring of the buffer and, when
+    // one color dominates it (a fullscreen TUI's own bg), sync the xterm-owned
+    // layers + this surface's padding and report the color up so the app
+    // chrome can follow it. See hooks/useEdgeBackground.ts.
+    const {containerBg} = useEdgeBackground({
+        id,
+        term,
+        termRef,
+        isActiveRef,
+        themeBgRef: profileThemeBgRef,
+        onEdgeChange: props.onEdgeBackgroundChange,
+        colorSpread: config.enableColorSpread !== false,
+        edgeCoverage: config.edgeBackgroundCoverage,
+        forceBg: props.forceBg,
+    });
 
     return (
         <div className="w-full h-full overflow-hidden relative" style={{

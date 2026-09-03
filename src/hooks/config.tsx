@@ -251,9 +251,16 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
         }
     }, [isLoading]);
 
+    // Children mount only once the real config has loaded. The window is
+    // still hidden at that point (the show() below fires on the same
+    // isLoading flip), so this renders nothing visible — it just prevents a
+    // wasted DEFAULT_CONFIG render pass (profiles=[] → a full WelcomePage
+    // tree that config arrival immediately discards) and keeps side-effect
+    // hooks in App (update check, proxy/MCP watchers) from acting on default
+    // values the user may have turned off.
     return (
         <GlobalConfigContext.Provider value={{config, updateConfig, newProfile, isLoading}}>
-            {children}
+            {isLoading ? null : children}
         </GlobalConfigContext.Provider>
     );
 }

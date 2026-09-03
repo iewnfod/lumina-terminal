@@ -1,13 +1,12 @@
 import Term from "./components/Term.tsx";
 import EmptyState from "./components/EmptyState.tsx";
 import MaskedSurface from "./components/ui/MaskedSurface.tsx";
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {useGlobalConfig} from "./hooks/config.tsx";
 import {useMcpServerLifecycle} from "./hooks/useMcpServer.ts";
 import {useProxySync} from "./hooks/useProxySync.ts";
 import {useI18n} from "./hooks/i18n.tsx";
-import WelcomePage from "./pages/WelcomePage.tsx";
 import TitleBar from "./components/TitleBar.tsx";
 import TabBar, { type TabInfo } from "./components/TabBar.tsx";
 import {getShellType} from "./lib/shellIcon.ts";
@@ -17,10 +16,8 @@ import CommandPalette from "./components/CommandPalette.tsx";
 import SessionSaveDialog from "./components/SessionSaveDialog.tsx";
 import {useEffectiveTheme} from "./hooks/useEffectiveTheme.ts";
 import {useSystemTheme} from "./hooks/useSystemTheme.ts";
-import {parseBindings, useKeyboardBindings, matchBinding} from "./lib/bindings.ts";
+import {parseBindings, useKeyboardBindings, matchBinding, parseTabIndex} from "./lib/bindings.ts";
 import {Actions} from "./types/config.ts";
-import SettingsPage from "./pages/SettingsPage.tsx";
-import AboutPage from "./pages/AboutPage.tsx";
 import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "./constants.ts";
 import { info, error } from "@tauri-apps/plugin-log";
 import {usePaddingOffset} from "./hooks/paddingOffset.ts";
@@ -31,13 +28,22 @@ import {useStartupUpdateCheck} from "./hooks/useStartupUpdateCheck.ts";
 import {useUpdater} from "./hooks/useUpdater.ts";
 import {useInstallSource} from "./hooks/useInstallSource.ts";
 import UpdateModal from "./components/UpdateModal.tsx";
-import {listen} from "@tauri-apps/api/event";
+import {useTauriListen} from "./hooks/useTauriListen.ts";
 import {useWindowGeometry} from "./hooks/useWindowGeometry.ts";
 import {useEmptyStateWindowSize} from "./hooks/useEmptyStateWindowSize.ts";
 import {useTerminalManager} from "./hooks/useTerminalManager.ts";
 import {useCommandPaletteActions} from "./hooks/useCommandPaletteActions.tsx";
-import {useCliArgs} from "./hooks/useCliArgs.ts";
+import {useSidebarVisibility} from "./hooks/useSidebarVisibility.ts";
+import {themeModeForces} from "./lib/themeMode.ts";
 import {reportCommandFinished} from "./lib/terminalApi.ts";
+
+// Non-first-screen pages load on demand: they sit behind the settings/about
+// tab sentinels or the first-run flow, so Settings' whole subtree, the
+// markdown renderer + README payloads, and the welcome wizard's confetti
+// dependency stay out of the startup chunk.
+const WelcomePage = lazy(() => import("./pages/WelcomePage.tsx"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage.tsx"));
+const AboutPage = lazy(() => import("./pages/AboutPage.tsx"));
 
 const OPEN_ABOUT_EVENT = "lumina-open-about";
 
@@ -80,23 +86,12 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     const themeProfile = themeMode === "terminal" && !currentProfile
         ? (defaultProfile ?? null)
         : currentProfile;
-    // Translate the theme mode into a dark override for useEffectiveTheme.
-    // "terminal" → null (derive from bg, the legacy behavior). "system" → null
-    // until the OS theme resolves, then the resolved value.
-    const darkOverride =
-        themeMode === "light" ? false
-        : themeMode === "dark" ? true
-        : themeMode === "system" ? (systemTheme === "light" ? false : systemTheme === "dark" ? true : null)
-        : null;
-    // A forced background color makes the whole window (incl. the terminal
-    // canvas) follow the theme mode, not just the chrome text. "terminal" mode
-    // leaves the bg to the profile/TUI. Neutral base colors that harmonize with
-    // most terminal palettes.
-    const forceBg =
-        themeMode === "terminal" ? null
-        : darkOverride === true ? "#1a1a1a"
-        : darkOverride === false ? "#fafafa"
-        : null; // system unresolved → briefly fall back to terminal bg
+    // Translate the theme mode into the dark override + forced background the
+    // theme pipeline consumes (lib/themeMode.ts — kept out of App per §3.5).
+    // A forced background makes the whole window (incl. the terminal canvas)
+    // follow the theme mode, not just the chrome text; "terminal" mode leaves
+    // the bg to the profile/TUI.
+    const {darkOverride, forceBg} = themeModeForces(themeMode, systemTheme);
     const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(themeProfile, currentId, config.enableColorSpread !== false, darkOverride, forceBg, config.globalProfile, systemTheme);
     // Glass material filling the terminal area. The terminal surface is clipped
     // to a rounded rectangle via clip-path; its four corners are transparent,
@@ -113,14 +108,6 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         () => visibleRed(effectiveTheme?.red, effectiveTheme?.brightRed, effectiveBg),
         [effectiveTheme?.red, effectiveTheme?.brightRed, effectiveBg],
     );
-    // Sidebar visibility. The setting drives it, unless a one-shot CLI
-    // override (--sidebar show|hide) is active: `sidebarOverride` is local
-    // state, so the flag NEVER writes config.toml. Any explicit change
-    // (toggle button / binding / palette / settings page) drops the override
-    // and persists as usual. The CLI value itself is resolved further down,
-    // after `isMainWindow` (cliArgs is process-global; without the gate,
-    // tear-off windows would inherit the override).
-    const [sidebarOverride, setSidebarOverride] = useState<boolean | null>(null);
     const parsedBindings = useMemo(() => parseBindings(config.bindings), [config.bindings]);
     // Per-tab "open search" triggers, registered by each Term (mirrors the
     // serialize-fns map in useTerminalManager). The command palette's
@@ -157,33 +144,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // for tear-off windows (they're positioned by createTearoffWindow).
     const isMainWindow = getCurrentWindow().label === "main";
     useWindowGeometry(isMainWindow);
-    // Resolve the sidebar override chain: explicit toggle (local override) →
-    // one-shot CLI flag (main window only) → the persisted setting.
-    const cliArgs = useCliArgs();
-    const cliSidebar = isMainWindow ? cliArgs?.sidebar : undefined;
-    const tabBarVisible = sidebarOverride
-        ?? (cliSidebar === "show" ? true : cliSidebar === "hide" ? false : null)
-        ?? (config.showTabBar ?? false);
-    // The single write path for sidebar visibility: every toggle (binding,
-    // title-bar button, in-term action, command palette) goes through here so
-    // an active CLI override is always dropped before persisting.
-    const setTabBarVisible = useCallback((visible: boolean) => {
-        setSidebarOverride(null);
-        updateConfig({showTabBar: visible});
-    }, [updateConfig]);
-    const toggleTabBar = useCallback(() => {
-        setTabBarVisible(!tabBarVisible);
-    }, [tabBarVisible, setTabBarVisible]);
-    // Also drop the override when the setting is changed through the settings
-    // page (the toggles above clear it directly — writing the same value
-    // again wouldn't be observed by this effect).
-    const showTabBarRef = useRef(config.showTabBar);
-    useEffect(() => {
-        if (showTabBarRef.current !== config.showTabBar) {
-            showTabBarRef.current = config.showTabBar;
-            setSidebarOverride(null);
-        }
-    }, [config.showTabBar]);
+    // Sidebar visibility: explicit toggle → one-shot CLI flag (main window
+    // only) → the persisted showTabBar setting. See useSidebarVisibility.
+    const {tabBarVisible, setTabBarVisible, toggleTabBar} = useSidebarVisibility(config, updateConfig, isMainWindow);
     // When the app starts with no terminal (empty state), no Term ever mounts
     // to size the window — so size it to the default profile here, sharing the
     // same once-per-session lock Term uses (whichever runs first wins).
@@ -210,27 +173,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         mgr.openChromeTab(ABOUT_TAB_ID);
     }, [mgr]);
 
-    useEffect(() => {
-        let unlisten: (() => void) | undefined;
-        let cancelled = false;
-
-        listen(OPEN_ABOUT_EVENT, () => {
-            openAbout();
-        }).then((cleanup) => {
-            if (cancelled) {
-                cleanup();
-            } else {
-                unlisten = cleanup;
-            }
-        }).catch((e) => {
-            error(`Failed to listen for About menu event: ${e}`);
-        });
-
-        return () => {
-            cancelled = true;
-            unlisten?.();
-        };
-    }, [openAbout]);
+    useTauriListen(OPEN_ABOUT_EVENT, () => {
+        openAbout();
+    });
 
     // Keyboard bindings for non-terminal tabs (Settings, About, etc.)
     const isNonTerminalTab = currentId === SETTINGS_TAB_ID || currentId === ABOUT_TAB_ID;
@@ -267,12 +212,11 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
             case "toggleSidebar":
                 setTabBarVisible(!tabBarVisible);
                 break;
-            case "toTab":
-                if (args?.index !== undefined) {
-                    const idx = args.index === "last" ? -1 : parseInt(args.index, 10);
-                    if (!isNaN(idx)) mgr.toTab(idx);
-                }
+            case "toTab": {
+                const idx = parseTabIndex(args);
+                if (!isNaN(idx)) mgr.toTab(idx);
                 break;
+            }
             case "tearOffTab":
                 // Only meaningful for terminal tabs; the command palette only
                 // shows this action when currentId is a real terminal, and
@@ -445,17 +389,21 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                         />
                         {currentId === SETTINGS_TAB_ID && (
                             <MaskedSurface className="absolute inset-0" style={{zIndex: 1}}>
-                                <SettingsPage theme={effectiveTheme} openAbout={openAbout} />
+                                <Suspense fallback={null}>
+                                    <SettingsPage theme={effectiveTheme} openAbout={openAbout} />
+                                </Suspense>
                             </MaskedSurface>
                         )}
                         {currentId === ABOUT_TAB_ID && (
                             <MaskedSurface className="absolute inset-0" style={{zIndex: 1}}>
-                                <AboutPage
-                                    theme={effectiveTheme}
-                                    updater={updater}
-                                    installSource={installSource}
-                                    onShowUpdateModal={() => setIsUpdateModalOpen(true)}
-                                />
+                                <Suspense fallback={null}>
+                                    <AboutPage
+                                        theme={effectiveTheme}
+                                        updater={updater}
+                                        installSource={installSource}
+                                        onShowUpdateModal={() => setIsUpdateModalOpen(true)}
+                                    />
+                                </Suspense>
                             </MaskedSurface>
                         )}
                         {/* Empty state: the last tab was closed while "keep
@@ -567,7 +515,9 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         );
     } else {
         return (
-            <WelcomePage/>
+            <Suspense fallback={null}>
+                <WelcomePage/>
+            </Suspense>
         );
     }
 }

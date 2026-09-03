@@ -1,9 +1,10 @@
 import {useGlobalConfig} from "./config.tsx";
+import type {Languages} from "../types/config.ts";
 
 import EnUsTrans from "../../translations/en-us.json";
 import ZhCnTrans from "../../translations/zh-cn.json";
 
-export type Languages = "en-us" | "zh-cn";
+export type {Languages};
 
 const translations: Record<Languages, typeof EnUsTrans> = {
     "en-us": EnUsTrans,

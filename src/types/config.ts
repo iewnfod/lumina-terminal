@@ -1,5 +1,8 @@
 import {TerminalProfile, TerminalRenderOptions} from "./terminal.ts";
-import {Languages} from "../hooks/i18n.tsx";
+
+/** Available UI languages (see translations/ + hooks/i18n.tsx). Lives here so
+ *  GlobalConfig can reference it without types/ reaching into hooks/. */
+export type Languages = "en-us" | "zh-cn";
 
 export type Actions = "newTab" | "openConfigFile" | "closeTab" | "openCommandPalette" | "openSettings" | "toTab" | "toggleSidebar" | "tearOffTab" | "search" | "copy" | "selectAll" | "paste";
 export type WithKeys = "ctrl" | "shift" | "alt" | "command" | "CtrlOrCommand";

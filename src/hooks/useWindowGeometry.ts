@@ -1,8 +1,10 @@
-import {useEffect, useRef} from "react";
+import {useCallback, useEffect, useRef} from "react";
+import type {Event} from "@tauri-apps/api/event";
 import {getCurrentWindow, PhysicalPosition, PhysicalSize} from "@tauri-apps/api/window";
 import {info, debug, error} from "@tauri-apps/plugin-log";
 import {useGlobalConfig} from "./config.tsx";
 import {useIsWayland} from "./useIsWayland.ts";
+import {useTauriSubscription} from "./useTauriListen.ts";
 
 /**
  * Main-window geometry: restore saved position/size on startup, then persist
@@ -82,54 +84,32 @@ export function useWindowGeometry(isMainWindow: boolean) {
     lastPosRef.current = config.rememberedWindowPosition;
     const lastSizeRef = useRef(config.rememberedWindowSize);
     lastSizeRef.current = config.rememberedWindowSize;
-    useEffect(() => {
-        if (!isMainWindow) return;
-        // Position is untrackable on Wayland (onMoved yields 0,0), so never
-        // arm the move listener there — otherwise it'd persist garbage.
-        const rememberPos = !isWayland && config.rememberWindowPosition;
-        const rememberSize = config.rememberWindowSize;
-        if (!rememberPos && !rememberSize) return;
-
-        const win = getCurrentWindow();
-        let unlistenMoved: (() => void) | undefined;
-        let unlistenResized: (() => void) | undefined;
-        let cancelled = false;
-
-        if (rememberPos) {
-            win.onMoved(({payload}) => {
-                if (applyingRestoredGeometryRef.current) return;
-                const next = {x: payload.x, y: payload.y};
-                const prev = lastPosRef.current;
-                if (prev && prev.x === next.x && prev.y === next.y) return;
-                updateConfig({rememberedWindowPosition: next});
-                debug(`Persisted main window position: ${next.x},${next.y}`);
-            }).then((un) => {
-                if (cancelled) un();
-                else unlistenMoved = un;
-            }).catch((e) =>
-                error(`Failed to listen for window move: ${e}`).catch(() => {})
-            );
-        }
-        if (rememberSize) {
-            win.onResized(({payload}) => {
-                if (applyingRestoredGeometryRef.current) return;
-                const next = {width: payload.width, height: payload.height};
-                const prev = lastSizeRef.current;
-                if (prev && prev.width === next.width && prev.height === next.height) return;
-                updateConfig({rememberedWindowSize: next});
-                debug(`Persisted main window size: ${next.width}x${next.height}`);
-            }).then((un) => {
-                if (cancelled) un();
-                else unlistenResized = un;
-            }).catch((e) =>
-                error(`Failed to listen for window resize: ${e}`).catch(() => {})
-            );
-        }
-
-        return () => {
-            cancelled = true;
-            unlistenMoved?.();
-            unlistenResized?.();
-        };
-    }, [config.rememberWindowPosition, config.rememberWindowSize, isMainWindow, isWayland, updateConfig]);
+    const subscribeMoved = useCallback(
+        (handler: (event: Event<PhysicalPosition>) => void) => getCurrentWindow().onMoved(handler),
+        [],
+    );
+    const subscribeResized = useCallback(
+        (handler: (event: Event<PhysicalSize>) => void) => getCurrentWindow().onResized(handler),
+        [],
+    );
+    // Position is untrackable on Wayland (onMoved yields 0,0), so never arm
+    // the move listener there — otherwise it'd persist garbage.
+    const rememberPos = isMainWindow && !isWayland && config.rememberWindowPosition;
+    const rememberSize = isMainWindow && config.rememberWindowSize;
+    useTauriSubscription(rememberPos ? subscribeMoved : null, ({payload}) => {
+        if (applyingRestoredGeometryRef.current) return;
+        const next = {x: payload.x, y: payload.y};
+        const prev = lastPosRef.current;
+        if (prev && prev.x === next.x && prev.y === next.y) return;
+        updateConfig({rememberedWindowPosition: next});
+        debug(`Persisted main window position: ${next.x},${next.y}`);
+    }, "main-window move listener");
+    useTauriSubscription(rememberSize ? subscribeResized : null, ({payload}) => {
+        if (applyingRestoredGeometryRef.current) return;
+        const next = {width: payload.width, height: payload.height};
+        const prev = lastSizeRef.current;
+        if (prev && prev.width === next.width && prev.height === next.height) return;
+        updateConfig({rememberedWindowSize: next});
+        debug(`Persisted main window size: ${next.width}x${next.height}`);
+    }, "main-window resize listener");
 }
