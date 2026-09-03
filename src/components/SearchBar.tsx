@@ -266,8 +266,8 @@ export default function SearchBar({searchAddon, terminal, fillBg, onClose}: Sear
                 </IconButton>
                 <IconButton
                     size={28}
-                    title="close"
-                    aria-label="close search"
+                    title={t["Close search"]}
+                    aria-label={t["Close search"]}
                     hoverOverlay={colors.hoverOverlay}
                     activeOverlay={colors.accentOverlay}
                     onClick={onClose}

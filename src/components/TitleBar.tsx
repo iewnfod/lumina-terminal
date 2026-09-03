@@ -161,6 +161,7 @@ export default function TitleBar({
     onOpenSettings: () => void,
     isMaximized: boolean,
 }) {
+    const t = useI18n();
     const bg = theme?.background ?? "black";
     const fg = theme?.foreground ?? "white";
 
@@ -207,7 +208,7 @@ export default function TitleBar({
                     activeOverlay={activeOverlay}
                     style={{color: fg}}
                     onClick={() => { info("Command palette opened from title bar"); onOpenCommandPalette(); }}
-                    aria-label="Command Palette"
+                    aria-label={t["Command Palette"]}
                 >
                     <Search size={18} />
                 </IconButton>
@@ -258,7 +259,7 @@ export default function TitleBar({
                     activeOverlay={activeOverlay}
                     style={{color: fg, borderRadius: 0}}
                     onClick={() => { info("Command palette opened from title bar"); onOpenCommandPalette(); }}
-                    aria-label="Command Palette"
+                    aria-label={t["Command Palette"]}
                 >
                     <Search size={18} />
                 </IconButton>

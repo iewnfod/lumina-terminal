@@ -224,7 +224,7 @@ export default function CommandPalette({
                                     className="shrink-0"
                                     style={{color: colors.inactiveText}}
                                 />
-                                <Label className="sr-only">Search commands</Label>
+                                <Label className="sr-only">{t["Search commands"]}</Label>
                                 <input
                                     ref={inputRef}
                                     type="text"

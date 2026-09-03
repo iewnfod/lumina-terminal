@@ -246,7 +246,7 @@ export default function TabBar(props: TabBarProps) {
                                             <span
                                                 className="inline-block w-2 h-2 rounded-full shrink-0 translate-y-0.5"
                                                 style={{ backgroundColor: dangerColor }}
-                                                title="Privileged / elevated command"
+                                                title={t["Privileged / elevated command"]}
                                             />
                                         )}
                                         <span className="truncate min-w-0 w-full">{tab.subtitle}</span>

@@ -123,7 +123,7 @@ export default function ProfileSettings({
     if (!profile || !draft) {
         return (
             <div className="flex items-center justify-center h-full text-muted text-sm">
-                Profile not found.
+                {t["Profile not found."]}
             </div>
         );
     }
