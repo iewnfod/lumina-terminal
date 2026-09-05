@@ -140,6 +140,9 @@ src/
 │   │                        #   (app starts with no terminal) so exactly one sizes the window per session.
 │   ├── imeCompositionGuard.ts # WebKitGTK/IBus normalization for xterm's unmatched keyCode-229 IME fallback
 │   │                        #   (config-gated: global imeDuplicateInputFix, default on — see GeneralSettings)
+│   ├── dragRegionDoubleClick.ts # isDragRegionDoubleClick — pure mousedown predicate: second click of a
+│   │                        #   double-click whose target itself carries data-tauri-drag-region (self-hit
+│   │                        #   semantics matching Tauri's drag script; interactive children never qualify).
 │   ├── currentCommand.ts     # CurrentCommandParser — OSC 1337 shell-integration sequence parser feeding the
 │   │                        #   tab-subtitle command + per-command exit codes (fed by useCurrentCommand)
 │   ├── ligatures.ts          # Programming-ligature rendering from the font's real GSUB table: findFont +
@@ -240,6 +243,11 @@ src/
 │   ├── useEmptyStateWindowSize.ts # useEmptyStateWindowSize(opts) — when the app starts with no terminal, size the
 │   │                        #   main window to the default profile via profileWindowSize (same dummy-xterm measure
 │   │                        #   + once-per-session lock Term uses), so the empty state isn't stuck at the OS size.
+│   ├── useDragRegionDoubleClick.ts # useDragRegionDoubleClick() — double-click any drag region (title bar, sidebar
+│   │                        #   header, empty state) toggles maximize: a capture-phase mousedown listener suppresses
+│   │                        #   Tauri's built-in toggle (flaky on some platforms, tauri#11945/wry#622) then
+│   │                        #   maximizes/unmaximizes explicitly; resizable-guarded (welcome wizard locks it);
+│   │                        #   single-click dragging still goes through the built-in start_dragging.
 │   ├── useCommandPaletteActions.tsx # useCommandPaletteActions(opts) — build the palette action list (JSX)
 │   ├── useKeyRecorder.ts    # useKeyRecorder(index, onRecord, onCancel) — global keydown capture for bindings editor
 │   ├── useSystemTheme.ts    # useSystemTheme() → "light"|"dark"|null — OS theme preference (module-cached,

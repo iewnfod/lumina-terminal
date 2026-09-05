@@ -22,6 +22,7 @@ import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "./constants.ts";
 import { info, error } from "@tauri-apps/plugin-log";
 import {usePaddingOffset} from "./hooks/paddingOffset.ts";
 import {useMaximized} from "./hooks/maximized.ts";
+import {useDragRegionDoubleClick} from "./hooks/useDragRegionDoubleClick.ts";
 import {useGlass} from "./hooks/useGlass.ts";
 import {glassSurface, windowOutline} from "./lib/glass.ts";
 import {isLinux} from "./lib/platform.ts";
@@ -544,6 +545,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
 function App() {
     const isMaximized = useMaximized();
     const paddingOffset = usePaddingOffset(isMaximized);
+    useDragRegionDoubleClick();
 
     return (
         <div
