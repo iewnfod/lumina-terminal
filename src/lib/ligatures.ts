@@ -9,7 +9,8 @@
  *
  * To know WHICH ranges to join we need the font's GSUB table. In a Tauri
  * webview there's no Node.js `fs` to read the font file, so the binary data
- * comes from the Rust backend (`find_font` command). `font-ligatures`'
+ * comes from the Rust backend (`find_font` command, transferred as raw bytes
+ * over IPC — see lib/terminalApi.ts). `font-ligatures`'
  * `loadBuffer()` then parses the GSUB `calt` lookups entirely client-side
  * (via `opentype.js`, pure JS) and returns a `Font` object whose
  * `findLigatureRanges(text)` tells us exactly which substrings the font
@@ -79,14 +80,14 @@ export function getOrLoadFont(family: string): Promise<Font | null> {
     if (!pending) {
         pending = findFont(family)
             .then((bytes) => {
-                if (!bytes || bytes.length === 0) return null;
+                if (!bytes || bytes.byteLength === 0) return null;
                 // loadBuffer is synchronous (~50-100 ms). Wrap in a microtask so
                 // the caller's .then() doesn't block on the same tick — the UI
                 // gets a chance to paint first.
                 return new Promise<Font>((resolve) => {
                     setTimeout(() => {
                         try {
-                            resolve(loadBuffer(new Uint8Array(bytes).buffer, {cacheSize: CACHE_SIZE}));
+                            resolve(loadBuffer(bytes.buffer, {cacheSize: CACHE_SIZE}));
                         } catch {
                             resolve(null as unknown as Font);
                         }

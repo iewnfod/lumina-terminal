@@ -120,7 +120,13 @@ export function reportCommandFinished(id: string, command: string | null, exitCo
  * Used by the ligature feature to parse the font's GSUB table client-side.
  * Not PTY-scoped (keyed on font family, not terminal id), so it bypasses
  * `invokeWithLog`. The caller handles errors via `.catch`.
+ *
+ * The backend answers with a raw-byte IPC response (tauri::ipc::Response),
+ * which the Tauri runtime delivers as an ArrayBuffer — the default `Vec<u8>`
+ * JSON serialization would inflate a 20 MB CJK font to ~70 MB of JSON and a
+ * 20M-element JS array in the webview. Returned as a zero-copy Uint8Array
+ * view over that buffer.
  */
-export function findFont(family: string): Promise<number[]> {
-    return invoke<number[]>("find_font", {family});
+export function findFont(family: string): Promise<Uint8Array> {
+    return invoke<ArrayBuffer>("find_font", {family}).then((buf) => new Uint8Array(buf));
 }

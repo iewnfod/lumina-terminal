@@ -658,6 +658,8 @@ export function useTerminalManager(): TerminalManager {
                         newTerminal(defaultProfile).catch((e) =>
                             error(`Failed to create initial terminal: ${e}`)
                         );
+                    } else {
+                        info("Startup seeded no tabs: empty state takes over (the empty-state sizer will size the window)");
                     }
                 }
             }

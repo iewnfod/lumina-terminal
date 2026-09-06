@@ -5,6 +5,7 @@ import {info, debug, error} from "@tauri-apps/plugin-log";
 import {useGlobalConfig} from "./config.tsx";
 import {useIsWayland} from "./useIsWayland.ts";
 import {useTauriSubscription} from "./useTauriListen.ts";
+import {notifyInitialWindowSizeSettled} from "../lib/initialWindowSize.ts";
 
 /**
  * Main-window geometry: restore saved position/size on startup, then persist
@@ -31,11 +32,14 @@ export function useWindowGeometry(isMainWindow: boolean) {
     const restoredGeometryOnceRef = useRef(false);
 
     // One-shot restore: when config has loaded and either toggle is on, apply
-    // the saved position/size before the user sees the window (the show() in
-    // hooks/config.tsx races with this; setPosition/setSize are fast and
-    // idempotent). Gated by restoredGeometryOnceRef so toggling the settings
-    // later does NOT re-jump the window — restore is strictly a startup
-    // behavior.
+    // the saved position/size before the user sees the window. When a SIZE is
+    // restored, this path owns the initial window size: the Term / empty-state
+    // sizers skip for it (see their skipForRemembered guards) and it is this
+    // effect that releases the main window's show gate once the restore has
+    // settled (lib/initialWindowSize.ts), so the window appears at the
+    // remembered size rather than resizing after it is shown. Gated by
+    // restoredGeometryOnceRef so toggling the settings later does NOT re-jump
+    // the window — restore is strictly a startup behavior.
     useEffect(() => {
         if (!isMainWindow) return;
         if (restoredGeometryOnceRef.current) return;
@@ -66,6 +70,10 @@ export function useWindowGeometry(isMainWindow: boolean) {
         Promise.all(tasks).catch((e) =>
             error(`Failed to restore main window geometry: ${e}`).catch(() => {})
         ).finally(() => {
+            // Release the show gate once the remembered size has landed (or
+            // failed — the gate must never hold the window hidden). Position-
+            // only restores leave the gate to the sizers, which run normally.
+            if (wantSize) notifyInitialWindowSizeSettled();
             // Release the feedback-lock after the OS has settled the move/resize
             // events our calls produced. 200ms is generous for compositor dispatch.
             setTimeout(() => {

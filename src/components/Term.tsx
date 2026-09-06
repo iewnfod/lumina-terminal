@@ -7,8 +7,7 @@ import {TerminalProfile, CurrentCommand} from "../types/terminal.ts";
 import type {FloatingFitAddon} from "../lib/FloatingFitAddon.ts";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {parseProfilePadding} from "../lib/term.ts";
-import {profileWindowSize} from "../lib/terminalGeometry.ts";
-import {isInitialWindowSizeApplied, markInitialWindowSizeApplied} from "../lib/initialWindowSize.ts";
+import {isInitialWindowSizeApplied, markInitialWindowSizeApplied, sizeMainWindowToProfile} from "../lib/initialWindowSize.ts";
 import {ChunkedWriter} from "../lib/chunkedWriter.ts";
 import {loadBindings, parseTabIndex} from "../lib/bindings.ts";
 import type {Binding} from "../types/config.ts";
@@ -158,15 +157,6 @@ export default function Term(props : TermProps) {
     const isActiveRef = useRef(isActive);
     isActiveRef.current = isActive;
 
-    const getWindowSizeFromRowsAndColumns = useCallback(() => {
-        const container = termRef.current;
-        return profileWindowSize(
-            profile,
-            container?.clientWidth ?? 0,
-            container?.clientHeight ?? 0,
-        );
-    }, [profile]);
-
     // Open the search bar and focus its input. Shared by the `search` binding
     // (handleActions) and the command-palette trigger (onRegisterSearch): the
     // shortcut never toggles the bar closed — re-triggering just re-focuses.
@@ -304,25 +294,30 @@ export default function Term(props : TermProps) {
         // initial OS window size. Torn-off windows keep whatever size the
         // source window handed them (createTearoffWindow), so a tab torn out
         // of a 120x40 window doesn't snap back to 80x24 on mount.
-        // Skip when "remember window size" is on with a saved size — App.tsx's
-        // restore effect has already applied the remembered size, and applying
-        // the profile rows/cols here would clobber it.
+        // Skip when "remember window size" is on with a saved size — the
+        // geometry restore in useWindowGeometry applies the remembered size
+        // AND releases the show gate on that path (nothing marks here).
         const skipForRemembered = !!(config.rememberWindowSize && config.rememberedWindowSize);
         if (!isInitialWindowSizeApplied() && getCurrentWindow().label === "main" && !skipForRemembered) {
+            // Claim synchronously (a second Term from a multi-tab session
+            // restore, mounting in the same commit, must not size again).
+            // sizeMainWindowToProfile handles the hidden-window shapes and
+            // releases the show gate once the resize settles (or immediately
+            // when deferring until visible) — see lib/initialWindowSize.ts.
             markInitialWindowSizeApplied();
-            const windowSize = getWindowSizeFromRowsAndColumns();
-            info(`Applying initial window size for terminal ${id}: ${windowSize.width}x${windowSize.height}`).catch(() => {});
-            getCurrentWindow().setSize(windowSize).then(() => {
-                info(`Applied initial window size for terminal ${id}: ${windowSize.width}x${windowSize.height}`).catch(() => {});
-            }).catch((e) => {
-                error(`Failed to apply initial window size for terminal ${id}: ${e}`).catch(() => {});
-            });
-        } else if (!isInitialWindowSizeApplied()) {
-            // Mark as applied even when we skipped, so a later profile change
-            // doesn't suddenly resize the window.
+            sizeMainWindowToProfile(
+                profile,
+                () => ({width: termRef.current?.clientWidth ?? 0, height: termRef.current?.clientHeight ?? 0}),
+                `terminal ${id}`,
+            );
+        } else if (!isInitialWindowSizeApplied() && !skipForRemembered) {
+            // Skipped for another reason (not the main window, or sizing
+            // already handled) — mark so a later profile change doesn't
+            // suddenly resize the window. Non-main windows never consult the
+            // show gate, so no settle is needed on this branch.
             info(
                 `Skipped initial window sizing (marking applied): alreadyApplied=${isInitialWindowSizeApplied()} ` +
-                `window=${getCurrentWindow().label} skipForRemembered=${skipForRemembered}`,
+                `window=${getCurrentWindow().label}`,
             ).catch(() => {});
             markInitialWindowSizeApplied();
         }

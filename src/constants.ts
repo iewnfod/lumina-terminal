@@ -89,6 +89,12 @@ export const SESSION_STORE_PATH = "session.json";
  * session.json. See lib/profileUsage.ts. */
 export const PROFILE_USAGE_STORE_PATH = "profile-usage.json";
 
+/** LazyStore file caching measured xterm cell metrics per font configuration
+ * (one key "cells"), so startup window sizing skips the dummy-xterm
+ * measurement on unchanged fonts. Derived cache, not a user setting. See
+ * lib/cellMetrics.ts. */
+export const CELL_METRICS_STORE_PATH = "terminal-metrics.json";
+
 /** Shared height for the custom chrome and the macOS traffic-light safe area. */
 export const CHROME_TITLE_BAR_HEIGHT = 36;
 

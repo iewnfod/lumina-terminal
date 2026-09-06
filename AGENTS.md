@@ -134,10 +134,23 @@ src/
 │   │                        #   keep their snapshot; null when nothing changed). Generic +
 │   │                        #   dependency-free so node --test loads it directly
 │   ├── chunkedWriter.ts     # ChunkedWriter — bounded-chunk feeder for term.write() (UTF-16-safe slicing)
-│   ├── terminalGeometry.ts  # profileWindowSize — measure cell size + compute OS window size for rows/cols
-│   ├── initialWindowSize.ts # Shared once-per-session lock for "size the main window to a terminal profile"
-│   │                        #   on startup. Used by Term (terminal mounts first) and useEmptyStateWindowSize
-│   │                        #   (app starts with no terminal) so exactly one sizes the window per session.
+│   ├── terminalGeometry.ts  # profileWindowSize — compute the OS window size for a profile's rows/cols.
+│   │                        #   Live path measures the cell via an off-screen dummy xterm + refreshes the
+│   │                        #   chrome-offset cache; returns null when the window is still hidden and the
+│   │                        #   caches are cold (WebKitGTK lays nothing out until the window is mapped —
+│   │                        #   the caller defers, see initialWindowSize.sizeMainWindowToProfile)
+│   ├── cellMetrics.ts       # Cached xterm cell metrics + chrome offset (LazyStore terminal-metrics.json,
+│   │                        #   keyed by font family/size/weight/style/letterSpacing/lineHeight/dpr).
+│   │                        #   Warmed at config load (hooks/config.tsx) so startup window sizing can run
+│   │                        #   fully offline on unchanged fonts — no dummy-xterm measurement, and the
+│   │                        #   size lands BEFORE the window is shown
+│   ├── initialWindowSize.ts # Startup main-window sizing: the once-per-session lock (claim vs settle) that
+│   │                        #   also doubles as the show gate raced by hooks/config.tsx's window.show(),
+│   │                        #   plus sizeMainWindowToProfile — the shared sizer used by Term (terminal
+│   │                        #   mounts first) and useEmptyStateWindowSize (app starts with no terminal).
+│   │                        #   Warm caches → size while hidden, show once at final size; cold caches →
+│   │                        #   release the gate immediately (old show-then-resize behavior) and apply
+│   │                        #   the measured size once layout exists, warming the caches for next launch
 │   ├── imeCompositionGuard.ts # WebKitGTK/IBus normalization for xterm's unmatched keyCode-229 IME fallback
 │   │                        #   (config-gated: global imeDuplicateInputFix, default on — see GeneralSettings)
 │   ├── dragRegionDoubleClick.ts # isDragRegionDoubleClick — pure mousedown predicate: second click of a
@@ -239,10 +252,12 @@ src/
 │   │                        #   drop commit, tear-off/merge dispatch on release outside the list,
 │   │                        #   and the foreign-drag sentinel overlay. Returns rowDragProps(id) +
 │   │                        #   sidebarDragProps; TabBar itself is pure rendering
-│   ├── useWindowGeometry.ts # useWindowGeometry(isMainWindow) — restore + persist window pos/size (Wayland-aware)
+│   ├── useWindowGeometry.ts # useWindowGeometry(isMainWindow) — restore + persist window pos/size (Wayland-aware).
+│   │                        #   A restored SIZE also releases the initial-size show gate (Term/empty-state
+│   │                        #   sizers skip for it — see lib/initialWindowSize.ts)
 │   ├── useEmptyStateWindowSize.ts # useEmptyStateWindowSize(opts) — when the app starts with no terminal, size the
-│   │                        #   main window to the default profile via profileWindowSize (same dummy-xterm measure
-│   │                        #   + once-per-session lock Term uses), so the empty state isn't stuck at the OS size.
+│   │                        #   main window to the default profile via sizeMainWindowToProfile (same once-per-
+│   │                        #   session lock Term uses), so the empty state isn't stuck at the OS size.
 │   ├── useDragRegionDoubleClick.ts # useDragRegionDoubleClick() — double-click any drag region (title bar, sidebar
 │   │                        #   header, empty state) toggles maximize: a capture-phase mousedown listener suppresses
 │   │                        #   Tauri's built-in toggle (flaky on some platforms, tauri#11945/wry#622) then

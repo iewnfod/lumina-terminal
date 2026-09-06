@@ -7,7 +7,17 @@ import {readTextFile, watch} from "@tauri-apps/plugin-fs";
 import {CONFIG_SAVE_PATH, DEFAULT_CONFIG} from "../constants.ts";
 import {readConfigDocument, writeConfigDocument, getConfigFilePath} from "../lib/configFile.ts";
 import {parseConfigToml, semanticEqual} from "../lib/configFormat.ts";
+import {ensureCellMetricsLoaded} from "../lib/cellMetrics.ts";
+import {whenInitialWindowSizeSettled} from "../lib/initialWindowSize.ts";
 import { info, debug, error, warn } from "@tauri-apps/plugin-log";
+
+/** How long the main window's show may wait for the initial window-size
+ *  decision before showing anyway (degraded back to show-then-resize). Must
+ *  comfortably exceed the seed→sizer chain at its slowest — a handful of IPC
+ *  round-trips in release (~100ms), but ~1-2s under `tauri dev` where every
+ *  dynamically-imported module is fetched through the vite dev server — while
+ *  never holding the window hidden for long when a sizer fails or hangs. */
+const MAIN_WINDOW_SHOW_BACKSTOP_MS = 1500;
 
 interface GlobalConfigContextType {
     config: GlobalConfig;
@@ -97,14 +107,31 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
             setConfig(loadedConfig);
             info(`Config loaded: language=${loadedConfig.language}, profiles=${loadedConfig.profiles.length}`);
             setIsLoading(false);
-            // Preload the global profile's font for ligature support so the
-            // first terminal (and all subsequent ones sharing the global font)
-            // find it already parsed — no startup lag from findFont + loadBuffer.
-            // The module-level font cache in ligatures.ts dedupes this.
+            // Warm the cell-metrics cache (idempotent one-shot read) before any
+            // sizer runs, so the initial window sizing that gates the main
+            // window's show() finds it resolved: a launch with unchanged font
+            // config then computes the size from cached numbers with no
+            // dummy-xterm measurement. See lib/cellMetrics.ts.
+            ensureCellMetricsLoaded();
+            // Preload the global profile's font for ligature support so
+            // terminals sharing the global font find it already parsed — but
+            // DEFERRED until the window has been shown and the first frames
+            // painted. The font payload crosses the IPC boundary as raw bytes
+            // (tens of MB for CJK families like Maple Mono NF CN) and the GSUB
+            // parse is CPU-heavy; running it during window-show/first-paint
+            // made startup feel janky. Idle scheduling keeps it off the
+            // critical path; the module-level font cache in ligatures.ts still
+            // dedupes against a terminal that requests the same family first.
             if (loadedConfig.globalProfile?.ligatures && loadedConfig.globalProfile?.fontFamily) {
-                import("../lib/ligatures.ts")
-                    .then(({preloadFont}) => preloadFont(loadedConfig.globalProfile!.fontFamily!))
-                    .catch(() => {});
+                const family = loadedConfig.globalProfile.fontFamily;
+                const idle: (cb: () => void) => void = window.requestIdleCallback
+                    ? (cb) => window.requestIdleCallback(cb, {timeout: 2000})
+                    : (cb) => setTimeout(cb, 200);
+                idle(() => {
+                    import("../lib/ligatures.ts")
+                        .then(({preloadFont}) => preloadFont(family))
+                        .catch(() => {});
+                });
             }
         };
         loadConfig().catch((e) => {
@@ -237,27 +264,53 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
         };
     }, [isLoading]);
 
+    // The window is created hidden (tauri.conf.json `visible: false`) and shown
+    // once config has loaded. The MAIN window additionally waits — bounded by
+    // MAIN_WINDOW_SHOW_BACKSTOP_MS — for the initial window-size decision
+    // (Term's or the empty-state sizer's profileWindowSize, or
+    // useWindowGeometry's remembered-size restore), so it appears once at its
+    // final size instead of popping at the configured 600x400 and visibly
+    // resizing a beat later. The backstop guarantees a failed or hung sizer can
+    // never keep the window hidden; in that degraded case startup falls back to
+    // the old show-then-resize behavior. Tear-off windows don't size themselves
+    // (createTearoffWindow positions them), so they show immediately as before.
     useEffect(() => {
-        if (!isLoading) {
-            const window = getCurrentWindow();
-            window.show().then(() => {
-                window.setFocus().then(undefined, (e: unknown) => {
+        if (!isLoading) return;
+        const win = getCurrentWindow();
+        let shown = false;
+        const show = () => {
+            if (shown) return;
+            shown = true;
+            win.show().then(() => {
+                win.setFocus().then(undefined, (e: unknown) => {
                     error(`Failed to set window focus: ${e}`).catch(() => {});
                 });
                 info("Window shown, config loaded");
             }).catch((e: unknown) => {
                 error(`Failed to show window: ${e}`).catch(() => {});
             });
+        };
+        if (win.label !== "main") {
+            show();
+            return;
         }
+        const backstop = setTimeout(show, MAIN_WINDOW_SHOW_BACKSTOP_MS);
+        whenInitialWindowSizeSettled().then(() => {
+            clearTimeout(backstop);
+            show();
+        });
     }, [isLoading]);
 
     // Children mount only once the real config has loaded. The window is
-    // still hidden at that point (the show() below fires on the same
-    // isLoading flip), so this renders nothing visible — it just prevents a
-    // wasted DEFAULT_CONFIG render pass (profiles=[] → a full WelcomePage
-    // tree that config arrival immediately discards) and keeps side-effect
-    // hooks in App (update check, proxy/MCP watchers) from acting on default
-    // values the user may have turned off.
+    // still hidden at that point (the show effect above fires on the same
+    // isLoading flip and, for the main window, waits for the initial-size
+    // gate), so this renders nothing visible — it just prevents a wasted
+    // DEFAULT_CONFIG render pass (profiles=[] → a full WelcomePage tree that
+    // config arrival immediately discards) and keeps side-effect hooks in App
+    // (update check, proxy/MCP watchers) from acting on default values the
+    // user may have turned off. Mounting these children is exactly what DRIVES
+    // the initial-size decision the main window's show waits on (Term's sizer,
+    // the empty-state sizer, or the geometry restore).
     return (
         <GlobalConfigContext.Provider value={{config, updateConfig, newProfile, isLoading}}>
             {isLoading ? null : children}
