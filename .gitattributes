@@ -1,0 +1,4 @@
+# Git for Windows defaults to core.autocrlf=true, which would check patch
+# files out with CRLF; pnpm's patch parser then rejects the diff headers
+# ("invalid char in unquoted filename"). Patch files must always be LF.
+*.patch text eol=lf
