@@ -3,6 +3,7 @@ import {WebviewWindow} from "@tauri-apps/api/webviewWindow";
 import {LogicalPosition} from "@tauri-apps/api/dpi";
 import {error, info} from "@tauri-apps/plugin-log";
 import {TerminalProfile} from "../types/terminal.ts";
+import {TEAROFF_STORE_PATH} from "../constants.ts";
 import {isMacOS} from "./platform.ts";
 
 /** Custom DnD MIME for tab tear-off. Do NOT also set `text/plain` — on macOS
@@ -26,13 +27,12 @@ export const TAB_DRAG_MIME = "application/x-lumina-tab";
  *      `reattachTerminal` — see lib/terminalApi.ts).
  *
  * The label is both the window identity and the store key, so no separate
- * hand-off channel (deep-link / argv) is needed. `tearoff.json` is a
+ * hand-off channel (deep-link / argv) is needed. `state/tearoff.json` is a
  * dedicated LazyStore — NOT the user's config.toml — so tear-off never
  * pollutes the persisted app config.
  */
 
 export const TEAROFF_LABEL_PREFIX = "tearoff-";
-export const TEAROFF_STORE_PATH = "tearoff.json";
 
 // ---- Cross-window event names (single source of truth, §3.2) ----
 // These couple the source/target windows of a tab drag. Keep them together so

@@ -8,6 +8,7 @@ import {CONFIG_SAVE_PATH, DEFAULT_CONFIG} from "../constants.ts";
 import {readConfigDocument, writeConfigDocument, getConfigFilePath} from "../lib/configFile.ts";
 import {parseConfigToml, semanticEqual} from "../lib/configFormat.ts";
 import {ensureCellMetricsLoaded} from "../lib/cellMetrics.ts";
+import {migrateLegacyStateStores} from "../lib/stateStores.ts";
 import {whenInitialWindowSizeSettled} from "../lib/initialWindowSize.ts";
 import { info, debug, error, warn } from "@tauri-apps/plugin-log";
 
@@ -82,6 +83,12 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         const loadConfig = async () => {
             info("Loading config...");
+            // Move any pre-folder LazyStore files (session.json & co.) into
+            // state/ before anything reads a store — the metrics warm below
+            // and the session-restore seed in children both depend on this
+            // having settled. Idempotent; races with tear-off windows degrade
+            // to a debug log. See lib/stateStores.ts.
+            await migrateLegacyStateStores();
             let loadedConfig = DEFAULT_CONFIG;
             const result = await readConfigDocument();
             if (result.kind === "loaded") {

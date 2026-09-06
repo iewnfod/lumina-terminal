@@ -120,12 +120,17 @@ src/
 │   ├── edgeBackground.ts    # sampleEdgeBackground (xterm buffer edge inspection)
 │   ├── tearoff.ts           # Tab tear-off: label mint/store/consume + WebviewWindow spawn
 │   ├── session.ts           # Terminal-session persistence: SavedTab/SavedSession types +
-│   │                        #   LazyStore("session.json") load/save/clear. Save-side re-spawn contract
+│   │                        #   LazyStore("state/session.json") load/save/clear. Save-side re-spawn contract
 │   │                        #   (profile name + live cwd + optional scrollback); restore re-parses against
 │   │                        #   the current globalProfile. Pure logic — no React.
 │   ├── profileUsage.ts      # Per-profile "last opened" recency map (empty-state sort) in a dedicated
-│   │                        #   LazyStore("profile-usage.json", NOT config.toml — runtime state, not user
-│   │                        #   config; mirrors session.ts): load/saveProfileLastOpened, log-on-fail.
+│   │                        #   LazyStore("state/profile-usage.json", NOT config.toml — runtime state, not
+│   │                        #   user config; mirrors session.ts): load/saveProfileLastOpened, log-on-fail.
+│   ├── stateStores.ts       # migrateLegacyStateStores — one-time rename of the pre-folder LazyStore
+│   │                        #   files (session/profile-usage/terminal-metrics/tearoff) from the app-data
+│   │                        #   root into STATE_DIR ("state", constants.ts), awaited at the top of the
+│   │                        #   config load so it settles before the first store read. Idempotent;
+│   │                        #   tear-off-window races degrade to a debug log
 │   ├── tabDragOverlay.ts    # mountTabDragOverlay (transparent full-window layer keeping dragover alive over canvas)
 │   ├── tabReorder.ts        # Sidebar drag-reorder math: dropTargetFor (pointer Y → gap index)
 │   │                        #   + reorderByDrop (move item into gap; same ref when it's a no-op)
@@ -139,7 +144,7 @@ src/
 │   │                        #   chrome-offset cache; returns null when the window is still hidden and the
 │   │                        #   caches are cold (WebKitGTK lays nothing out until the window is mapped —
 │   │                        #   the caller defers, see initialWindowSize.sizeMainWindowToProfile)
-│   ├── cellMetrics.ts       # Cached xterm cell metrics + chrome offset (LazyStore terminal-metrics.json,
+│   ├── cellMetrics.ts       # Cached xterm cell metrics + chrome offset (LazyStore state/terminal-metrics.json,
 │   │                        #   keyed by font family/size/weight/style/letterSpacing/lineHeight/dpr).
 │   │                        #   Warmed at config load (hooks/config.tsx) so startup window sizing can run
 │   │                        #   fully offline on unchanged fonts — no dummy-xterm measurement, and the
@@ -411,7 +416,9 @@ src-tauri/src/
 │                  #   get_terminal_cwd) reusing TerminalState + command_tracker + the per-tab
 │                  #   recent_output ring buffer; Streamable HTTP endpoint on 127.0.0.1 via axum,
 │                  #   config-driven start/stop (start_mcp_server/stop_mcp_server). Read-only by
-│                  #   design — no PTY-write tool.
+│                  #   design — no PTY-write tool. URL token in <app data>/state/mcp-token
+│                  #   (STATE_DIR mirrors src/constants.ts; legacy-root migration + loader
+│                  #   extracted as load_or_create_token_in, tested in tests/mcp.rs).
 ├── ssh.rs         # SshConfig/SshHostEntry types + parse_ssh_config (~/.ssh/config) →
 │                  #   parse_ssh_config_content (pure content parser, tested in tests/ssh_config.rs)
 ├── shells.rs      # find_shells — PATH + known-dir shell discovery (Win MSYS2/Git, Unix homebrew);

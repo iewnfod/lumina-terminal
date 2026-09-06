@@ -77,23 +77,37 @@ export const LEGACY_CONFIG_SAVE_PATH = "config.json";
  *  so nothing is lost and the retired file is obvious. */
 export const LEGACY_CONFIG_BACKUP_PATH = "config.json.bak";
 
+/** Subfolder of the app data dir holding the app's OWN runtime state and
+ *  cache files (the LazyStore JSONs below + the backend's MCP token), so the
+ *  data-dir root keeps only user-facing content: config.toml, the inert
+ *  config.json.bak, themes/ and the already-nested asset folders. Created
+ *  automatically on first write (plugin-store's save() and the token writer
+ *  both mkdir their parent). See lib/stateStores.ts for the one-time
+ *  migration that moves pre-folder files in. */
+export const STATE_DIR = "state";
+
 /** LazyStore file holding the last-saved terminal session (one key "session").
  * Written on window close when sessionSaveMode != "never"; read once at startup
  * to restore tabs. Kept separate from config.toml so session data never
  * pollutes the user's app config. See lib/session.ts. */
-export const SESSION_STORE_PATH = "session.json";
+export const SESSION_STORE_PATH = `${STATE_DIR}/session.json`;
 
 /** LazyStore file holding the per-profile "last opened" recency map (one key
  * "lastOpened") that sorts the empty-state quick-launch list. Runtime state,
  * not a user setting — kept out of config.toml for the same reason as
  * session.json. See lib/profileUsage.ts. */
-export const PROFILE_USAGE_STORE_PATH = "profile-usage.json";
+export const PROFILE_USAGE_STORE_PATH = `${STATE_DIR}/profile-usage.json`;
 
 /** LazyStore file caching measured xterm cell metrics per font configuration
  * (one key "cells"), so startup window sizing skips the dummy-xterm
  * measurement on unchanged fonts. Derived cache, not a user setting. See
  * lib/cellMetrics.ts. */
-export const CELL_METRICS_STORE_PATH = "terminal-metrics.json";
+export const CELL_METRICS_STORE_PATH = `${STATE_DIR}/terminal-metrics.json`;
+
+/** LazyStore file for tab tear-off hand-off payloads (one key per torn-off
+ * window label). Transient runtime state, not a user setting — kept out of
+ * config.toml for the same reason as session.json. See lib/tearoff.ts. */
+export const TEAROFF_STORE_PATH = `${STATE_DIR}/tearoff.json`;
 
 /** Shared height for the custom chrome and the macOS traffic-light safe area. */
 export const CHROME_TITLE_BAR_HEIGHT = 36;

@@ -563,6 +563,15 @@ pub fn stop_mcp_server(handle: State<'_, McpServerHandle>) {
     }
 }
 
+/// App-data subfolder holding the app's own runtime state files — the
+/// frontend's LazyStore JSONs (session, profile usage, cell metrics, tear-off)
+/// live here too. Mirrors `STATE_DIR` in `src/constants.ts`; keep the two in
+/// sync (the same string-coupling rule as the `term-write-*` event names).
+pub const STATE_DIR: &str = "state";
+
+/// Token file name inside [`STATE_DIR`].
+const TOKEN_FILE: &str = "mcp-token";
+
 /// Load the persisted MCP URL token, creating + saving it on first run. The
 /// token is stable across restarts so an AI client's configured URL doesn't
 /// break every launch — only a port change (or deleting the token file)
@@ -575,10 +584,32 @@ fn load_or_create_token(app: &AppHandle) -> Result<String, String> {
         .path()
         .app_data_dir()
         .map_err(|e| format!("resolve app data dir: {e}"))?;
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        log::warn!("Failed to create app data dir for MCP token: {}", e);
+    load_or_create_token_in(&dir)
+}
+
+/// Directory-parameterized core of [`load_or_create_token`] (tests drive it
+/// over a temp dir). Reads `<data_dir>/state/mcp-token`, migrating a
+/// pre-folder token from the data-dir root first so an upgrading user's
+/// configured client URL keeps working.
+pub fn load_or_create_token_in(data_dir: &std::path::Path) -> Result<String, String> {
+    let state_dir = data_dir.join(STATE_DIR);
+    if let Err(e) = std::fs::create_dir_all(&state_dir) {
+        log::warn!("Failed to create {STATE_DIR} dir for MCP token: {e}");
     }
-    let path = dir.join("mcp-token");
+    let path = state_dir.join(TOKEN_FILE);
+    // One-time migration: builds before the state folder kept the token
+    // directly in the data-dir root. Move it when only the legacy file
+    // exists; failure just falls through to generating a fresh token.
+    let legacy = data_dir.join(TOKEN_FILE);
+    if !path.exists() && legacy.exists() {
+        match std::fs::rename(&legacy, &path) {
+            Ok(()) => log::info!("Migrated MCP token into {}", path.display()),
+            Err(e) => log::warn!(
+                "Failed to migrate legacy MCP token into {}: {e} (a new token will be generated)",
+                path.display()
+            ),
+        }
+    }
     if let Ok(tok) = std::fs::read_to_string(&path) {
         let tok = tok.trim().to_string();
         if !tok.is_empty() {
