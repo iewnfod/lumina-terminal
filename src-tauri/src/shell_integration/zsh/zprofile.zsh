@@ -1,0 +1,1 @@
+[ -r "$HOME/.zprofile" ] && source "$HOME/.zprofile"

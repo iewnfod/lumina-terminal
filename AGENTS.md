@@ -437,7 +437,7 @@ src-tauri/src/
 │                  #   switched away and back), prune_command_icons (drop files no saved rule
 │                  #   references — the ONLY cleanup moment); pure helpers (sanitize_stem, ext_of, …)
 │                  #   parameterized by dir (tests/command_icons.rs)
-├── shell_integration.rs # bash/zsh/fish OSC-1337 injection (precmd/preexec hooks for exit codes
+├── shell_integration/  # bash/zsh/fish OSC-1337 injection (precmd/preexec hooks for exit codes
 │                  #   and command text) + TAB-completion interception for zsh/fish
 │                  #   (completion_hook_zsh: compadd recording shim, PREFIX filter, RS/US OSC payload;
 │                  #   completion_hook_fish: complete -C engine + fish_prompt-event rebinding so bundled
@@ -445,7 +445,14 @@ src-tauri/src/
 │                  #   + the per-shell proxy-sync hooks whose env-file
 │                  #   (proxy.env, same dir) is written by proxy.rs; hook sources are
 │                  #   generated per launch with the env-file path baked in (real-shell
-│                  #   lifecycle tests in tests/shell_hooks.rs)
+│                  #   lifecycle tests in tests/shell_hooks.rs). Layout: mod.rs holds the
+│                  #   Rust logic (apply_interactive, hook builders, render_proxy); the shell
+│                  #   snippets are real per-shell files embedded at compile time via
+│                  #   include_str! — bash/ (init.sh, proxy.sh), zsh/ (zshrc, zshenv, zprofile,
+│                  #   zlogin, proxy, complete .zsh), fish/ (preexec, precmd, proxy, complete
+│                  #   .fish). Proxy templates carry {env_path}/{proxy_keys} tokens filled by
+│                  #   render_proxy (plain string replace, NOT format! — the files keep valid
+│                  #   shell brace syntax with no escaping)
 ├── proxy.rs        # System-proxy auto injection: ProxySnapshot + per-source parsers
 │                  #   (gsettings list-recursively / KDE kioslaverc / scutil --proxy /
 │                  #   reg query — pure & unit-tested) + the polling watcher thread and

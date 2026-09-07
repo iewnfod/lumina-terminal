@@ -1,0 +1,1 @@
+function __lumina_preexec --on-event fish_preexec; printf '\033]1337;CurrentCommand=%s\007' $argv[1]; end

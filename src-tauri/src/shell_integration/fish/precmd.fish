@@ -1,0 +1,1 @@
+function __lumina_precmd --on-event fish_prompt; printf '\033]1337;CurrentCommandExit=%s\007' $status; end

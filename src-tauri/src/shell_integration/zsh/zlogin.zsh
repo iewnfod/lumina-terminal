@@ -1,0 +1,1 @@
+[ -r "$HOME/.zlogin" ] && source "$HOME/.zlogin"
