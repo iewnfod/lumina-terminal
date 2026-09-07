@@ -260,5 +260,7 @@
     "Privileged / elevated command": "Privileged / elevated command",
     "Command Palette": "Command Palette",
     "Search commands": "Search commands",
-    "Close search": "Close search"
+    "Close search": "Close search",
+    "Shell Completion Popup": "Shell Completion Popup",
+    "Show TAB completions from zsh/fish as a floating popup; applies to new terminals": "Show TAB completions from zsh/fish as a floating popup; applies to new terminals"
 }

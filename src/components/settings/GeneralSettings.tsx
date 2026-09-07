@@ -22,6 +22,7 @@ interface GeneralDraft {
     autoUpdateOnStartup: boolean;
     inheritWorkingDirectory: boolean;
     imeDuplicateInputFix: boolean;
+    enableShellCompletions: boolean;
     rememberWindowPosition: boolean;
     rememberWindowSize: boolean;
     sessionSaveMode: "never" | "always" | "ask";
@@ -62,6 +63,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
         inheritWorkingDirectory: config.inheritWorkingDirectory ?? false,
         imeDuplicateInputFix: config.imeDuplicateInputFix !== false,
+        enableShellCompletions: config.enableShellCompletions !== false,
         rememberWindowPosition: config.rememberWindowPosition ?? false,
         rememberWindowSize: config.rememberWindowSize ?? false,
         sessionSaveMode: config.sessionSaveMode ?? "ask",
@@ -84,6 +86,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 autoUpdateOnStartup: d.autoUpdateOnStartup,
                 inheritWorkingDirectory: d.inheritWorkingDirectory,
                 imeDuplicateInputFix: d.imeDuplicateInputFix,
+                enableShellCompletions: d.enableShellCompletions,
                 rememberWindowPosition: d.rememberWindowPosition,
                 rememberWindowSize: d.rememberWindowSize,
                 sessionSaveMode: d.sessionSaveMode,
@@ -102,7 +105,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.enableShellCompletions, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
     );
 
     return (
@@ -537,6 +540,27 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                             <Switch
                                 isSelected={draft.imeDuplicateInputFix}
                                 onChange={(v) => setDraft((prev) => ({...prev, imeDuplicateInputFix: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+
+                        {/* Shell Completions: zsh/fish TAB completion is
+                            intercepted via shell integration and rendered as
+                            Lumina's floating suggest popup (like VSCode's
+                            terminal). The hooks are installed when a terminal
+                            spawns, so the toggle applies to NEW terminals. */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className="cursor-pointer">{t["Shell Completion Popup"]}</Label>}
+                            description={t["Show TAB completions from zsh/fish as a floating popup; applies to new terminals"]}
+                            onClick={() => setDraft((prev) => ({...prev, enableShellCompletions: !prev.enableShellCompletions}))}
+                        >
+                            <Switch
+                                isSelected={draft.enableShellCompletions}
+                                onChange={(v) => setDraft((prev) => ({...prev, enableShellCompletions: v}))}
                             >
                                 <Switch.Control>
                                     <Switch.Thumb />

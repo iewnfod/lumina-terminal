@@ -260,5 +260,7 @@
     "Privileged / elevated command": "特权 / 提权命令",
     "Command Palette": "命令面板",
     "Search commands": "搜索命令",
-    "Close search": "关闭搜索"
+    "Close search": "关闭搜索",
+    "Shell Completion Popup": "Shell 补全弹窗",
+    "Show TAB completions from zsh/fish as a floating popup; applies to new terminals": "将 zsh/fish 的 TAB 补全显示为悬浮弹窗；仅对新终端生效"
 }

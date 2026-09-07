@@ -63,6 +63,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scri
 * Chunked output batching — smoothly handles large text dumps without blocking the UI
 * Drag and drop files into the terminal to insert their paths; auto-resize on window/container changes
 * **MCP server (experimental)** — optionally expose terminal state (open tabs, running command, cwd, recent output) to local AI clients over a read-only loopback endpoint, via [rmcp](https://github.com/modelcontextprotocol/rust-sdk). Enable in Settings → Developer.
+* **Shell completion popup** — TAB in zsh/fish tabs is intercepted via shell integration: the shell's own completion candidates (commands, files, git subcommands, descriptions) are sent to Lumina and rendered as a floating, keyboard-navigable suggest popup (VSCode-style) instead of the shell's in-buffer list; accepting an entry inserts it into the line editor. A single unambiguous match completes silently. Works for new terminals while enabled; bash/nu/pwsh/SSH tabs keep native behavior. Toggle in Settings → General.
 * **Auto proxy sync** — detect system proxy changes (GNOME `gsettings` / KDE `kioslaverc` / macOS `scutil` / Windows registry) and keep `http_proxy` / `HTTPS_PROXY` / `all_proxy` / `no_proxy` in sync inside already-running bash/zsh/fish tabs, applied silently by the shell-integration prompt hook — no restart, no visible keystrokes. Manually exported proxies are never touched. Toggle in Settings → General.
 
 ### User Interface

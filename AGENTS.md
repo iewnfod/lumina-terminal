@@ -76,7 +76,9 @@ src/
 │   ├── motion.ts            # framer-motion variants/transitions presets (one spring curve for all chrome)
 │   ├── ssh.ts               # formatSshAddress / formatSshEntry
 │   ├── term.ts              # parseProfile, parseProfileTheme, parseProfilePadding
-│   ├── terminalApi.ts       # invoke wrappers: writeToTerminal, resizeTerminal, ...
+│   ├── terminalApi.ts       # invoke wrappers: writeToTerminal, resizeTerminal, ... startTerminal also
+│   │                        #   carries the spawn-time enableShellCompletions flag (hooks are baked into the
+│   │                        #   shell's init files — toggling affects new terminals only, like webgl)
 │   ├── mcpApi.ts            # startMcpServer/stopMcpServer invoke wrappers (log-on-reject) — the
 │   │                        #   read-only MCP server domain API (sibling to terminalApi.ts)
 │   ├── proxyApi.ts          # startProxySync/stopProxySync invoke wrappers (log-on-reject) — the
@@ -113,7 +115,9 @@ src/
 │   │                        #   commandIconApi/launcherApi) builds on; log-then-rethrow, optional
 │   │                        #   message/scope/fallback. Never hand-roll another catch-and-log invoke
 │   ├── bindings.ts          # parseBindings, matchBinding, loadBindings, useKeyboardBindings,
-│   │                        #   exported actionSignature / keySignature. loadBindings dispatches
+│   │                        #   exported actionSignature / keySignature. loadBindings takes an optional
+│   │                        #   keydown intercept (the completion popup owns Tab/arrows while open) and
+│   │                        #   dispatches
 │   │                        #   the `copy` action itself (needs the live selection: with one it
 │   │                        #   writes the clipboard, without it the key falls through to the
 │   │                        #   shell so bound-to-Ctrl+C copy keeps SIGINT)
@@ -162,7 +166,14 @@ src/
 │   │                        #   double-click whose target itself carries data-tauri-drag-region (self-hit
 │   │                        #   semantics matching Tauri's drag script; interactive children never qualify).
 │   ├── currentCommand.ts     # CurrentCommandParser — OSC 1337 shell-integration sequence parser feeding the
-│   │                        #   tab-subtitle command + per-command exit codes (fed by useCurrentCommand)
+│   │                        #   tab-subtitle command + per-command exit codes + the completion-suggest
+│   │                        #   payloads (fed by useCurrentCommand)
+│   ├── completions.ts       # Terminal-suggest pure layer: CompletionCandidate + parseCompletionPayload
+│   │                        #   (OSC 1337;Completions RS/US framing — survives the pty's ONLCR, dropped by
+│   │                        #   xterm inside OSC) + insertionBytes (DEL × code points of the word + insert;
+│   │                        #   the accept contract verified end-to-end in tests/completion_hooks.rs) +
+│   │                        #   filterCandidates (typing refinement) + shouldRetrigger (directory cascade)
+│   │                        #   + kind classification for the popup's row icons. Shell half: shell_integration.rs
 │   ├── ligatures.ts          # Programming-ligature rendering from the font's real GSUB table: findFont +
 │   │                        #   parse (module-level font cache), enableLigatures installs a character
 │   │                        #   joiner; preloaded at startup by config.tsx when the global font enables it
@@ -229,10 +240,18 @@ src/
 │   │                        #   (local state, never persisted; first explicit toggle drops it)
 │   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
 │   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
-│   ├── useCurrentCommand.ts # useCurrentCommand({ptyId, onCommandChange, onCommandExit}) →
+│   ├── useCurrentCommand.ts # useCurrentCommand({ptyId, onCommandChange, onCommandExit, onCompletions}) →
 │   │                        #   {feedOutput} — tracks what command runs in a terminal, merging
 │   │                        #   shell-integration OSC sequences (parsed from output, precise) with
 │   │                        #   the backend /proc fallback (subpressed once OSC proves active)
+│   ├── useShellCompletions.ts # useShellCompletions({ptyId, enabled}) → {state, offer, handleKey, select,
+│   │                        #   acceptCandidate, close} — the terminal-suggest popup state machine: single
+│   │                        #   candidate completes silently (directories cascade); while open, typing
+│   │                        #   extends the live word and narrows the set locally (v* ⊇ vi*, exact — see
+│   │                        #   filterCandidates), Backspace shrinks to the shell-reported base word, Tab
+│   │                        #   accepts + re-triggers (follow-up TAB byte re-offers against the new word),
+│   │                        #   Enter accepts and finishes (dirs cascade — shouldRetrigger); keys flow via
+│   │                        #   loadBindings' intercept; accept writes DEL×word + insert (terminalApi)
 │   ├── useEdgeBackground.ts # useEdgeBackground(opts) → {containerBg} — polls the xterm buffer's
 │   │                        #   outer ring (a fullscreen TUI's bg), syncs the xterm layers +
 │   │                        #   padding fill, and reports the color up for chrome spread (active
@@ -307,6 +326,10 @@ src/
 │   ├── SearchBar.tsx        # In-terminal search overlay (Ctrl+F): drives the headless
 │   │                        #   @xterm/addon-search via a glass top slide-down bar (case /
 │   │                        #   whole-word / regex toggles + result counter). Mounted in Term.
+│   ├── CompletionPopup.tsx # The terminal-suggest floating list: glass surface + kind icons (folder/file/
+│   │                        #   command/option via lib/completions.ts), selected-row highlight, scroll +
+│   │                        #   into-view, flip below/above the cursor anchor Term computes. Never takes
+│   │                        #   focus — keys keep flowing through xterm's chain; hover selects, click accepts.
 │   ├── TabBar.tsx           # Sidebar tab list — pure rendering. The whole drag domain (one
 │   │                        #   HTML5 drag serving reorder-inside / tear-off-outside, plus the
 │   │                        #   foreign-drag sentinel) lives in hooks/useTabDragController.ts
@@ -397,7 +420,11 @@ src-tauri/src/
 │                  #   references — the ONLY cleanup moment); pure helpers (sanitize_stem, ext_of, …)
 │                  #   parameterized by dir (tests/command_icons.rs)
 ├── shell_integration.rs # bash/zsh/fish OSC-1337 injection (precmd/preexec hooks for exit codes
-│                  #   and command text) + the per-shell proxy-sync hooks whose env-file
+│                  #   and command text) + TAB-completion interception for zsh/fish
+│                  #   (completion_hook_zsh: compadd recording shim, PREFIX filter, RS/US OSC payload;
+│                  #   completion_hook_fish: complete -C engine + fish_prompt-event rebinding so bundled
+│                  #   autopair can't steal TAB; both gated by the spawn-time enableShellCompletions flag)
+│                  #   + the per-shell proxy-sync hooks whose env-file
 │                  #   (proxy.env, same dir) is written by proxy.rs; hook sources are
 │                  #   generated per launch with the env-file path baked in (real-shell
 │                  #   lifecycle tests in tests/shell_hooks.rs)
@@ -452,6 +479,10 @@ tests/             # Backend integration tests (mandatory for backend work — s
 │                  #   `cargo test --manifest-path src-tauri/Cargo.toml`.
 ├── proxy.rs       # per-source proxy parsers + env-file render + env-file parse (spawn injection) + real-gsettings e2e (self-skipping)
 ├── shell_hooks.rs # real bash/zsh/fish lifecycle of the generated proxy-sync hooks (self-skipping)
+├── completion_hooks.rs # real-shell e2e of the completion interception: PTY-driven zsh (compinit HOME)
+│                  #   + fish (TERM=dumb — fish 4.x blocks on terminal queries a bare PTY never answers);
+│                  #   asserts the OSC payload (word + candidates + descriptions) and round-trips the
+│                  #   frontend insertion contract (DEL×word + insert) against the live zle
 ├── cli.rs         # launch-flag parsing + the macOS -psn_* argv filter + the `-e`
 │                  #   command-region split (flags-after-command, `--` escape hatch)
 ├── ssh_config.rs  # ~/.ssh/config content parsing: wildcards, keyword case, invalid port

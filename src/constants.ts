@@ -236,6 +236,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     autoUpdateOnStartup: true,
     inheritWorkingDirectory: false,
     imeDuplicateInputFix: true,
+    enableShellCompletions: true,
     rememberWindowPosition: false,
     rememberWindowSize: false,
     sessionSaveMode: "ask",

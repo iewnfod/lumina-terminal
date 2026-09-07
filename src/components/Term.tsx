@@ -29,6 +29,8 @@ import {readClipboardText} from "../lib/clipboardApi.ts";
 import {reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 import {installImeCompositionGuard} from "../lib/imeCompositionGuard.ts";
 import SearchBar from "./SearchBar.tsx";
+import CompletionPopup from "./CompletionPopup.tsx";
+import {useShellCompletions, type CompletionAnchor} from "../hooks/useShellCompletions.ts";
 
 interface TermProps {
     id: string;
@@ -235,12 +237,49 @@ export default function Term(props : TermProps) {
     // Current-command tracking: parses shell-integration OSC sequences from
     // the output stream (feedOutput below) and subscribes to the backend's
     // /proc fallback (suppressed once OSC integration proves active). See
-    // hooks/useCurrentCommand.ts.
+    // hooks/useCurrentCommand.ts. The same parser also routes completion
+    // payloads to the suggest popup below.
+    const completions = useShellCompletions({
+        ptyId,
+        enabled: config.enableShellCompletions !== false,
+    });
     const {feedOutput} = useCurrentCommand({
         ptyId,
         onCommandChange: props.onCommandChange,
         onCommandExit: props.onCommandExit,
+        onCompletions: onCompletionsPayload,
     });
+
+    // Terminal-suggest anchor: the pixel position of the cell right after the
+    // cursor, plus the free space around it for the popup's flip/clamp logic.
+    // Computed when each payload arrives (the shell's line editor leaves the
+    // cursor exactly after the word being completed). Returns null when the
+    // renderer hasn't measured cells yet (hidden window) — the payload is
+    // dropped, same as a disabled feature.
+    function onCompletionsPayload(payload: string) {
+        const termObj = term.current;
+        const container = termRef.current;
+        if (!termObj || !container) return;
+        const core = (termObj as unknown as {
+            _core?: {_renderService?: {dimensions?: {css?: {cell?: {width: number; height: number}}}}};
+        })._core;
+        const cell = core?._renderService?.dimensions?.css?.cell;
+        const cellW = cell?.width ?? 0;
+        const cellH = cell?.height ?? 0;
+        if (!cellW || !cellH) return;
+        const buffer = termObj.buffer.active;
+        const x = padding.left + buffer.cursorX * cellW;
+        const y = padding.top + (buffer.cursorY + 1) * cellH;
+        const anchor: CompletionAnchor = {
+            x: Math.min(x, Math.max(0, container.clientWidth - 80)),
+            y,
+            spaceBelow: container.clientHeight - y,
+            spaceAbove: y - cellH,
+            cellWidth: cellW,
+            maxX: Math.max(0, container.clientWidth - 80),
+        };
+        completions.offer(payload, anchor);
+    }
 
     // Drag-and-drop: insert file path into terminal
     const lastDropRef = useRef(0);
@@ -360,10 +399,12 @@ export default function Term(props : TermProps) {
             });
         }
 
-        // Load keybindings right after terminal is ready
+        // Load keybindings right after terminal is ready. The completion
+        // popup's key filter runs before binding matching (see lib/bindings.ts
+        // intercept) so Tab/arrows route to the popup while it is open.
         loadBindings(term.current, bindings, (action, args) => {
             handleActionsRef.current(action, args);
-        });
+        }, completions.handleKey);
         info(`Bindings loaded for terminal with id ${id}`);
 
         term.current.onData((data) => {
@@ -433,7 +474,7 @@ export default function Term(props : TermProps) {
             if (props.initialScrollback) {
                 term.current.write(props.initialScrollback);
             }
-            startTerminal(id, profile, outputChannel).then(() => {
+            startTerminal(id, profile, outputChannel, config.enableShellCompletions !== false).then(() => {
                 info(`Terminal started: id=${id} profile=${profile.name}`);
                 resizeTerminal(id, term.current!.cols, term.current!.rows).then();
             }).catch((e) => {
@@ -642,7 +683,7 @@ export default function Term(props : TermProps) {
         if (!isInitialized.current || !term.current) return;
         loadBindings(term.current, bindings, (action, args) => {
             handleActionsRef.current(action, args);
-        });
+        }, completions.handleKey);
         debug(`Bindings hot-reloaded for terminal ${id}`);
     }, [bindings, id]);
 
@@ -652,6 +693,12 @@ export default function Term(props : TermProps) {
             term.current.focus();
         }
     }, [isActive]);
+
+    // An inactive tab receives no keys, so a completion popup left open there
+    // would be stuck (only keypresses close it) — drop it on focus loss.
+    useEffect(() => {
+        if (!isActive) completions.close();
+    }, [isActive, completions.close]);
 
     // Re-focus xterm when the OS window itself regains focus and this tab is
     // the active one — so clicking into the window (or alt-tabbing back) puts
@@ -736,6 +783,16 @@ export default function Term(props : TermProps) {
                             fillBg={containerBg ?? props.fillBg}
                             focusTick={searchFocusTick}
                             onClose={() => setSearchOpen(false)}
+                        />
+                    )}
+                </AnimatePresence>
+                <AnimatePresence>
+                    {completions.state && (
+                        <CompletionPopup
+                            state={completions.state}
+                            fillBg={containerBg ?? props.fillBg}
+                            onHover={completions.select}
+                            onAccept={completions.acceptCandidate}
                         />
                     )}
                 </AnimatePresence>

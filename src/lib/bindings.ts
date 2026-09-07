@@ -127,6 +127,14 @@ export function loadBindings(
     term: Terminal,
     bindings: Binding[],
     onAction: (action: Actions, args?: Record<string, string>) => void,
+    /**
+     * Optional keydown pre-filter, consulted BEFORE binding matching. Return
+     * false to swallow the key (it never reaches xterm's input pipeline, so
+     * the PTY doesn't see it either) — the completion popup uses this to own
+     * Tab/arrow/Enter/Escape while it is open. Must read live state via refs
+     * (loadBindings captures it once per install).
+     */
+    intercept?: (event: KeyboardEvent) => boolean,
 ) {
     const held = new Set<string>();
 
@@ -141,6 +149,8 @@ export function loadBindings(
         }
 
         if (event.type !== "keydown") return true;
+
+        if (intercept && !intercept(event)) return false;
 
         debug(`XTerm Custom Key with key ${event.key} and type ${event.type}`);
 

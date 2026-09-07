@@ -161,6 +161,10 @@ pub struct ShellCommandParams<'a> {
     pub cwd: Option<&'a str>,
     pub startup_command: Option<&'a str>,
     pub keep_after_exit: Option<&'a str>,
+    /// Config `enableShellCompletions`, decided by the frontend at spawn time:
+    /// installs the TAB-completion interception hook for zsh/fish. Spawn-time
+    /// only — toggling the setting affects NEW terminals (like webgl).
+    pub shell_completions: bool,
 }
 
 /// Build the PTY command for a terminal: the SSH invocation for remote
@@ -222,7 +226,7 @@ pub fn build_shell_command(app: &AppHandle, p: &ShellCommandParams) -> CommandBu
             // Pure interactive shell. Apply shell-integration injection
             // (bash/zsh/fish) so we can capture per-command exit codes; the
             // helper falls back to `--login -i` for unsupported shells.
-            crate::shell_integration::apply_interactive(&mut c, &shell_base, app);
+            crate::shell_integration::apply_interactive(&mut c, &shell_base, app, p.shell_completions);
         }
         log::debug!("Creating terminal {:?} with cwd {:?}", p.exe_path, p.cwd);
         c
@@ -544,6 +548,7 @@ pub fn start_terminal(
     cwd: Option<String>,
     startup_command: Option<String>,
     keep_after_exit: Option<String>,
+    shell_completions: Option<bool>,
 ) {
     {
         let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
@@ -577,6 +582,7 @@ pub fn start_terminal(
             cwd: cwd.as_deref(),
             startup_command: startup_command.as_deref(),
             keep_after_exit: keep_after_exit.as_deref(),
+            shell_completions: shell_completions.unwrap_or(false),
         },
     );
     let child: CommandChild = pty_pair.slave.spawn_command(cmd).unwrap_or_else(|e| {

@@ -1,0 +1,121 @@
+/**
+ * Completion-suggestion payload framing + derivation — the frontend half of
+ * the terminal-suggest protocol whose shell half lives in
+ * `src-tauri/src/shell_integration.rs` (completion_hook_zsh /
+ * completion_hook_fish) and whose stream scanner lives in
+ * `lib/currentCommand.ts`.
+ *
+ * Payload (inside `OSC 1337 ; Completions=… ST`):
+ *   <word> RS (<insert> US <label> US <desc> RS)*
+ *
+ * - RS (0x1e) separates the word and each candidate; US (0x1f) separates a
+ *   candidate's fields. The PTY line discipline rewrites `\n` (ONLCR), and
+ *   xterm.js drops 0x1c–0x1f inside OSC — RS/US survive both, and shells can
+ *   emit them portably.
+ * - `word` is the token under the cursor as the shell's line editor sees it;
+ *   accepting a candidate erases exactly that many characters (DEL) and types
+ *   `insert`.
+ * - `label` is what the shell would have displayed (may differ from the
+ *   insertable text, e.g. zsh display strings); empty means "same as insert".
+ * - `desc` is an optional human description (fish provides these natively,
+ *   zsh via _describe display strings).
+ *
+ * Pure logic (no React) per the lib/ layering rule; covered by
+ * tests/completions.test.mjs.
+ */
+
+/** ASCII record/unit separators used by the wire format. */
+const RS = "\x1e";
+const US = "\x1f";
+
+/** One TAB-completion candidate as sent by the shell hook. */
+export interface CompletionCandidate {
+    /** Text to type after erasing the word (may be shell-escaped, e.g. `My\ Dir/`). */
+    insert: string;
+    /** Text to display; empty means "same as insert". */
+    label: string;
+    /** Optional human-readable description shown dimmed. */
+    description: string;
+}
+
+/** A parsed Completions payload: the word being completed + its candidates. */
+export interface CompletionPayload {
+    word: string;
+    candidates: CompletionCandidate[];
+}
+
+/** Visual category of a candidate — drives the popup's row icon. */
+export type CompletionKind = "folder" | "file" | "command" | "option";
+
+/**
+ * Parse a raw `OSC 1337;Completions=` payload (the value between `=` and the
+ * terminator). Tolerant by design: a truncated trailing record (chunk split
+ * exactly at a payload boundary upstream never truncates — the scanner only
+ * emits complete sequences — but a shell bug might) is dropped, not thrown.
+ */
+export function parseCompletionPayload(payload: string): CompletionPayload {
+    const records = payload.split(RS);
+    const word = records[0] ?? "";
+    const candidates: CompletionCandidate[] = [];
+    for (const record of records.slice(1)) {
+        const fields = record.split(US);
+        const insert = fields[0] ?? "";
+        if (insert === "") continue;
+        candidates.push({
+            insert,
+            label: fields[1] ?? "",
+            description: fields.slice(2).join(US),
+        });
+    }
+    return {word, candidates};
+}
+
+/**
+ * The bytes to write into the PTY to accept `candidate` for `word`:
+ * DEL × (code points in word) + the insert text. A PTY DEL (0x7f) erases one
+ * CHARACTER in the shell's line editor, so the count is code points (UTF-16
+ * surrogates must not double-count — a CJK word of 2 chars erases with 2
+ * DELs, not 4), and spread-iteration is the code-point-safe walk.
+ */
+export function insertionBytes(word: string, candidate: CompletionCandidate): string {
+    return "\x7f".repeat([...word].length) + candidate.insert;
+}
+
+/** The text a popup row should show for a candidate (label falls back to insert). */
+export function candidateLabel(candidate: CompletionCandidate): string {
+    return candidate.label !== "" ? candidate.label : candidate.insert;
+}
+
+/**
+ * Narrow a candidate set to the ones still matching a refined word. Used when
+ * the user keeps typing while the popup is open: the shell matched the
+ * ORIGINAL word, and every candidate of the longer word is necessarily in
+ * that set (v* ⊇ vi*), so filtering locally is exact — no re-request needed.
+ * Case-sensitive plain prefix, matching the shells' default file matching.
+ */
+export function filterCandidates(
+    candidates: CompletionCandidate[],
+    word: string,
+): CompletionCandidate[] {
+    return candidates.filter((c) => c.insert.startsWith(word));
+}
+
+/**
+ * Whether accepting `candidate` should be followed by a fresh completion
+ * request (a follow-up TAB byte). Directories always have a meaningful
+ * "next level", so drilling in keeps the popup cascading; anything else
+ * terminates — an unconditional re-request would loop (accepting "vim"
+ * would re-offer [vim, vimdiff] forever, with no way to just run the command).
+ */
+export function shouldRetrigger(candidate: CompletionCandidate): boolean {
+    return candidate.insert.endsWith("/");
+}
+
+/** Categorize a candidate for its row icon. Cosmetic only. */
+export function completionKind(candidate: CompletionCandidate): CompletionKind {
+    const text = candidate.insert;
+    if (text.endsWith("/")) return "folder";
+    if (text.startsWith("-")) return "option";
+    if (candidate.description !== "") return "command";
+    return "file";
+}

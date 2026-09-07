@@ -10,9 +10,13 @@ interface UseCurrentCommandOptions {
      *  prompt. Drives the small subtitle under the tab title. */
     onCommandChange?: (command: CurrentCommand | null) => void;
     /** Reports a finished command's exit code (shell-integration precmd),
-     *  paired with the command text that was just running. Feeds the
-     *  per-command history on the backend (MCP `list_command_history`). */
+     *  paired with the command text that was just running. Feeds the per-command
+     *  history on the backend (MCP `list_command_history`). */
     onCommandExit?: (payload: {command: string | null; exitCode: number}) => void;
+    /** Receives raw `OSC 1337;Completions=` payloads parsed from the output
+     *  stream (the terminal-suggest feature). Routed rather than parsed here:
+     *  the popup state machine (hooks/useShellCompletions.ts) owns the timing. */
+    onCompletions?: (payload: string) => void;
 }
 
 /**
@@ -25,13 +29,15 @@ interface UseCurrentCommandOptions {
  * Extracted from Term.tsx where this logic was spread across the props refs,
  * the output-channel handler, and the term-command listener.
  */
-export function useCurrentCommand({ptyId, onCommandChange, onCommandExit}: UseCurrentCommandOptions) {
+export function useCurrentCommand({ptyId, onCommandChange, onCommandExit, onCompletions}: UseCurrentCommandOptions) {
     // Latest-refs so the (once-registered) parser feed and listener always
     // observe the current callbacks without re-subscribing.
     const onCommandChangeRef = useRef(onCommandChange);
     onCommandChangeRef.current = onCommandChange;
     const onCommandExitRef = useRef(onCommandExit);
     onCommandExitRef.current = onCommandExit;
+    const onCompletionsRef = useRef(onCompletions);
+    onCompletionsRef.current = onCompletions;
     // Last command reported upward. `null` = nothing reported yet / idle.
     const currentCommandRef = useRef<CurrentCommand | null>(null);
     const commandParserRef = useRef<CurrentCommandParser | null>(null);
@@ -66,6 +72,9 @@ export function useCurrentCommand({ptyId, onCommandChange, onCommandExit}: UseCu
             if (ev.type === "command") {
                 oscActiveRef.current = true;
                 reportCommand({command: ev.value, privileged: false});
+            } else if (ev.type === "completions") {
+                oscActiveRef.current = true;
+                onCompletionsRef.current?.(ev.payload);
             } else {
                 // Command finished: pair the just-run command text with its
                 // exit code, forward to the backend history, then clear the

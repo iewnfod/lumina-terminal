@@ -1,6 +1,6 @@
 /**
  * Shell-integration sequence parser for the "current command" + per-command
- * exit-code features.
+ * exit-code + completion-suggestion features.
  *
  * The backend injects snippets (`src-tauri/src/shell_integration.rs`) into
  * bash/zsh/fish that emit OSC 1337 sequences around command execution. This
@@ -11,6 +11,8 @@
  * Protocol (OSC 1337 sub-parameters; ST = BEL or ESC\):
  *   ESC ] 1337 ; CurrentCommand=<cmd> ST      — preexec: the command line about to run
  *   ESC ] 1337 ; CurrentCommandExit=<code> ST — precmd: the previous command's exit code
+ *   ESC ] 1337 ; Completions=<payload> ST     — TAB-completion candidates (zsh/fish
+ *                                               hooks; payload framing in lib/completions.ts)
  *
  * A chunk may contain several sequences, so `feed` returns a list in order.
  * The payload may be split across chunks; a bounded `pending` buffer carries
@@ -25,10 +27,18 @@ const BEL = 0x07;
 
 const PREFIX_CMD = "\x1b]1337;CurrentCommand=";
 const PREFIX_EXIT = "\x1b]1337;CurrentCommandExit=";
+const PREFIX_COMPLETIONS = "\x1b]1337;Completions=";
+
+// None of the three prefixes is a prefix of another (they diverge at
+// "CurrentCommand=" vs "CurrentCommandExit=" vs "Completions=" after the
+// shared "1337;C"), so raw indexOf positions are safe to compare.
+const PREFIXES = [PREFIX_CMD, PREFIX_EXIT, PREFIX_COMPLETIONS] as const;
+const LONGEST_PREFIX = Math.max(...PREFIXES.map((p) => p.length));
 
 export type CommandParseEvent =
     | {type: "command"; value: string}
-    | {type: "exit"; code: number};
+    | {type: "exit"; code: number}
+    | {type: "completions"; payload: string};
 
 /**
  * A small stateful parser. Construct one per terminal (keep it in a ref) and
@@ -42,28 +52,23 @@ export class CurrentCommandParser {
     /**
      * Feed a chunk of PTY output. Returns the shell-integration events found in
      * this chunk, in order (`command` from preexec, `exit` with the previous
-     * command's code from precmd). Empty if no complete sequence was present.
+     * command's code from precmd, `completions` with the raw suggest payload).
+     * Empty if no complete sequence was present.
      */
     feed(data: string): CommandParseEvent[] {
         let buf = this.pending + data;
         const events: CommandParseEvent[] = [];
 
         while (true) {
-            // Find the earliest of the two prefixes. PREFIX_CMD is NOT a prefix
-            // of PREFIX_EXIT (one ends in '=', the other in 'E'), so the raw
-            // indexOf results are safe to compare by position.
-            const cmdIdx = buf.indexOf(PREFIX_CMD);
-            const exitIdx = buf.indexOf(PREFIX_EXIT);
+            // Find the earliest prefix of any kind.
             let idx = -1;
-            let isExit = false;
             let prefixLen = 0;
-            if (cmdIdx !== -1 && (exitIdx === -1 || cmdIdx < exitIdx)) {
-                idx = cmdIdx;
-                prefixLen = PREFIX_CMD.length;
-            } else if (exitIdx !== -1) {
-                idx = exitIdx;
-                isExit = true;
-                prefixLen = PREFIX_EXIT.length;
+            for (const prefix of PREFIXES) {
+                const at = buf.indexOf(prefix);
+                if (at !== -1 && (idx === -1 || at < idx)) {
+                    idx = at;
+                    prefixLen = prefix.length;
+                }
             }
             if (idx === -1) break;
 
@@ -89,17 +94,22 @@ export class CurrentCommandParser {
                 // Sequence is incomplete: keep from the PREFIX onward so the
                 // next chunk can finish it. Cap the retained tail to avoid
                 // pathological growth on streams that contain our PREFIX without
-                // ever closing it.
+                // ever closing it (completions payloads are bounded by the
+                // shell-side candidate count, but the guard stays).
                 const tail = buf.slice(idx);
-                this.pending = tail.length > 4096 ? tail.slice(-4096) : tail;
+                this.pending = tail.length > 32768 ? tail.slice(-32768) : tail;
                 return events;
             }
 
             const value = buf.slice(valueStart, end);
-            if (isExit) {
+            if (buf.startsWith(PREFIX_EXIT, idx)) {
                 const code = parseInt(value, 10);
                 if (!Number.isNaN(code)) {
                     events.push({type: "exit", code});
+                }
+            } else if (buf.startsWith(PREFIX_COMPLETIONS, idx)) {
+                if (value !== "") {
+                    events.push({type: "completions", payload: value});
                 }
             } else if (value !== "") {
                 // Non-empty CurrentCommand = preexec command line. (An empty
@@ -113,7 +123,7 @@ export class CurrentCommandParser {
 
         // No full sequence remains. Keep a short tail in case a PREFIX starts
         // right at the end of this chunk (partial PREFIX).
-        const keep = Math.min(buf.length, PREFIX_CMD.length);
+        const keep = Math.min(buf.length, LONGEST_PREFIX);
         this.pending = buf.slice(-keep);
         return events;
     }

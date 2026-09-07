@@ -83,6 +83,14 @@ export interface GlobalConfig {
      *  slower machines — turn it off to restore raw xterm behavior (IME input
      *  on Linux/WebKitGTK may then duplicate again). */
     imeDuplicateInputFix?: boolean;
+    /** When true (default), zsh/fish terminals get the TAB-completion
+     *  interception hooks (src-tauri/src/shell_integration.rs): pressing TAB
+     *  sends the shell's own completion candidates to Lumina, which renders
+     *  them as a floating suggest popup (VSCode-style) instead of the shell's
+     *  in-buffer list; accepting one inserts it into the line editor. Spawn-
+     *  time only — toggling affects NEW terminals, like webgl. Shells without
+     *  hooks (bash/nu/pwsh/SSH) keep their native TAB behavior. */
+    enableShellCompletions?: boolean;
     /** When true, restore the main window to its last position on startup
      * (main window only; tear-off windows are positioned by their spawner). */
     rememberWindowPosition?: boolean;

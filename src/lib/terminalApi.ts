@@ -33,9 +33,16 @@ export function killTerminal(id: string) {
 /**
  * Spawn a terminal's PTY process on the backend. `onOutput` is a Channel the
  * backend streams PTY output over (low-overhead, binary-safe UTF-8). Set its
- * `.onmessage` before calling this.
+ * `.onmessage` before calling this. `shellCompletions` decides whether the
+ * backend installs the TAB-completion interception hooks into the shell's
+ * startup files — spawn-time only, so the value is read once per terminal.
  */
-export function startTerminal(id: string, profile: TerminalProfile, onOutput: Channel<string>) {
+export function startTerminal(
+    id: string,
+    profile: TerminalProfile,
+    onOutput: Channel<string>,
+    shellCompletions = false,
+) {
     return invokeWithLog<void>("start_terminal", id, {
         exePath: profile.exePath,
         cols: profile.cols,
@@ -45,6 +52,7 @@ export function startTerminal(id: string, profile: TerminalProfile, onOutput: Ch
         cwd: profile.cwd || undefined,
         startupCommand: profile.startupCommand || undefined,
         keepAfterExit: profile.keepAfterExit,
+        shellCompletions,
         onOutput,
     });
 }
