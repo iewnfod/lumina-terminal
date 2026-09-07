@@ -30,6 +30,8 @@ const ROW_HEIGHT = 28;
 const FOOTER_HEIGHT = 24;
 /** Right-edge margin the anchor's maxX mirror keeps free (mirrors Term). */
 const RIGHT_MARGIN = 80;
+/** Breathing room between the popup and the cursor line, both directions. */
+const POSITION_GAP = 4;
 
 const KIND_ICON: Record<CompletionKind, typeof Folder> = {
     folder: Folder,
@@ -92,8 +94,8 @@ export default function CompletionPopup({state, fillBg, onHover, onAccept}: Comp
     // style position: below grows downward from the anchor; above pins the
     // popup's bottom edge to the top of the cursor row.
     const placement: CSSProperties = below
-        ? {top: anchor.y}
-        : {bottom: anchor.spaceBelow + anchor.cellHeight};
+        ? {top: anchor.y + POSITION_GAP}
+        : {bottom: anchor.spaceBelow + anchor.cellHeight + POSITION_GAP};
 
     return (
         <motion.div
@@ -136,20 +138,28 @@ export default function CompletionPopup({state, fillBg, onHover, onAccept}: Comp
                             onClick={() => onAccept(candidate, index)}
                         >
                             <Icon size={14} style={{color: muted, flexShrink: 0}}/>
+                            {/* Label keeps its full content width (flex-initial,
+                                base = auto) and only truncates when it alone
+                                overflows the row; the description flexes from
+                                basis 0, so it fills merely the leftover space
+                                and yields first — the command stays readable,
+                                the description shows as much as fits. */}
                             <span
-                                className="min-w-0 flex-shrink truncate font-mono"
+                                className="min-w-0 flex-initial truncate font-mono"
                                 style={{color: fg}}
                                 title={candidateLabel(candidate)}
                             >
                                 {candidateLabel(candidate)}
                             </span>
-                            <span
-                                className="ml-auto min-w-0 flex-shrink truncate text-xs"
-                                style={{color: muted}}
-                                title={candidate.description}
-                            >
-                                {candidate.description}
-                            </span>
+                            {candidate.description !== "" && (
+                                <span
+                                    className="min-w-0 flex-1 truncate text-right text-xs"
+                                    style={{color: muted}}
+                                    title={candidate.description}
+                                >
+                                    {candidate.description}
+                                </span>
+                            )}
                         </div>
                     );
                 })}

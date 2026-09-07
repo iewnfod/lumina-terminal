@@ -291,14 +291,22 @@ export default function Term(props : TermProps) {
         const buffer = termObj.buffer.active;
         const x = padding.left + buffer.cursorX * cellW;
         const y = padding.top + (buffer.cursorY + 1) * cellH;
+        // The popup is absolutely positioned in the OUTER padded container
+        // (CSS top/bottom/left measure against its padding box), while
+        // termRef's clientWidth/Height exclude the padding — add it back so
+        // the space/clamp fields share the same origin as x/y. Measuring
+        // against termRef made a flipped-up popup land padding-too-low,
+        // covering the input line.
+        const outerW = container.clientWidth + padding.left + padding.right;
+        const outerH = container.clientHeight + padding.top + padding.bottom;
         const anchor: CompletionAnchor = {
-            x: Math.min(x, Math.max(0, container.clientWidth - 80)),
+            x: Math.min(x, Math.max(0, outerW - 80)),
             y,
-            spaceBelow: container.clientHeight - y,
+            spaceBelow: outerH - y,
             spaceAbove: y - cellH,
             cellWidth: cellW,
             cellHeight: cellH,
-            maxX: Math.max(0, container.clientWidth - 80),
+            maxX: Math.max(0, outerW - 80),
         };
         completions.offer(payload, anchor);
     }
