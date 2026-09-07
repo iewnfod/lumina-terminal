@@ -1,7 +1,7 @@
-import {useEffect, useRef} from "react";
+import {memo, useEffect, useRef} from "react";
 import {motion} from "framer-motion";
 import type {Variants} from "framer-motion";
-import type {CSSProperties} from "react";
+import type {CSSProperties, MouseEvent} from "react";
 import {FileText, Flag, Folder, Terminal} from "lucide-react";
 import type {CompletionCandidate, CompletionKind} from "../lib/completions.ts";
 import {candidateLabel, completionKind} from "../lib/completions.ts";
@@ -58,6 +58,67 @@ const popFromAnchor: Variants = {
     },
 };
 
+interface CompletionRowProps {
+    candidate: CompletionCandidate;
+    isSelected: boolean;
+    /** Position within the rendered slice — for the delegated row events. */
+    dataCi: number;
+    fg: string;
+    muted: string;
+    selectedBg: string;
+    /** Shared ref the parent scrolls the selected row into view through. */
+    selectedRef: React.RefObject<HTMLDivElement | null>;
+}
+
+/**
+ * One candidate row, memoized: `filterCandidates` returns the SAME candidate
+ * objects from the cached set, so while the user keeps typing only the rows
+ * whose selection flag flipped re-render — not the whole list. Events are
+ * delegated to the scroll container (data-ci attribute), so no per-row
+ * closures that would defeat the memo.
+ */
+const CompletionRow = memo(function CompletionRow({
+    candidate, isSelected, dataCi, fg, muted, selectedBg, selectedRef,
+}: CompletionRowProps) {
+    const kind = completionKind(candidate);
+    const Icon = KIND_ICON[kind];
+    return (
+        <div
+            data-ci={dataCi}
+            ref={isSelected ? selectedRef : undefined}
+            className="flex cursor-pointer items-center gap-2 px-2.5 text-sm"
+            style={{
+                height: ROW_HEIGHT,
+                background: isSelected ? selectedBg : undefined,
+                color: fg,
+            }}
+        >
+            <Icon size={14} style={{color: muted, flexShrink: 0}}/>
+            {/* Label keeps its full content width (flex-initial, base = auto)
+                and only truncates when it alone overflows the row; the
+                description flexes from basis 0, so it fills merely the
+                leftover space and yields first — the command stays readable,
+                the description shows as much as fits. */}
+            <span
+                className="min-w-0 flex-initial truncate font-mono"
+                style={{color: fg}}
+                title={candidateLabel(candidate)}
+            >
+                {candidateLabel(candidate)}
+            </span>
+            {candidate.description !== "" && (
+                <span
+                    className="min-w-0 flex-1 truncate text-right text-xs"
+                    style={{color: muted}}
+                    title={candidate.description}
+                >
+                    {candidate.description}
+                </span>
+            )}
+        </div>
+    );
+});
+
 export default function CompletionPopup({state, fillBg, onHover, onAccept}: CompletionPopupProps) {
     const {filtered, selected, anchor, word} = state;
     const bg = fillBg ?? "#000000";
@@ -97,6 +158,13 @@ export default function CompletionPopup({state, fillBg, onHover, onAccept}: Comp
         ? {top: anchor.y + POSITION_GAP}
         : {bottom: anchor.spaceBelow + anchor.cellHeight + POSITION_GAP};
 
+    // Delegated row events: the nearest [data-ci] ancestor tells us which
+    // rendered row (index within `filtered`) was hovered / clicked.
+    const rowFromEvent = (e: MouseEvent): number | null => {
+        const el = (e.target as HTMLElement).closest("[data-ci]");
+        return el ? Number(el.getAttribute("data-ci")) : null;
+    };
+
     return (
         <motion.div
             key="completion-popup"
@@ -116,53 +184,33 @@ export default function CompletionPopup({state, fillBg, onHover, onAccept}: Comp
                 transformOrigin: below ? "top left" : "bottom left",
             }}
             // The popup never takes focus — the terminal keeps it so keys keep
-            // flowing through the interception chain. Pointer handlers only.
+            // flowing through xterm's interception chain. Pointer handlers only.
             onPointerDown={(e) => e.stopPropagation()}
         >
-            <div className="overflow-y-auto" style={{maxHeight}}>
-                {filtered.map((candidate, index) => {
-                    const kind = completionKind(candidate);
-                    const Icon = KIND_ICON[kind];
-                    const isSelected = index === selected;
-                    return (
-                        <div
-                            key={`${candidate.insert}\u0000${index}`}
-                            ref={isSelected ? selectedRowRef : undefined}
-                            className="flex cursor-pointer items-center gap-2 px-2.5 text-sm"
-                            style={{
-                                height: ROW_HEIGHT,
-                                background: isSelected ? colors.accentOverlay : undefined,
-                                color: fg,
-                            }}
-                            onMouseEnter={() => onHover(index)}
-                            onClick={() => onAccept(candidate, index)}
-                        >
-                            <Icon size={14} style={{color: muted, flexShrink: 0}}/>
-                            {/* Label keeps its full content width (flex-initial,
-                                base = auto) and only truncates when it alone
-                                overflows the row; the description flexes from
-                                basis 0, so it fills merely the leftover space
-                                and yields first — the command stays readable,
-                                the description shows as much as fits. */}
-                            <span
-                                className="min-w-0 flex-initial truncate font-mono"
-                                style={{color: fg}}
-                                title={candidateLabel(candidate)}
-                            >
-                                {candidateLabel(candidate)}
-                            </span>
-                            {candidate.description !== "" && (
-                                <span
-                                    className="min-w-0 flex-1 truncate text-right text-xs"
-                                    style={{color: muted}}
-                                    title={candidate.description}
-                                >
-                                    {candidate.description}
-                                </span>
-                            )}
-                        </div>
-                    );
-                })}
+            <div
+                className="overflow-y-auto"
+                style={{maxHeight}}
+                onMouseOver={(e) => {
+                    const i = rowFromEvent(e);
+                    if (i !== null) onHover(i);
+                }}
+                onClick={(e) => {
+                    const i = rowFromEvent(e);
+                    if (i !== null && filtered[i]) onAccept(filtered[i], i);
+                }}
+            >
+                {filtered.map((candidate, i) => (
+                    <CompletionRow
+                        key={`${candidate.insert}\u0000${i}`}
+                        candidate={candidate}
+                        isSelected={i === selected}
+                        dataCi={i}
+                        fg={fg}
+                        muted={muted}
+                        selectedBg={colors.accentOverlay}
+                        selectedRef={selectedRowRef}
+                    />
+                ))}
             </div>
             {/* The live word being completed (grows as the user types while the
                 popup is open, narrowing the list) — a subtle footer so the

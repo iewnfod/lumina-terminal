@@ -9,6 +9,8 @@ import {
 	filterCandidates,
 	shouldRetrigger,
 	isPlainTypingKey,
+	pruneCompletionIndex,
+	mergeCompletionIndex,
 } from "../src/lib/completions.ts";
 import {CurrentCommandParser} from "../src/lib/currentCommand.ts";
 
@@ -181,3 +183,40 @@ test("CurrentCommandParser picks the earliest prefix when several are pending", 
 	assert.equal(events[1].type, "exit");
 	assert.equal(events[1].code, 1);
 });
+
+test("pruneCompletionIndex keeps freshest words and contexts, caps sets", () => {
+	const set = (n, at) => ({
+		fetchedAt: at,
+		candidates: Array.from({length: n}, (_, i) => ({insert: `c${i}`, label: "", description: ""})),
+	});
+	const index = {
+		// ctx A: 3 words, oldest one should drop (wordCap 2)
+		A: {old: set(3, 1), mid: set(4, 2), new: set(5, 3)},
+		// ctx B: newest overall → survives the ctx cap
+		B: {x: set(2, 10)},
+		// ctx C: oldest ctx → dropped by ctxCap 2
+		C: {y: set(2, 0)},
+	};
+	const pruned = pruneCompletionIndex(index, 2, 2, 4);
+	assert.deepEqual(Object.keys(pruned).sort(), ["A", "B"]);
+	assert.deepEqual(Object.keys(pruned.A).sort(), ["mid", "new"]);
+	// candidate cap applied
+	assert.equal(pruned.A.new.candidates.length, 4);
+	assert.equal(pruned.A.mid.candidates.length, 4);
+});
+
+test("pruneCompletionIndex drops empty contexts", () => {
+	const pruned = pruneCompletionIndex({empty: {}}, 5, 5, 10);
+	assert.deepEqual(pruned, {});
+});
+
+test("mergeCompletionIndex: newer fetchedAt wins per entry, union of contexts", () => {
+	const set = (at) => ({fetchedAt: at, candidates: [{insert: "x", label: "", description: ""}]});
+	const base = {git: {che: set(1), ch: set(5)}};
+	const additions = {git: {che: set(9)}, cargo: {b: set(2)}};
+	const merged = mergeCompletionIndex(base, additions);
+	assert.equal(merged.git.che.fetchedAt, 9);
+	assert.equal(merged.git.ch.fetchedAt, 5);
+	assert.ok(merged.cargo.b);
+}
+);

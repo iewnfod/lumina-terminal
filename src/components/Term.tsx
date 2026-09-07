@@ -255,39 +255,24 @@ export default function Term(props : TermProps) {
     // same current-command tracking that feeds the tab subtitle. Requests are
     // suppressed while a command runs so no TAB is injected into vim/htop.
     const atPromptRef = useRef(true);
-    const completions = useShellCompletions({
-        ptyId,
-        enabled: completionsEnabledAtSpawn,
-        onType: config.shellCompletionsOnType === true,
-        atPrompt: () => atPromptRef.current,
-    });
-    const {feedOutput} = useCurrentCommand({
-        ptyId,
-        onCommandChange: (command) => {
-            atPromptRef.current = command === null;
-            props.onCommandChange?.(command);
-        },
-        onCommandExit: props.onCommandExit,
-        onCompletions: onCompletionsPayload,
-    });
-
     // Terminal-suggest anchor: the pixel position of the cell right after the
     // cursor, plus the free space around it for the popup's flip/clamp logic.
-    // Computed when each payload arrives (the shell's line editor leaves the
-    // cursor exactly after the word being completed). Returns null when the
-    // renderer hasn't measured cells yet (hidden window) — the payload is
-    // dropped, same as a disabled feature.
-    function onCompletionsPayload(payload: string) {
+    // Reads the LIVE cursor, so it is correct both when a payload arrives
+    // (the shell's line editor leaves the cursor exactly after the word being
+    // completed) and when the instant-open asks mid-typing. Returns null when
+    // the renderer hasn't measured cells yet (hidden window) — callers treat
+    // that as "no anchor" (payload dropped / no instant-open).
+    const completionAnchor = useCallback((): CompletionAnchor | null => {
         const termObj = term.current;
         const container = termRef.current;
-        if (!termObj || !container) return;
+        if (!termObj || !container) return null;
         const core = (termObj as unknown as {
             _core?: {_renderService?: {dimensions?: {css?: {cell?: {width: number; height: number}}}}};
         })._core;
         const cell = core?._renderService?.dimensions?.css?.cell;
         const cellW = cell?.width ?? 0;
         const cellH = cell?.height ?? 0;
-        if (!cellW || !cellH) return;
+        if (!cellW || !cellH) return null;
         const buffer = termObj.buffer.active;
         const x = padding.left + buffer.cursorX * cellW;
         const y = padding.top + (buffer.cursorY + 1) * cellH;
@@ -299,7 +284,7 @@ export default function Term(props : TermProps) {
         // covering the input line.
         const outerW = container.clientWidth + padding.left + padding.right;
         const outerH = container.clientHeight + padding.top + padding.bottom;
-        const anchor: CompletionAnchor = {
+        return {
             x: Math.min(x, Math.max(0, outerW - 80)),
             y,
             spaceBelow: outerH - y,
@@ -308,6 +293,36 @@ export default function Term(props : TermProps) {
             cellHeight: cellH,
             maxX: Math.max(0, outerW - 80),
         };
+    }, [padding]);
+
+    const completions = useShellCompletions({
+        ptyId,
+        enabled: completionsEnabledAtSpawn,
+        onType: config.shellCompletionsOnType === true,
+        atPrompt: () => atPromptRef.current,
+        // Live anchor for the instant-open: read AT OPEN TIME so the popup
+        // lands where the cursor actually is — a stale, shifted copy of the
+        // last response's anchor made it appear at the old position and
+        // "teleport" when the fresh response's anchor replaced it.
+        getAnchor: completionAnchor,
+        profileName: profile.name,
+    });
+    const {feedOutput} = useCurrentCommand({
+        ptyId,
+        onCommandChange: (command) => {
+            atPromptRef.current = command === null;
+            // A command executing means the line is gone; the next prompt is
+            // a fresh empty line, which the shadow resets to (known state).
+            if (command !== null) completions.onCommandStart();
+            props.onCommandChange?.(command);
+        },
+        onCommandExit: props.onCommandExit,
+        onCompletions: onCompletionsPayload,
+    });
+
+    function onCompletionsPayload(payload: string) {
+        const anchor = completionAnchor();
+        if (!anchor) return;
         completions.offer(payload, anchor);
     }
 

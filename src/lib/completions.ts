@@ -122,6 +122,74 @@ export function shouldRetrigger(candidate: CompletionCandidate): boolean {
     return candidate.insert.endsWith("/");
 }
 
+// ---------------------------------------------------------------------------
+// Warm-index persistence (pure helpers; the IO lives in lib/completionCache.ts)
+// ---------------------------------------------------------------------------
+
+/** A cached candidate set with its fetch time (ms epoch). */
+export interface CompletionCacheEntry {
+    candidates: CompletionCandidate[];
+    fetchedAt: number;
+}
+
+/** The persisted warm index: profile → (line-context → (word → entry)). */
+export type SerializedCompletionIndex = Record<string, Record<string, CompletionCacheEntry>>;
+
+/**
+ * Prune a serialized index for persistence: per context keep the freshest
+ * `wordCap` words, per profile keep the `ctxCap` freshest contexts, and cap
+ * each set's candidate list (matching the UI's display cap — more can never
+ * be shown). Freshness-ordered pruning keeps the coverage that actually
+ * matters (what the user uses) when the bounds bite.
+ */
+export function pruneCompletionIndex(
+    index: SerializedCompletionIndex,
+    ctxCap: number,
+    wordCap: number,
+    setCandidatesCap: number,
+): SerializedCompletionIndex {
+    const prunedCtxs: [string, Record<string, CompletionCacheEntry>, number][] = [];
+    for (const [ctx, words] of Object.entries(index)) {
+        const kept = Object.entries(words)
+            .sort((a, b) => b[1].fetchedAt - a[1].fetchedAt)
+            .slice(0, wordCap)
+            .map(([word, entry]): [string, CompletionCacheEntry] => [
+                word,
+                {...entry, candidates: entry.candidates.slice(0, setCandidatesCap)},
+            ]);
+        if (kept.length === 0) continue;
+        const newest = kept[0][1].fetchedAt;
+        prunedCtxs.push([ctx, Object.fromEntries(kept), newest]);
+    }
+    prunedCtxs.sort((a, b) => b[2] - a[2]);
+    return Object.fromEntries(prunedCtxs.slice(0, ctxCap).map(([ctx, words]) => [ctx, words]));
+}
+
+/**
+ * Merge two serialized indexes: per (ctx, word) the entry with the newer
+ * `fetchedAt` wins. Used at persist time so concurrent tabs of the same
+ * profile ACCUMULATE knowledge instead of last-writer-wins clobbering each
+ * other, and at load time so persisted entries only fill gaps under whatever
+ * the session already fetched.
+ */
+export function mergeCompletionIndex(
+    base: SerializedCompletionIndex,
+    additions: SerializedCompletionIndex,
+): SerializedCompletionIndex {
+    const out: SerializedCompletionIndex = {};
+    for (const ctx of new Set([...Object.keys(base), ...Object.keys(additions)])) {
+        const words = {...(base[ctx] ?? {})};
+        for (const [word, entry] of Object.entries(additions[ctx] ?? {})) {
+            const existing = words[word];
+            if (!existing || entry.fetchedAt >= existing.fetchedAt) {
+                words[word] = entry;
+            }
+        }
+        out[ctx] = words;
+    }
+    return out;
+}
+
 /**
  * Whether a key event is plain typing (a single printable character, no
  * modifiers) — the keys that extend the word being completed and, in the

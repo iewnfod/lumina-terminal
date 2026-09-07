@@ -109,6 +109,12 @@ export const CELL_METRICS_STORE_PATH = `${STATE_DIR}/terminal-metrics.json`;
  * config.toml for the same reason as session.json. See lib/tearoff.ts. */
 export const TEAROFF_STORE_PATH = `${STATE_DIR}/tearoff.json`;
 
+/** LazyStore file for the per-profile completion warm cache (one key
+ * "index" → {profile → ctx → word → candidates}). Derived cache learned from
+ * the shell's own responses, not a user setting — persisting it keeps the
+ * terminal-suggest popup instant across restarts. See lib/completionCache.ts. */
+export const COMPLETION_CACHE_STORE_PATH = `${STATE_DIR}/completion-cache.json`;
+
 /** Shared height for the custom chrome and the macOS traffic-light safe area. */
 export const CHROME_TITLE_BAR_HEIGHT = 36;
 

@@ -7,7 +7,10 @@ import {
     isPlainTypingKey,
     parseCompletionPayload,
     shouldRetrigger,
+    type SerializedCompletionIndex,
+    mergeCompletionIndex,
 } from "../lib/completions.ts";
+import {loadCompletionIndex, persistCompletionIndex} from "../lib/completionCache.ts";
 import {writeToTerminal} from "../lib/terminalApi.ts";
 
 /** Rows a PageUp/PageDown jump; matches the popup's visible-rows cap. */
@@ -20,18 +23,26 @@ const PAGE_SIZE = 8;
 const REQUEST_DEBOUNCE_MS = 100;
 
 /** How many fetched word→candidates sets to keep for instant backtracking. */
-const CACHE_CAP = 32;
+const CACHE_CAP = 64;
 
-/** Warm-cache bounds: contexts kept per terminal, word sets kept per context. */
-const INDEX_CTX_CAP = 64;
-const INDEX_WORD_CAP = 16;
+/** Warm-cache bounds: contexts kept per terminal, word sets kept per context
+ *  (the in-memory index is unbounded by I/O cost; persistence prunes harder
+ *  — see lib/completionCache.ts). */
+const INDEX_CTX_CAP = 192;
+const INDEX_WORD_CAP = 24;
 
-/** A cached set fetched within this window is considered FRESH: serving from
- *  it skips the correction request entirely. Every in-band request TAB blocks
- *  the shell's line editor (measured: even a backgrounded job from a fish key
- *  binding stalls echo identically to a foreground one), so the request fires
- *  only when the local data is stale, unknown, or the user pressed TAB. */
-const FRESH_TTL_MS = 60_000;
+/** How long after a fetch the write-back to the persistent cache waits, so a
+ *  learning burst (several new contexts in a row) costs one save, not many. */
+const PERSIST_DEBOUNCE_MS = 3000;
+
+/** How long a fetched set is TRUSTED to skip the correction request entirely:
+ *  every in-band request TAB blocks the shell's line editor (measured: even a
+ *  backgrounded job from a fish key-binding stalls echo identically to a
+ *  foreground one), so requests fire only for unknown data, data older than
+ *  this horizon, or an explicit TAB (which always forces the shell's truth).
+ *  A horizon this long trades freshness (files created since) for smoothness —
+ *  the suggest list is advisory; TAB is the refresh escape hatch. */
+const TRUST_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** A cached candidate set with its fetch time. */
 interface CachedSet {
@@ -40,7 +51,24 @@ interface CachedSet {
 }
 
 function isFresh(entry: CachedSet): boolean {
-    return Date.now() - entry.fetchedAt < FRESH_TTL_MS;
+    return Date.now() - entry.fetchedAt < TRUST_HORIZON_MS;
+}
+
+/** UI cap on the popup's list. Rendering every match (a bare "c" at command
+ *  position can yield hundreds) reconciles that many DOM rows per keystroke,
+ *  which stalls the main thread right before the echo's paint frame — the
+ *  popup felt instant while typed text visibly lagged. One hundred rows is
+ *  well past what a filtered suggest list usefully shows; typing narrows. */
+const MAX_LIST = 100;
+
+/** Cap a filtered set for display/selection (identity when under the cap). */
+function capList(list: CompletionCandidate[]): CompletionCandidate[] {
+    return list.length > MAX_LIST ? list.slice(0, MAX_LIST) : list;
+}
+
+/** Join a context with a finished word: `""` + "git" → "git"; "git" + "add" → "git add". */
+function joinCtx(ctx: string, word: string): string {
+    return ctx === "" ? word : `${ctx} ${word}`;
 }
 
 /** Where the popup should anchor, in the terminal container's pixel space. */
@@ -90,7 +118,7 @@ interface ShadowLine {
 /** Rebuild the derived slice (filtered set + clamped selection) after a word
  *  change. Returns null when nothing matches anymore — the caller closes. */
 function refine(prev: CompletionState, word: string, anchor?: CompletionAnchor): CompletionState | null {
-    const filtered = filterCandidates(prev.candidates, word);
+    const filtered = capList(filterCandidates(prev.candidates, word));
     if (filtered.length === 0) return null;
     return {
         ...prev,
@@ -123,6 +151,15 @@ interface UseShellCompletionsOptions {
      *  state). Requests are suppressed otherwise — a TAB injected into a
      *  running program (vim, htop, …) would land as raw input. */
     atPrompt?: () => boolean;
+    /** Profile whose persisted warm cache (lib/completionCache.ts) this
+     *  terminal loads at mount and writes back to after fetches — same-shell
+     *  tabs share coverage across sessions. */
+    profileName?: string;
+    /** Live anchor getter (Term's cursor geometry). The instant-open reads it
+     *  AT OPEN TIME so the popup lands where the cursor actually is — a
+     *  stale copy of the last response's anchor made it appear at the old
+     *  position and jump once the fresh response's anchor replaced it. */
+    getAnchor?: () => CompletionAnchor | null;
 }
 
 /**
@@ -159,7 +196,7 @@ interface UseShellCompletionsOptions {
  *   same contract the backend e2e test (tests/completion_hooks.rs) verifies
  *   against a live zsh line editor.
  */
-export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShellCompletionsOptions) {
+export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileName, getAnchor}: UseShellCompletionsOptions) {
     const [state, setState] = useState<CompletionState | null>(null);
     // Latest-ref bridge so the (stable) key filter and offer callback observe
     // the current state without re-installing the bindings handler.
@@ -190,15 +227,72 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
     const indexRef = useRef(new Map<string, Map<string, CachedSet>>());
     // Line tracking between shell responses (see ShadowLine).
     const shadowRef = useRef<ShadowLine | null>(null);
-    // The most recent shell-provided anchor + the word length it was anchored
-    // at — the instant-open shifts it by the characters typed since, instead
-    // of asking Term for geometry mid-keystroke.
-    const lastAnchorRef = useRef<{anchor: CompletionAnchor; wordLen: number} | null>(null);
+    // Live anchor getter (Term owns the xterm geometry).
+    const getAnchorRef = useRef(getAnchor);
+    getAnchorRef.current = getAnchor;
+    // Persistence: pending debounced save handle + whether anything changed
+    // since the last flush.
+    const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const persistDirtyRef = useRef(false);
+    const profileNameRef = useRef(profileName);
+    profileNameRef.current = profileName;
 
+    /** Snapshot the in-memory index into its serializable form. */
+    const serializeIndex = useCallback((): SerializedCompletionIndex => {
+        const out: SerializedCompletionIndex = {};
+        for (const [ctx, words] of indexRef.current) {
+            out[ctx] = Object.fromEntries(words);
+        }
+        return out;
+    }, []);
+
+    /** Flush the debounced persistence now (merge-save; log-on-fail inside). */
+    const flushPersist = useCallback(() => {
+        const profile = profileNameRef.current;
+        if (!profile || !persistDirtyRef.current) return;
+        persistDirtyRef.current = false;
+        persistCompletionIndex(profile, serializeIndex()).then();
+    }, [serializeIndex]);
+
+    // Load the profile's persisted index once at mount, merging UNDER the
+    // session's own fetches (which are newer by construction), then keep the
+    // debounced write-back running until unmount.
     useEffect(() => {
+        const profile = profileName;
+        if (!profile) return;
+        let cancelled = false;
+        loadCompletionIndex(profile).then((loaded) => {
+            if (cancelled || Object.keys(loaded).length === 0) return;
+            const merged = mergeCompletionIndex(serializeIndex(), loaded);
+            indexRef.current = new Map(
+                Object.entries(merged).map(([ctx, words]) => [ctx, new Map(Object.entries(words))]),
+            );
+            debug(`Loaded persisted completion cache: ${Object.keys(loaded).length} context(s) for ${profile}`).catch(() => {});
+        });
         return () => {
-            if (requestTimerRef.current !== null) clearTimeout(requestTimerRef.current);
+            cancelled = true;
+            if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
+            flushPersist();
         };
+        // profileName is spawn-stable for a terminal; serializeIndex/flushPersist are stable.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    /** Schedule a debounced persist after a fetch lands. */
+    const schedulePersist = useCallback(() => {
+        if (!profileNameRef.current) return;
+        persistDirtyRef.current = true;
+        if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = setTimeout(() => {
+            persistTimerRef.current = null;
+            flushPersist();
+        }, PERSIST_DEBOUNCE_MS);
+    }, [flushPersist]);
+
+    // Also flush when the whole component goes away (tab close/tear-off).
+    useEffect(() => {
+        return () => flushPersist();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     /** Store a fetched set under its word (MRU-ordered, bounded). */
@@ -230,7 +324,8 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
             const oldest = index.keys().next().value;
             if (oldest !== undefined) index.delete(oldest);
         }
-    }, []);
+        schedulePersist();
+    }, [schedulePersist]);
 
     const close = useCallback(() => {
         setState((prev) => {
@@ -328,7 +423,6 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
             }
             cachePut(word, candidates);
             indexPut(ctx, word, candidates);
-            lastAnchorRef.current = {anchor, wordLen: [...word].length};
             // The response IS the ground truth of where the line is.
             shadowRef.current = {ctx, word};
             const live = stateRef.current;
@@ -338,7 +432,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
                 // for a PREFIX of the live word, so filter it locally (exact —
                 // the set is a superset for any longer word) and keep the live
                 // word/anchor/selection instead of regressing the popup.
-                const filtered = filterCandidates(candidates, live.word);
+                const filtered = capList(filterCandidates(candidates, live.word));
                 if (filtered.length === 0) {
                     close();
                     return;
@@ -369,7 +463,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
                 word,
                 baseWord: word,
                 candidates,
-                filtered: candidates,
+                filtered: capList(candidates),
                 selected: 0,
                 anchor,
             });
@@ -388,8 +482,11 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
     const tryInstantOpen = useCallback((word: string): "fresh" | "stale" | null => {
         if (!onTypeRef.current) return null;
         const shadow = shadowRef.current;
-        const last = lastAnchorRef.current;
-        if (!shadow || !last) return null;
+        if (!shadow) return null;
+        // Anchor read NOW — the live cursor, not a stale copy from the last
+        // response — so the popup never appears at an old position and jump.
+        const anchor = getAnchorRef.current?.();
+        if (!anchor) return null;
         const words = indexRef.current.get(shadow.ctx);
         if (!words) return null;
         // Longest stored base the typed word extends — broadest fresh set.
@@ -401,7 +498,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
         }
         if (bestWord === null) return null;
         const entry = words.get(bestWord)!;
-        const filtered = filterCandidates(entry.candidates, word);
+        const filtered = capList(filterCandidates(entry.candidates, word));
         if (filtered.length === 0) return null;
         debug(`Completion popup instant-open (ctx=${JSON.stringify(shadow.ctx)} word=${word})`).catch(() => {});
         setState({
@@ -411,7 +508,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
             candidates: entry.candidates,
             filtered,
             selected: 0,
-            anchor: anchorShifted(last.anchor, [...word].length - last.wordLen),
+            anchor,
         });
         return isFresh(entry) ? "fresh" : "stale";
     }, []);
@@ -426,6 +523,25 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
         const shadow = shadowRef.current;
         if (shadow && shadow.word !== "") shadow.word = [...shadow.word].slice(0, -1).join("");
     }, []);
+
+    /** A command started executing (Term's current-command tracking): the
+     *  next prompt is a fresh empty line by definition, so the shadow resets
+     *  to the known state instead of being invalidated — typing at the next
+     *  prompt can instant-open from the command-position cache. */
+    const onCommandStart = useCallback(() => {
+        shadowRef.current = {ctx: "", word: ""};
+    }, []);
+
+    /** After accepting, the line's last token IS the insert text — known, so
+     *  the shadow stays valid for further typing instead of being
+     *  invalidated. (The anchor needs no bookkeeping: the instant-open reads
+     *  the live cursor geometry when it opens.) */
+    const seedShadowAfterAccept = useCallback(
+        (current: CompletionState, candidate: CompletionCandidate) => {
+            shadowRef.current = {ctx: current.ctx, word: candidate.insert};
+        },
+        [],
+    );
 
     const moveSelection = useCallback((delta: number | "start" | "end") => {
         setState((prev) => {
@@ -453,7 +569,16 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
                 // request whose response must not stay suppressed. The warm
                 // cache can also open the popup instantly for a known context.
                 if (isPlainTypingKey(event) || event.key === "Backspace") {
-                    if (isPlainTypingKey(event)) {
+                    if (event.key === " ") {
+                        // Word boundary: promote the finished word into the
+                        // context. NEVER request — the word is now empty, so
+                        // the response would be dropped by the empty-word
+                        // gate while its TAB still stalled the line editor.
+                        const shadow = shadowRef.current;
+                        if (shadow && shadow.word !== "") {
+                            shadowRef.current = {ctx: joinCtx(shadow.ctx, shadow.word), word: ""};
+                        }
+                    } else if (isPlainTypingKey(event)) {
                         const word = (shadowRef.current?.word ?? "") + event.key;
                         shadowType(event.key);
                         // Fresh warm-cache hit ⇒ the filtered view IS the
@@ -461,8 +586,16 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
                         // stalls behind a needless completion TAB.
                         if (tryInstantOpen(word) !== "fresh") maybeScheduleRequest();
                     } else {
-                        shadowBackspace();
-                        maybeScheduleRequest();
+                        // Backspace at a word start would merge into the
+                        // previous token — untrackable, drop the shadow (and
+                        // with it anything worth requesting). Inside a word it
+                        // just shrinks it — re-query only then.
+                        if ((shadowRef.current?.word ?? "") === "") {
+                            shadowRef.current = null;
+                        } else {
+                            shadowBackspace();
+                            maybeScheduleRequest();
+                        }
                     }
                 }
                 if (event.key === "Tab") suppressedRef.current = false;
@@ -474,8 +607,9 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
                     // re-offer against the inserted word (popup re-opens via
                     // the next OSC).
                     event.preventDefault();
-                    accept(current.filtered[current.selected], current.word, true);
-                    shadowRef.current = null;
+                    const candidate = current.filtered[current.selected];
+                    accept(candidate, current.word, true);
+                    seedShadowAfterAccept(current, candidate);
                     close();
                     return false;
                 }
@@ -486,7 +620,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
                     const candidate = current.filtered[current.selected];
                     const retrigger = shouldRetrigger(candidate);
                     accept(candidate, current.word, retrigger);
-                    shadowRef.current = null;
+                    seedShadowAfterAccept(current, candidate);
                     if (retrigger) close();
                     else dismiss();
                     return false;
@@ -542,7 +676,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
                             word,
                             baseWord: word,
                             candidates: cached.candidates,
-                            filtered: cached.candidates,
+                            filtered: capList(cached.candidates),
                             selected: 0,
                             anchor,
                         });
@@ -565,21 +699,27 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
                     // matcher would have folded) asks for a fresh set.
                     if (isPlainTypingKey(event)) {
                         shadowType(event.key);
-                        maybeScheduleRequest();
                         const word = current.word + event.key;
                         const anchor = anchorShifted(current.anchor, 1);
                         const next = refine(current, word, anchor);
                         if (next) {
+                            // Filter alive ⇒ exact superset view, NO request —
+                            // an in-band TAB here stalled the shell's echo for
+                            // the full completion compute on every typing
+                            // pause (the very jank this mode exists to avoid).
                             setState({...next, selected: 0});
                         } else {
-                            // Word boundary (space, …) or no local match: seed
-                            // the shadow for the NEXT word so the warm cache
-                            // can open instantly, then close + re-query.
+                            // Word boundary (space) or no local match. A space
+                            // seeds the shadow for the NEXT word and closes —
+                            // without a request: the next word is empty, so
+                            // the response would be dropped while its TAB
+                            // stalled the editor. Any other dead filter keeps
+                            // the re-query.
                             if (event.key === " ") {
-                                shadowRef.current = {
-                                    ctx: current.ctx === "" ? current.word : `${current.ctx} ${current.word}`,
-                                    word: "",
-                                };
+                                shadowRef.current = {ctx: joinCtx(current.ctx, current.word), word: ""};
+                                debug(`Completion popup closed by word boundary`).catch(() => {});
+                                setState(null);
+                                return true;
                             }
                             debug(`Completion popup closed by filter (word=${word})`).catch(() => {});
                             setState(null);
@@ -618,12 +758,12 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt}: UseShell
             if (!current) return;
             const retrigger = shouldRetrigger(candidate);
             accept(candidate, current.word, retrigger);
-            shadowRef.current = null;
+            seedShadowAfterAccept(current, candidate);
             if (retrigger) close();
             else dismiss();
         },
         [accept, close, dismiss],
     );
 
-    return {state, offer, handleKey, select, acceptCandidate, close, dismiss};
+    return {state, offer, handleKey, select, acceptCandidate, close, dismiss, onCommandStart};
 }

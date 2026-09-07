@@ -176,6 +176,12 @@ src/
 │   │                        #   filterCandidates (typing refinement) + shouldRetrigger (directory cascade)
 │   │                        #   + isPlainTypingKey (the as-you-type request trigger predicate)
 │   │                        #   + kind classification for the popup's row icons. Shell half: shell_integration.rs
+│   ├── completionCache.ts   # Per-profile warm-index persistence (LazyStore state/completion-cache.json —
+│   │                        #   runtime state, not config): loadCompletionIndex + persistCompletionIndex
+│   │                        #   (read-merge-write per profile so concurrent tabs accumulate instead of
+│   │                        #   clobbering; pruned to 96 ctx × 8 words × display-cap candidates). Pure
+│   │                        #   prune/merge live in completions.ts (node-testable); useShellCompletions
+│   │                        #   debounces writes 3s + flushes on unmount.
 │   ├── ligatures.ts          # Programming-ligature rendering from the font's real GSUB table: findFont +
 │   │                        #   parse (module-level font cache), enableLigatures installs a character
 │   │                        #   joiner; preloaded at startup by config.tsx when the global font enables it
@@ -269,7 +275,18 @@ src/
 │   │                        #   truth. Cache entries are freshness-stamped (FRESH_TTL_MS): a hit within the
 │   │                        #   TTL SKIPS the correction request entirely — measured, even a backgrounded
 │   │                        #   (`&`) job started from a fish key-binding stalls the line editor's echo
-│   │   identically to a foreground one, so warm-path requests are pure loss; stale/miss/explicit TAB fetch
+│   │                        #   identically to a foreground one, so warm-path requests are pure loss — and a
+│   │                        #   word-boundary space NEVER requests (the empty-word gate would drop the
+│   │                        #   response anyway), and typing with the popup open never requests while the
+│   │                        #   local filter survives (an unconditional per-char schedule here stalled the
+│   │                        #   echo behind the shell's completion compute on every typing pause);
+│   │                        #   fetched sets are TRUSTED for 7 days (explicit TAB is the
+│   │                        #   refresh escape hatch) and persisted per profile (lib/completionCache.ts),
+│   │                        #   so coverage survives restarts and same-profile tabs. The instant-open's
+│   │                        #   anchor comes from Term's live getAnchor() (read at open time — a stale
+│   │                        #   shifted copy made the popup appear at the old position and jump). The
+│   │                        #   shadow line survives
+│   │                        #   acceptance (word = insert) and command execution (fresh line: ctx "")
 │   ├── useEdgeBackground.ts # useEdgeBackground(opts) → {containerBg} — polls the xterm buffer's
 │   │                        #   outer ring (a fullscreen TUI's bg), syncs the xterm layers +
 │   │                        #   padding fill, and reports the color up for chrome spread (active
@@ -347,7 +364,11 @@ src/
 │   ├── CompletionPopup.tsx # The terminal-suggest floating list: glass surface + kind icons (folder/file/
 │   │                        #   command/option via lib/completions.ts), selected-row highlight, scroll +
 │   │                        #   into-view, flip below/above the cursor anchor Term computes. Never takes
-│   │                        #   focus — keys keep flowing through xterm's chain; hover selects, click accepts.
+│   │                        #   focus — keys keep flowing through xterm's chain; hover selects, click
+│   │                        #   accepts. Rows are memoized with delegated events (candidate objects keep
+│   │                        #   identity through filtering, so typing re-renders only the selection flips)
+│   │                        #   and the list is capped (MAX_LIST in useShellCompletions) — unbounded rows
+│   │                        #   reconciled per keystroke stalled the main thread ahead of the echo's paint.
 │   ├── TabBar.tsx           # Sidebar tab list — pure rendering. The whole drag domain (one
 │   │                        #   HTML5 drag serving reorder-inside / tear-off-outside, plus the
 │   │                        #   foreign-drag sentinel) lives in hooks/useTabDragController.ts
