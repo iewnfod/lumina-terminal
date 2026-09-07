@@ -262,5 +262,7 @@
     "Search commands": "搜索命令",
     "Close search": "关闭搜索",
     "Shell Completion Popup": "Shell 补全弹窗",
-    "Show TAB completions from zsh/fish as a floating popup; applies to new terminals": "将 zsh/fish 的 TAB 补全显示为悬浮弹窗；仅对新终端生效"
+    "Show TAB completions from zsh/fish as a floating popup; applies to new terminals": "将 zsh/fish 的 TAB 补全显示为悬浮弹窗；仅对新终端生效",
+    "Completions As You Type": "输入时自动补全",
+    "Experimental: request completions automatically while typing (no TAB needed)": "实验性：输入时自动请求补全（无需按 TAB），可能无法稳定工作"
 }

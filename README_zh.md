@@ -63,7 +63,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scri
 * 分块批量输出 — 流畅处理大文本输出，不阻塞 UI
 * 拖放文件到终端即可插入文件路径；窗口/容器变化时自动调整尺寸
 * **MCP 服务器（实验性）** — 可选地通过只读回环端点向本地 AI 客户端暴露终端状态(打开的标签页、运行中的命令、当前目录、最近输出),基于 [rmcp](https://github.com/modelcontextprotocol/rust-sdk) 实现。在「设置 → 开发者」中开启。
-* **Shell 补全弹窗** — 通过 shell 集成拦截 zsh/fish 标签页中的 TAB：把 shell 自身的补全候选（命令、文件、git 子命令、描述）发送给 Lumina，渲染为可键盘导航的悬浮建议弹窗（VSCode 风格），替代 shell 在缓冲区内打印的列表；选中一项即插入行编辑器。唯一匹配时静默补全。开启后仅对新终端生效；bash/nu/pwsh/SSH 标签页保持原生行为。在「设置 → 通用」中开关。
+* **Shell 补全弹窗** — 通过 shell 集成拦截 zsh/fish 标签页中的 TAB：把 shell 自身的补全候选（命令、文件、git 子命令、描述）发送给 Lumina，渲染为可键盘导航的悬浮建议弹窗（VSCode 风格），替代 shell 在缓冲区内打印的列表；选中一项即插入行编辑器。唯一匹配时静默补全。开启后仅对新终端生效；bash/nu/pwsh/SSH 标签页保持原生行为。在「设置 → 通用」中开关。 另有可选的**输入时自动补全模式**（实验性）：输入停顿后自动请求候选，无需按 TAB，弹窗随输入实时收窄（对已打开的 zsh/fish 终端即时生效；默认关闭，可能无法稳定工作）。
 * **自动同步代理** — 检测系统代理变化（GNOME `gsettings` / KDE `kioslaverc` / macOS `scutil` / Windows 注册表），让正在运行的 bash/zsh/fish 标签页内的 `http_proxy` / `HTTPS_PROXY` / `all_proxy` / `no_proxy` 自动跟随——由 shell 集成的提示符钩子静默应用，无需重启、无可见按键。用户手动 export 的代理不受影响。在「设置 → 通用」中开关。
 
 ### 用户界面

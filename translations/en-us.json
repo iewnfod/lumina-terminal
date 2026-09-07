@@ -262,5 +262,7 @@
     "Search commands": "Search commands",
     "Close search": "Close search",
     "Shell Completion Popup": "Shell Completion Popup",
-    "Show TAB completions from zsh/fish as a floating popup; applies to new terminals": "Show TAB completions from zsh/fish as a floating popup; applies to new terminals"
+    "Show TAB completions from zsh/fish as a floating popup; applies to new terminals": "Show TAB completions from zsh/fish as a floating popup; applies to new terminals",
+    "Completions As You Type": "Completions As You Type",
+    "Experimental: request completions automatically while typing (no TAB needed)": "Experimental: request completions automatically while typing (no TAB needed), may not work reliably"
 }

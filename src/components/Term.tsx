@@ -28,6 +28,7 @@ import type {SearchAddon} from "@xterm/addon-search";
 import {readClipboardText} from "../lib/clipboardApi.ts";
 import {reattachTerminal, resizeTerminal, setThrottle, startTerminal, writeToTerminal} from "../lib/terminalApi.ts";
 import {installImeCompositionGuard} from "../lib/imeCompositionGuard.ts";
+import {getShellType} from "../lib/shellIcon.ts";
 import SearchBar from "./SearchBar.tsx";
 import CompletionPopup from "./CompletionPopup.tsx";
 import {useShellCompletions, type CompletionAnchor} from "../hooks/useShellCompletions.ts";
@@ -239,13 +240,33 @@ export default function Term(props : TermProps) {
     // /proc fallback (suppressed once OSC integration proves active). See
     // hooks/useCurrentCommand.ts. The same parser also routes completion
     // payloads to the suggest popup below.
+    //
+    // The completion feature is decided at SPAWN time: the backend bakes the
+    // hooks into the shell's init files when start_terminal runs, so a later
+    // config toggle must not change this terminal's idea of "hooks exist" —
+    // especially not for as-you-type requests, whose TAB bytes would hit the
+    // shell's NATIVE completion (inserting text) on a hookless shell. The
+    // zsh/fish gate mirrors the backend's apply_interactive branch.
+    const completionsEnabledAtSpawn = useRef(
+        config.enableShellCompletions !== false
+            && (getShellType(profile) === "zsh" || getShellType(profile) === "fish"),
+    ).current;
+    // "At shell prompt" signal for the as-you-type requests, driven by the
+    // same current-command tracking that feeds the tab subtitle. Requests are
+    // suppressed while a command runs so no TAB is injected into vim/htop.
+    const atPromptRef = useRef(true);
     const completions = useShellCompletions({
         ptyId,
-        enabled: config.enableShellCompletions !== false,
+        enabled: completionsEnabledAtSpawn,
+        onType: config.shellCompletionsOnType === true,
+        atPrompt: () => atPromptRef.current,
     });
     const {feedOutput} = useCurrentCommand({
         ptyId,
-        onCommandChange: props.onCommandChange,
+        onCommandChange: (command) => {
+            atPromptRef.current = command === null;
+            props.onCommandChange?.(command);
+        },
         onCommandExit: props.onCommandExit,
         onCompletions: onCompletionsPayload,
     });
@@ -276,6 +297,7 @@ export default function Term(props : TermProps) {
             spaceBelow: container.clientHeight - y,
             spaceAbove: y - cellH,
             cellWidth: cellW,
+            cellHeight: cellH,
             maxX: Math.max(0, container.clientWidth - 80),
         };
         completions.offer(payload, anchor);
@@ -695,10 +717,11 @@ export default function Term(props : TermProps) {
     }, [isActive]);
 
     // An inactive tab receives no keys, so a completion popup left open there
-    // would be stuck (only keypresses close it) — drop it on focus loss.
+    // would be stuck (only keypresses close it) — drop it on focus loss, and
+    // suppress in-flight as-you-type responses so it can't reopen either.
     useEffect(() => {
-        if (!isActive) completions.close();
-    }, [isActive, completions.close]);
+        if (!isActive) completions.dismiss();
+    }, [isActive, completions.dismiss]);
 
     // Re-focus xterm when the OS window itself regains focus and this tab is
     // the active one — so clicking into the window (or alt-tabbing back) puts

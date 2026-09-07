@@ -237,6 +237,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     inheritWorkingDirectory: false,
     imeDuplicateInputFix: true,
     enableShellCompletions: true,
+    shellCompletionsOnType: false,
     rememberWindowPosition: false,
     rememberWindowSize: false,
     sessionSaveMode: "ask",

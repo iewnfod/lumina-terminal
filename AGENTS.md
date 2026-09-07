@@ -173,6 +173,7 @@ src/
 │   │                        #   xterm inside OSC) + insertionBytes (DEL × code points of the word + insert;
 │   │                        #   the accept contract verified end-to-end in tests/completion_hooks.rs) +
 │   │                        #   filterCandidates (typing refinement) + shouldRetrigger (directory cascade)
+│   │                        #   + isPlainTypingKey (the as-you-type request trigger predicate)
 │   │                        #   + kind classification for the popup's row icons. Shell half: shell_integration.rs
 │   ├── ligatures.ts          # Programming-ligature rendering from the font's real GSUB table: findFont +
 │   │                        #   parse (module-level font cache), enableLigatures installs a character
@@ -251,7 +252,16 @@ src/
 │   │                        #   filterCandidates), Backspace shrinks to the shell-reported base word, Tab
 │   │                        #   accepts + re-triggers (follow-up TAB byte re-offers against the new word),
 │   │                        #   Enter accepts and finishes (dirs cascade — shouldRetrigger); keys flow via
-│   │                        #   loadBindings' intercept; accept writes DEL×word + insert (terminalApi)
+│   │                        #   loadBindings' intercept; accept writes DEL×word + insert (terminalApi).
+│   │                        #   As-you-type mode (config shellCompletionsOnType, live): debounced
+│   │                        #   request TABs after typing pauses, gated by Term's at-prompt signal (never
+│   │                        #   injected into running commands) and the SPAWN-time hooks gate; explicit
+│   │                        #   dismissals cancel pending requests + drop in-flight offers. Requests are
+│   │                        #   in-band (the shell's line editor is single-threaded — a TAB mid-typing
+│   │                        #   delays echo), so they fire ONLY when the local filter dies (word boundary,
+│   │                        #   no match, cache miss) — live typing/backtracking is served synchronously
+│   │                        #   from the local filter + a bounded word→set cache; responses that lag the
+│   │                        #   typing merge into the live word instead of regressing the popup
 │   ├── useEdgeBackground.ts # useEdgeBackground(opts) → {containerBg} — polls the xterm buffer's
 │   │                        #   outer ring (a fullscreen TUI's bg), syncs the xterm layers +
 │   │                        #   padding fill, and reports the color up for chrome spread (active

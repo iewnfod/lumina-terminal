@@ -23,6 +23,7 @@ interface GeneralDraft {
     inheritWorkingDirectory: boolean;
     imeDuplicateInputFix: boolean;
     enableShellCompletions: boolean;
+    shellCompletionsOnType: boolean;
     rememberWindowPosition: boolean;
     rememberWindowSize: boolean;
     sessionSaveMode: "never" | "always" | "ask";
@@ -64,6 +65,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         inheritWorkingDirectory: config.inheritWorkingDirectory ?? false,
         imeDuplicateInputFix: config.imeDuplicateInputFix !== false,
         enableShellCompletions: config.enableShellCompletions !== false,
+        shellCompletionsOnType: config.shellCompletionsOnType ?? false,
         rememberWindowPosition: config.rememberWindowPosition ?? false,
         rememberWindowSize: config.rememberWindowSize ?? false,
         sessionSaveMode: config.sessionSaveMode ?? "ask",
@@ -87,6 +89,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 inheritWorkingDirectory: d.inheritWorkingDirectory,
                 imeDuplicateInputFix: d.imeDuplicateInputFix,
                 enableShellCompletions: d.enableShellCompletions,
+                shellCompletionsOnType: d.shellCompletionsOnType,
                 rememberWindowPosition: d.rememberWindowPosition,
                 rememberWindowSize: d.rememberWindowSize,
                 sessionSaveMode: d.sessionSaveMode,
@@ -105,7 +108,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.enableShellCompletions, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.enableShellCompletions, config.shellCompletionsOnType, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
     );
 
     return (
@@ -561,6 +564,34 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                             <Switch
                                 isSelected={draft.enableShellCompletions}
                                 onChange={(v) => setDraft((prev) => ({...prev, enableShellCompletions: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+
+                        {/* Completions As You Type: the popup behaves like an
+                            IDE's inline completion — after a short typing
+                            pause Lumina asks the shell for fresh candidates
+                            on its own, no TAB needed; the popup follows along
+                            and narrows as you type. Purely frontend, so the
+                            toggle applies to already-open terminals, but it
+                            only acts on zsh/fish tabs booted with the popup
+                            feature on (those have the completion hooks). */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className={draft.enableShellCompletions ? "cursor-pointer" : "cursor-pointer opacity-50"}>{t["Completions As You Type"]}</Label>}
+                            description={t["Experimental: request completions automatically while typing (no TAB needed)"]}
+                            onClick={() => {
+                                if (!draft.enableShellCompletions) return;
+                                setDraft((prev) => ({...prev, shellCompletionsOnType: !prev.shellCompletionsOnType}));
+                            }}
+                        >
+                            <Switch
+                                isSelected={draft.shellCompletionsOnType}
+                                isDisabled={!draft.enableShellCompletions}
+                                onChange={(v) => setDraft((prev) => ({...prev, shellCompletionsOnType: v}))}
                             >
                                 <Switch.Control>
                                     <Switch.Thumb />

@@ -91,6 +91,15 @@ export interface GlobalConfig {
      *  time only — toggling affects NEW terminals, like webgl. Shells without
      *  hooks (bash/nu/pwsh/SSH) keep their native TAB behavior. */
     enableShellCompletions?: boolean;
+    /** When true (default false), the suggest popup behaves like an IDE's
+     *  as-you-type completion: after a short typing pause, Lumina asks the
+     *  shell for fresh candidates on its own (no TAB needed) and the popup
+     *  follows along, narrowing as you type. EXPERIMENTAL — may not work
+     *  reliably on every shell setup. Requires the completion hooks
+     *  (enableShellCompletions at the terminal's spawn time) — otherwise the
+     *  request TABs would hit the shell's native completion. Purely
+     *  frontend, so toggling applies live to already-open terminals. */
+    shellCompletionsOnType?: boolean;
     /** When true, restore the main window to its last position on startup
      * (main window only; tear-off windows are positioned by their spawner). */
     rememberWindowPosition?: boolean;

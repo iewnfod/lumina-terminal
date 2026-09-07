@@ -8,6 +8,7 @@ import {
 	completionKind,
 	filterCandidates,
 	shouldRetrigger,
+	isPlainTypingKey,
 } from "../src/lib/completions.ts";
 import {CurrentCommandParser} from "../src/lib/currentCommand.ts";
 
@@ -101,6 +102,21 @@ test("shouldRetrigger only for directory insertions", () => {
 	assert.equal(shouldRetrigger({insert: "src/nested/", label: "", description: ""}), true);
 	assert.equal(shouldRetrigger({insert: "vim", label: "", description: "Vi IMproved"}), false);
 	assert.equal(shouldRetrigger({insert: "notes.txt", label: "", description: ""}), false);
+});
+
+test("isPlainTypingKey accepts single printable chars without modifiers", () => {
+	const plain = {ctrlKey: false, metaKey: false, altKey: false};
+	assert.equal(isPlainTypingKey({key: "v", ...plain}), true);
+	assert.equal(isPlainTypingKey({key: "I", ...plain}), true);
+	assert.equal(isPlainTypingKey({key: ".", ...plain}), true);
+	assert.equal(isPlainTypingKey({key: " ", ...plain}), true);
+	assert.equal(isPlainTypingKey({key: "Backspace", ...plain}), false);
+	assert.equal(isPlainTypingKey({key: "Tab", ...plain}), false);
+	assert.equal(isPlainTypingKey({key: "ArrowLeft", ...plain}), false);
+	assert.equal(isPlainTypingKey({key: "Process", ...plain}), false); // IME
+	assert.equal(isPlainTypingKey({key: "v", ctrlKey: true, metaKey: false, altKey: false}), false);
+	assert.equal(isPlainTypingKey({key: "v", ctrlKey: false, metaKey: true, altKey: false}), false);
+	assert.equal(isPlainTypingKey({key: "v", ctrlKey: false, metaKey: false, altKey: true}), false);
 });
 
 test("CurrentCommandParser emits completions events with RS/US payload intact", () => {

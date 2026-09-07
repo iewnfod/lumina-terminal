@@ -1,6 +1,7 @@
 import {useEffect, useRef} from "react";
 import {motion} from "framer-motion";
 import type {Variants} from "framer-motion";
+import type {CSSProperties} from "react";
 import {FileText, Flag, Folder, Terminal} from "lucide-react";
 import type {CompletionCandidate, CompletionKind} from "../lib/completions.ts";
 import {candidateLabel, completionKind} from "../lib/completions.ts";
@@ -25,6 +26,10 @@ interface CompletionPopupProps {
 /** Visible rows before the list scrolls; PageUp/PageDown jump this many. */
 const VISIBLE_ROWS = 8;
 const ROW_HEIGHT = 28;
+/** Rough height of the word/counter footer, reserved out of the flip space. */
+const FOOTER_HEIGHT = 24;
+/** Right-edge margin the anchor's maxX mirror keeps free (mirrors Term). */
+const RIGHT_MARGIN = 80;
 
 const KIND_ICON: Record<CompletionKind, typeof Folder> = {
     folder: Folder,
@@ -67,16 +72,28 @@ export default function CompletionPopup({state, fillBg, onHover, onAccept}: Comp
     }, [selected]);
 
     // The list drops under the cursor line when there's room for a couple of
-    // rows; near the bottom edge it flips above the line instead.
+    // rows; near the bottom edge it flips above the line instead. Flipped-up
+    // placement anchors the popup's BOTTOM edge to the cursor row's top via
+    // CSS `bottom` — height-independent, so a short list still hugs the line
+    // (a `top` computed from the max height would leave it floating mid-air
+    // whenever the content is shorter than the cap). `bottom` is measured
+    // from the container's bottom edge: cursorRowTop above it = spaceBelow +
+    // one cursor cell.
     const below = anchor.spaceBelow >= ROW_HEIGHT * 3;
-    const maxHeight = Math.min(
-        VISIBLE_ROWS,
-        Math.max(2, Math.floor((below ? anchor.spaceBelow : anchor.spaceAbove) / ROW_HEIGHT)),
-    ) * ROW_HEIGHT;
-    const top = below ? anchor.y : Math.max(0, anchor.y - ROW_HEIGHT - maxHeight);
-    // A short word list shouldn't slam the popup against the right edge; cap
-    // the width at the space remaining, min 240px.
-    const width = 360;
+    const avail = (below ? anchor.spaceBelow : anchor.spaceAbove) - FOOTER_HEIGHT;
+    const maxHeight = Math.min(VISIBLE_ROWS, Math.max(1, Math.floor(avail / ROW_HEIGHT))) * ROW_HEIGHT;
+    // Don't run past the right edge: the anchor's maxX mirrors the container
+    // width minus its margin. Keep the comfortable width and slide the whole
+    // popup left (right-aligned to the edge) when the cursor sits near it.
+    const containerWidth = anchor.maxX + RIGHT_MARGIN;
+    const width = Math.min(360, Math.max(220, containerWidth - anchor.x - 8));
+    const left = Math.min(anchor.x, Math.max(0, containerWidth - width - 8));
+
+    // style position: below grows downward from the anchor; above pins the
+    // popup's bottom edge to the top of the cursor row.
+    const placement: CSSProperties = below
+        ? {top: anchor.y}
+        : {bottom: anchor.spaceBelow + anchor.cellHeight};
 
     return (
         <motion.div
@@ -88,8 +105,8 @@ export default function CompletionPopup({state, fillBg, onHover, onAccept}: Comp
             className="absolute z-20 overflow-hidden rounded-[var(--radius-md)]"
             style={{
                 ...glass,
-                left: anchor.x,
-                top,
+                left,
+                ...placement,
                 width,
                 maxHeight,
                 color: fg,

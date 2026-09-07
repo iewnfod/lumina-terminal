@@ -111,6 +111,21 @@ export function shouldRetrigger(candidate: CompletionCandidate): boolean {
     return candidate.insert.endsWith("/");
 }
 
+/**
+ * Whether a key event is plain typing (a single printable character, no
+ * modifiers) — the keys that extend the word being completed and, in the
+ * as-you-type mode, schedule a fresh completion request. Structured take so
+ * the hook stays React-free around it and tests can drive plain objects.
+ */
+export function isPlainTypingKey(e: {
+    key: string;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    altKey: boolean;
+}): boolean {
+    return e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+}
+
 /** Categorize a candidate for its row icon. Cosmetic only. */
 export function completionKind(candidate: CompletionCandidate): CompletionKind {
     const text = candidate.insert;
