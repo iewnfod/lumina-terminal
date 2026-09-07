@@ -178,10 +178,14 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
     needle.is_empty() || haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-/// Split a Completions payload into (word, [(insert, label, desc), …]).
-fn parse_payload(payload: &str) -> (String, Vec<(String, String, String)>) {
+/// Split a Completions payload into ((ctx, word), [(insert, label, desc), …]).
+/// The head record is `context US word` — the line context (tokens before the
+/// word, the frontend warm-cache key; empty at command position).
+fn parse_payload(payload: &str) -> ((String, String), Vec<(String, String, String)>) {
     let mut records = payload.split(RS);
-    let word = records.next().unwrap_or("").to_string();
+    let mut head = records.next().unwrap_or("").split(US);
+    let ctx = head.next().unwrap_or("").to_string();
+    let word = head.next().unwrap_or("").to_string();
     let cands = records
         .filter_map(|r| {
             let mut fields = r.split(US);
@@ -193,7 +197,7 @@ fn parse_payload(payload: &str) -> (String, Vec<(String, String, String)>) {
             ))
         })
         .collect();
-    (word, cands)
+    ((ctx, word), cands)
 }
 
 fn spawn_zsh(home: &TempDir, zdot: &TempDir, cwd: Option<&TempDir>) -> PtyShell {
@@ -242,8 +246,9 @@ fn zsh_hook_emits_completions_and_round_trips_insertion() {
     let payload = shell
         .read_completion_osc(Duration::from_secs(8))
         .unwrap_or_else(|| panic!("zsh completion OSC did not arrive after TAB"));
-    let (word, cands) = parse_payload(&payload);
+    let ((ctx, word), cands) = parse_payload(&payload);
     assert_eq!(word, "ech", "word must be the typed token; payload: {payload:?}");
+    assert_eq!(ctx, "", "command position has an empty context; payload: {payload:?}");
     assert!(
         cands.iter().any(|(insert, _, _)| insert == "echo"),
         "echo candidate missing; payload: {payload:?}"
@@ -285,7 +290,7 @@ fn zsh_hook_completes_files() {
     let payload = shell
         .read_completion_osc(Duration::from_secs(8))
         .unwrap_or_else(|| panic!("zsh file completion OSC did not arrive"));
-    let (word, cands) = parse_payload(&payload);
+    let ((_ctx, word), cands) = parse_payload(&payload);
     assert_eq!(word, "./lumina_probe_", "word must be the typed token; payload: {payload:?}");
     let inserts: Vec<&str> = cands.iter().map(|(i, _, _)| i.as_str()).collect();
     assert!(
@@ -322,8 +327,9 @@ fn fish_hook_emits_completions() {
     let payload = shell
         .read_completion_osc(Duration::from_secs(8))
         .unwrap_or_else(|| panic!("fish completion OSC did not arrive after TAB"));
-    let (word, cands) = parse_payload(&payload);
+    let ((ctx, word), cands) = parse_payload(&payload);
     assert_eq!(word, "ech", "word must be the typed token; payload: {payload:?}");
+    assert_eq!(ctx, "", "command position has an empty context; payload: {payload:?}");
     let echo = cands
         .iter()
         .find(|(insert, _, _)| insert == "echo")
@@ -336,8 +342,9 @@ fn fish_hook_emits_completions() {
     let payload = shell
         .read_completion_osc(Duration::from_secs(8))
         .unwrap_or_else(|| panic!("fish file completion OSC did not arrive"));
-    let (word, cands) = parse_payload(&payload);
+    let ((ctx, word), cands) = parse_payload(&payload);
     assert_eq!(word, "lumina_probe_", "word must be the typed token; payload: {payload:?}");
+    assert_eq!(ctx, "cat", "argument position context is the preceding tokens; payload: {payload:?}");
     let inserts: Vec<&str> = cands.iter().map(|(i, _, _)| i.as_str()).collect();
     assert!(
         inserts.contains(&"lumina_probe_one.txt") && inserts.contains(&"lumina_probe_two.txt"),

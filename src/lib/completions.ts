@@ -6,12 +6,17 @@
  * `lib/currentCommand.ts`.
  *
  * Payload (inside `OSC 1337 ; Completions=… ST`):
- *   <word> RS (<insert> US <label> US <desc> RS)*
+ *   <ctx> US <word> RS (<insert> US <label> US <desc> RS)*
  *
- * - RS (0x1e) separates the word and each candidate; US (0x1f) separates a
- *   candidate's fields. The PTY line discipline rewrites `\n` (ONLCR), and
+ * - RS (0x1e) separates the head record and each candidate; US (0x1f)
+ *   separates fields. The PTY line discipline rewrites `\n` (ONLCR), and
  *   xterm.js drops 0x1c–0x1f inside OSC — RS/US survive both, and shells can
  *   emit them portably.
+ * - `ctx` is the LINE CONTEXT — the command-line tokens before the word being
+ *   completed (empty at command position). It keys the frontend's warm cache:
+ *   same context + a previously fetched set ⇒ an exact superset of the true
+ *   candidates for any longer word, so the popup can open instantly and let
+ *   the shell's fresh response correct it.
  * - `word` is the token under the cursor as the shell's line editor sees it;
  *   accepting a candidate erases exactly that many characters (DEL) and types
  *   `insert`.
@@ -38,8 +43,11 @@ export interface CompletionCandidate {
     description: string;
 }
 
-/** A parsed Completions payload: the word being completed + its candidates. */
+/** A parsed Completions payload: line context + the word + its candidates. */
 export interface CompletionPayload {
+    /** Command-line tokens before the word (cache key; "" at command position). */
+    ctx: string;
+    /** The token under the cursor. */
     word: string;
     candidates: CompletionCandidate[];
 }
@@ -51,11 +59,14 @@ export type CompletionKind = "folder" | "file" | "command" | "option";
  * Parse a raw `OSC 1337;Completions=` payload (the value between `=` and the
  * terminator). Tolerant by design: a truncated trailing record (chunk split
  * exactly at a payload boundary upstream never truncates — the scanner only
- * emits complete sequences — but a shell bug might) is dropped, not thrown.
+ * emits complete sequences — but a shell bug might) is dropped, not thrown;
+ * a head record without a context field degrades to an empty context.
  */
 export function parseCompletionPayload(payload: string): CompletionPayload {
     const records = payload.split(RS);
-    const word = records[0] ?? "";
+    const head = (records[0] ?? "").split(US);
+    const ctx = head[0] ?? "";
+    const word = head[1] ?? "";
     const candidates: CompletionCandidate[] = [];
     for (const record of records.slice(1)) {
         const fields = record.split(US);
@@ -67,7 +78,7 @@ export function parseCompletionPayload(payload: string): CompletionPayload {
             description: fields.slice(2).join(US),
         });
     }
-    return {word, candidates};
+    return {ctx, word, candidates};
 }
 
 /**

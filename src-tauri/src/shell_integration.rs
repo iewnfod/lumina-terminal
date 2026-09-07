@@ -207,7 +207,7 @@ pub fn completion_hook_zsh() -> String {
 # src-tauri/src/shell_integration.rs (completion_hook_zsh) for the rationale.
 typeset -a _lumina_ins _lumina_lbl _lumina_dsc
 typeset -A _lumina_seen
-typeset _lumina_word=
+typeset _lumina_word= _lumina_ctx=
 lumina_compadd() {
 	emulate -L zsh
 	local -a _lld _lla _llP _llS _llp _lls _lrest
@@ -228,7 +228,13 @@ lumina_compadd() {
 	[[ $1 == - || $1 == -- ]] && shift
 	_lw+=("$@")
 	(( $#_lw )) || return 0
-	[[ -z $_lumina_word ]] && _lumina_word=${words[CURRENT]:-}
+	[[ -z $_lumina_word ]] && {
+		_lumina_word=${words[CURRENT]:-}
+		# Line context for the frontend's warm cache: the tokens before the
+		# word being completed (command position → empty), joined by single
+		# spaces. Only a cache KEY — never replayed — so joined form suffices.
+		_lumina_ctx=${(j: :)words[1,CURRENT-1]}
+	}
 	local -a _ldsp
 	if (( $#_lld )); then
 		_lsrc=${_lld[$#_lld]}
@@ -265,7 +271,7 @@ lumina_compadd() {
 }
 lumina_complete() {
 	emulate -L zsh
-	_lumina_ins=() _lumina_lbl=() _lumina_dsc=() _lumina_word=
+	_lumina_ins=() _lumina_lbl=() _lumina_dsc=() _lumina_word= _lumina_ctx=
 	_lumina_seen=()
 	local -r _lbuf=$BUFFER _lcur=$CURSOR
 	functions[compadd]=$functions[lumina_compadd]
@@ -276,7 +282,8 @@ lumina_complete() {
 	}
 	BUFFER=$_lbuf CURSOR=$_lcur
 	if (( $#_lumina_ins )); then
-		local _li2 _lout="$_lumina_word"
+		[[ $_lumina_ctx == *[$'\t\n\r\033\007\036\037']* ]] && _lumina_ctx=
+		local _li2 _lout="${_lumina_ctx}"$'\037'"$_lumina_word"
 		for (( _li2 = 1; _li2 <= $#_lumina_ins; _li2++ )); do
 			_lout+=$'\036'"${_lumina_ins[_li2]}"$'\037'"${_lumina_lbl[_li2]}"$'\037'"${_lumina_dsc[_li2]}"
 		done
@@ -313,6 +320,16 @@ function __lumina_complete
 	set -l __lumina_US (printf '\037')
 	set -l __lumina_line (commandline -c)
 	set -l __lumina_word (commandline -ct)
+	# Line context for the frontend's warm cache: the tokens before the word
+	# being completed (command position → empty), joined by single spaces.
+	# `commandline -opc` already EXCLUDES the token under the cursor, so the
+	# whole token list IS the context (no slicing). Cache KEY only, so the
+	# joined form suffices.
+	set -l __lumina_toks (commandline -opc)
+	set -l __lumina_ctx (string join ' ' -- $__lumina_toks)
+	if string match -qr '[\t\n\r\x1b\x07\x1e\x1f]' -- $__lumina_ctx
+		set __lumina_ctx ''
+	end
 	set -l __lumina_out
 	if set -q __lumina_line[1]
 		set __lumina_out (complete -C -- "$__lumina_line")
@@ -321,7 +338,7 @@ function __lumina_complete
 		commandline -f complete
 		return
 	end
-	set -l __lumina_payload $__lumina_word
+	set -l __lumina_payload "$__lumina_ctx$__lumina_US$__lumina_word"
 	for __lumina_cand in $__lumina_out
 		set -l __lumina_parts (string split -m1 \t -- $__lumina_cand)
 		set -l __lumina_label $__lumina_parts[1]

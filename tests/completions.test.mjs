@@ -15,21 +15,30 @@ import {CurrentCommandParser} from "../src/lib/currentCommand.ts";
 const RS = "\x1e";
 const US = "\x1f";
 
-test("parseCompletionPayload splits word and candidate records", () => {
-	const payload = ["ech", "echo" + US + US + "Display a line of text", "echotc" + US + US].join(RS);
-	const {word, candidates} = parseCompletionPayload(payload);
-	assert.equal(word, "ech");
+test("parseCompletionPayload splits ctx/word and candidate records", () => {
+	const payload = ["git" + US + "ch", "checkout" + US + US + "Switch branches", "cherry" + US + US].join(RS);
+	const {ctx, word, candidates} = parseCompletionPayload(payload);
+	assert.equal(ctx, "git");
+	assert.equal(word, "ch");
 	assert.equal(candidates.length, 2);
 	assert.deepEqual(candidates[0], {
-		insert: "echo",
+		insert: "checkout",
 		label: "",
-		description: "Display a line of text",
+		description: "Switch branches",
 	});
-	assert.deepEqual(candidates[1], {insert: "echotc", label: "", description: ""});
+	assert.deepEqual(candidates[1], {insert: "cherry", label: "", description: ""});
+});
+
+test("parseCompletionPayload: empty context at command position", () => {
+	const payload = [US + "ech", "echo" + US + US].join(RS);
+	const {ctx, word, candidates} = parseCompletionPayload(payload);
+	assert.equal(ctx, "");
+	assert.equal(word, "ech");
+	assert.equal(candidates.length, 1);
 });
 
 test("parseCompletionPayload keeps zsh label distinct from insert", () => {
-	const payload = ["--v", "verbose" + US + "--verbose" + US + "Be verbose"].join(RS);
+	const payload = [US + "--v", "verbose" + US + "--verbose" + US + "Be verbose"].join(RS);
 	const {candidates} = parseCompletionPayload(payload);
 	assert.equal(candidates[0].insert, "verbose");
 	assert.equal(candidates[0].label, "--verbose");
@@ -39,19 +48,20 @@ test("parseCompletionPayload keeps zsh label distinct from insert", () => {
 test("parseCompletionPayload rejoins stray separators inside descriptions", () => {
 	// A description that itself contained RS/US is re-joined into the desc
 	// field rather than corrupting the record structure.
-	const payload = ["w", "cand" + US + US + "desc" + US + "tail"].join(RS);
+	const payload = [US + "w", "cand" + US + US + "desc" + US + "tail"].join(RS);
 	const {candidates} = parseCompletionPayload(payload);
 	assert.equal(candidates[0].description, "desc" + US + "tail");
 });
 
 test("parseCompletionPayload drops empty records", () => {
-	const payload = ["w", "cand" + US + US, "", "other" + US + US].join(RS);
+	const payload = [US + "w", "cand" + US + US, "", "other" + US + US].join(RS);
 	const {candidates} = parseCompletionPayload(payload);
 	assert.deepEqual(candidates.map((c) => c.insert), ["cand", "other"]);
 });
 
 test("parseCompletionPayload handles empty payload", () => {
-	const {word, candidates} = parseCompletionPayload("");
+	const {ctx, word, candidates} = parseCompletionPayload("");
+	assert.equal(ctx, "");
 	assert.equal(word, "");
 	assert.equal(candidates.length, 0);
 });
@@ -121,7 +131,7 @@ test("isPlainTypingKey accepts single printable chars without modifiers", () => 
 
 test("CurrentCommandParser emits completions events with RS/US payload intact", () => {
 	const parser = new CurrentCommandParser();
-	const payload = ["gi", "git" + US + US + "tracker"].join(RS);
+	const payload = [US + "gi", "git" + US + US + "tracker"].join(RS);
 	const events = parser.feed(`noise\x1b]1337;Completions=${payload}\x07after`);
 	assert.equal(events.length, 1);
 	assert.equal(events[0].type, "completions");
@@ -130,21 +140,21 @@ test("CurrentCommandParser emits completions events with RS/US payload intact", 
 
 test("CurrentCommandParser accepts ESC-backslash terminator for completions", () => {
 	const parser = new CurrentCommandParser();
-	const events = parser.feed("\x1b]1337;Completions=w\x1eab\x1f\x1f\x1b\\");
+	const events = parser.feed("\x1b]1337;Completions=\x1fw\x1eab\x1f\x1f\x1b\\");
 	assert.equal(events.length, 1);
 	assert.equal(events[0].type, "completions");
-	assert.equal(events[0].payload, "w\x1eab\x1f\x1f");
+	assert.equal(events[0].payload, "\x1fw\x1eab\x1f\x1f");
 });
 
 test("CurrentCommandParser reassembles a completion split across chunks", () => {
 	const parser = new CurrentCommandParser();
-	const full = "\x1b]1337;Completions=wo" + RS + "word" + US + US + "d\x07";
+	const full = "\x1b]1337;Completions=" + US + "wo" + RS + "word" + US + US + "d\x07";
 	const mid = Math.floor(full.length / 2);
 	assert.deepEqual(parser.feed(full.slice(0, mid)), []);
 	const events = parser.feed(full.slice(mid));
 	assert.equal(events.length, 1);
 	assert.equal(events[0].type, "completions");
-	assert.equal(events[0].payload, "wo" + RS + "word" + US + US + "d");
+	assert.equal(events[0].payload, US + "wo" + RS + "word" + US + US + "d");
 });
 
 test("CurrentCommandParser orders mixed events and keeps current-command parsing intact", () => {
@@ -152,19 +162,19 @@ test("CurrentCommandParser orders mixed events and keeps current-command parsing
 	const events = parser.feed(
 		"\x1b]1337;CurrentCommand=ls\x07" +
 		"\x1b]1337;CurrentCommandExit=0\x07" +
-		"\x1b]1337;Completions=lu" + RS + "ls" + US + US + "\x07",
+		"\x1b]1337;Completions=" + US + "lu" + RS + "ls" + US + US + "\x07",
 	);
 	assert.deepEqual(events, [
 		{type: "command", value: "ls"},
 		{type: "exit", code: 0},
-		{type: "completions", payload: "lu" + RS + "ls" + US + US},
+		{type: "completions", payload: US + "lu" + RS + "ls" + US + US},
 	]);
 });
 
 test("CurrentCommandParser picks the earliest prefix when several are pending", () => {
 	const parser = new CurrentCommandParser();
 	const events = parser.feed(
-		"\x1b]1337;Completions=a" + RS + "x" + US + US + "\x07" +
+		"\x1b]1337;Completions=" + US + "a" + RS + "x" + US + US + "\x07" +
 		"\x1b]1337;CurrentCommandExit=1\x07",
 	);
 	assert.equal(events[0].type, "completions");

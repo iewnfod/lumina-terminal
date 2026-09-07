@@ -169,8 +169,9 @@ src/
 │   │                        #   tab-subtitle command + per-command exit codes + the completion-suggest
 │   │                        #   payloads (fed by useCurrentCommand)
 │   ├── completions.ts       # Terminal-suggest pure layer: CompletionCandidate + parseCompletionPayload
-│   │                        #   (OSC 1337;Completions RS/US framing — survives the pty's ONLCR, dropped by
-│   │                        #   xterm inside OSC) + insertionBytes (DEL × code points of the word + insert;
+│   │                        #   (OSC 1337;Completions RS/US framing: ctx US word RS insert US label US desc —
+│   │                        #   ctx = tokens before the word, the warm-cache key; survives the pty's ONLCR,
+│   │                        #   dropped by xterm inside OSC) + insertionBytes (DEL × code points of the word + insert;
 │   │                        #   the accept contract verified end-to-end in tests/completion_hooks.rs) +
 │   │                        #   filterCandidates (typing refinement) + shouldRetrigger (directory cascade)
 │   │                        #   + isPlainTypingKey (the as-you-type request trigger predicate)
@@ -261,7 +262,14 @@ src/
 │   │                        #   delays echo), so they fire ONLY when the local filter dies (word boundary,
 │   │                        #   no match, cache miss) — live typing/backtracking is served synchronously
 │   │                        #   from the local filter + a bounded word→set cache; responses that lag the
-│   │                        #   typing merge into the live word instead of regressing the popup
+│   │                        #   typing merge into the live word instead of regressing the popup. A second,
+│   │                        #   ctx-keyed warm index re-opens the popup INSTANTLY for line contexts already
+│   │                        #   fetched this session (stored word ⊆ typed word ⇒ exact superset) — no sidecar
+│   │                        #   PTY, no bundled completion database; the shell stays the single source of
+│   │                        #   truth. Cache entries are freshness-stamped (FRESH_TTL_MS): a hit within the
+│   │                        #   TTL SKIPS the correction request entirely — measured, even a backgrounded
+│   │                        #   (`&`) job started from a fish key-binding stalls the line editor's echo
+│   │   identically to a foreground one, so warm-path requests are pure loss; stale/miss/explicit TAB fetch
 │   ├── useEdgeBackground.ts # useEdgeBackground(opts) → {containerBg} — polls the xterm buffer's
 │   │                        #   outer ring (a fullscreen TUI's bg), syncs the xterm layers +
 │   │                        #   padding fill, and reports the color up for chrome spread (active
