@@ -216,7 +216,7 @@
     "Save Tabs?": "保存标签吗？",
     "Save your {n} open tab(s) and restore them next time?": "保存当前 {n} 个标签并在下次启动时恢复？",
     "Don't Save": "不保存",
-    "Remember this choice": "记住此选择",
+    "Don't ask this again": "不再询问",
     "Pin on Top": "置顶窗口",
     "Unpin from Top": "取消置顶",
     "Always on top is not supported on Wayland": "Wayland 会话不支持窗口置顶",

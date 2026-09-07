@@ -102,7 +102,7 @@ export default function SessionSaveDialog({
                                 </Switch.Control>
                             </Switch>
                             <Label className="text-sm cursor-pointer" style={{color: foregroundColor}}>
-                                {t["Remember this choice"]}
+                                {t["Don't ask this again"]}
                             </Label>
                         </button>
                     </Modal.Body>
