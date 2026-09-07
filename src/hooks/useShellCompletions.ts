@@ -155,6 +155,10 @@ interface UseShellCompletionsOptions {
      *  terminal loads at mount and writes back to after fetches — same-shell
      *  tabs share coverage across sessions. */
     profileName?: string;
+    /** The `shellCompletionsAppendSpace` config (live): accepted completions
+     *  gain a trailing space (directories excluded) so arguments can be typed
+     *  right away — mirroring the shells' own TAB. */
+    appendSpace?: boolean;
     /** Live anchor getter (Term's cursor geometry). The instant-open reads it
      *  AT OPEN TIME so the popup lands where the cursor actually is — a
      *  stale copy of the last response's anchor made it appear at the old
@@ -196,7 +200,7 @@ interface UseShellCompletionsOptions {
  *   same contract the backend e2e test (tests/completion_hooks.rs) verifies
  *   against a live zsh line editor.
  */
-export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileName, getAnchor}: UseShellCompletionsOptions) {
+export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileName, getAnchor, appendSpace}: UseShellCompletionsOptions) {
     const [state, setState] = useState<CompletionState | null>(null);
     // Latest-ref bridge so the (stable) key filter and offer callback observe
     // the current state without re-installing the bindings handler.
@@ -206,6 +210,8 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
     enabledRef.current = enabled;
     const onTypeRef = useRef(!!onType);
     onTypeRef.current = !!onType;
+    const appendSpaceRef = useRef(appendSpace !== false);
+    appendSpaceRef.current = appendSpace !== false;
     const atPromptRef = useRef(atPrompt);
     atPromptRef.current = atPrompt;
 
@@ -373,9 +379,23 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
         if (onTypeRef.current && enabledRef.current) scheduleRequest();
     }, [scheduleRequest]);
 
-    /** Write the accept bytes: erase the live word, type the insert, and
-     *  optionally a follow-up TAB so the shell re-offers fresh candidates.
-     *  When the insert already equals the word the erase+retype is skipped. */
+    /** The trailing bytes an accepted candidate earns: a space when the
+     *  option is on and the insert terminates a word (directories continue a
+     *  path instead, and some candidates already carry their own trailing
+     *  space). Shared by accept() and the shadow seeding so both agree. */
+    const acceptSuffix = useCallback((candidate: CompletionCandidate): string => {
+        return appendSpaceRef.current
+            && !candidate.insert.endsWith("/")
+            && !candidate.insert.endsWith(" ")
+            ? " "
+            : "";
+    }, []);
+
+    /** Write the accept bytes: erase the live word, type the insert (+ the
+     *  trailing space when earned), and for a retrigger a follow-up TAB so
+     *  the shell re-offers against the new word. When the insert already
+     *  equals the word the erase+retype is skipped (the space/TAB still
+     *  applies — native TAB on a complete word adds the space). */
     const accept = useCallback(
         (candidate: CompletionCandidate, word: string, retrigger: boolean) => {
             if (requestTimerRef.current !== null) {
@@ -383,7 +403,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
                 requestTimerRef.current = null;
             }
             const replace = candidate.insert === word ? "" : insertionBytes(word, candidate);
-            const bytes = retrigger ? replace + "\t" : replace;
+            const bytes = retrigger ? replace + acceptSuffix(candidate) + "\t" : replace + acceptSuffix(candidate);
             debug(
                 `Completion accepted: word=${JSON.stringify(word)} insert=${JSON.stringify(candidate.insert)}` +
                     ` retrigger=${retrigger}`,
@@ -393,7 +413,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
                 writeToTerminal(ptyId, bytes).then();
             }
         },
-        [ptyId],
+        [acceptSuffix, ptyId],
     );
 
     /** Feed one raw Completions payload (called from the output stream). The
@@ -447,14 +467,12 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
                 return;
             }
             if (candidates.length === 1 && !onTypeRef.current) {
-                // Unambiguous: complete silently like native TAB, no popup.
-                // Directories cascade (contents of the just-entered dir);
-                // anything else would loop (accept → re-offer the same word).
+                // Unambiguous: complete silently like native TAB, no popup —
+                // insert (+ trailing space), with directories cascading into
+                // their contents instead. A complete word just earns the
+                // space, exactly like the shell's own TAB.
                 close();
-                const only = candidates[0];
-                if (only.insert !== word || shouldRetrigger(only)) {
-                    accept(only, word, shouldRetrigger(only));
-                }
+                accept(candidates[0], word, shouldRetrigger(candidates[0]));
                 return;
             }
             info(`Completion popup opened: ${candidates.length} candidates for word=${word}`).catch(() => {});
@@ -532,15 +550,19 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
         shadowRef.current = {ctx: "", word: ""};
     }, []);
 
-    /** After accepting, the line's last token IS the insert text — known, so
-     *  the shadow stays valid for further typing instead of being
-     *  invalidated. (The anchor needs no bookkeeping: the instant-open reads
-     *  the live cursor geometry when it opens.) */
+    /** After accepting, the line state is known — the shadow stays valid for
+     *  further typing instead of being invalidated: the last token is the
+     *  insert text, or with a trailing space appended the word boundary has
+     *  already happened (context advanced, word empty). (The anchor needs no
+     *  bookkeeping: the instant-open reads live cursor geometry at open.) */
     const seedShadowAfterAccept = useCallback(
         (current: CompletionState, candidate: CompletionCandidate) => {
-            shadowRef.current = {ctx: current.ctx, word: candidate.insert};
+            const suffix = acceptSuffix(candidate);
+            shadowRef.current = suffix === ""
+                ? {ctx: current.ctx, word: candidate.insert}
+                : {ctx: joinCtx(current.ctx, candidate.insert), word: ""};
         },
-        [],
+        [acceptSuffix],
     );
 
     const moveSelection = useCallback((delta: number | "start" | "end") => {
@@ -614,15 +636,19 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
                     return false;
                 }
                 case "Enter": {
-                    // Accept and finish. Directories are the exception — they
-                    // always have a next level, so they cascade.
-                    event.preventDefault();
+                    // Enter has ONE role: accept and finish (never cascades —
+                    // drilling into the next level is Tab's job). Fully-typed
+                    // word: accepting would write nothing, so the Enter means
+                    // "run the line" — pass it straight through to the shell.
                     const candidate = current.filtered[current.selected];
-                    const retrigger = shouldRetrigger(candidate);
-                    accept(candidate, current.word, retrigger);
+                    if (candidate.insert === current.word) {
+                        dismiss();
+                        return true;
+                    }
+                    event.preventDefault();
+                    accept(candidate, current.word, false);
                     seedShadowAfterAccept(current, candidate);
-                    if (retrigger) close();
-                    else dismiss();
+                    dismiss();
                     return false;
                 }
                 case "ArrowUp":
@@ -751,18 +777,16 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
     }, []);
 
     /** Accept a specific candidate (popup row click). Like Enter: accept and
-     *  finish, except directories which cascade. No-op when closed. */
+     *  finish, never cascade. No-op when closed. */
     const acceptCandidate = useCallback(
         (candidate: CompletionCandidate) => {
             const current = stateRef.current;
             if (!current) return;
-            const retrigger = shouldRetrigger(candidate);
-            accept(candidate, current.word, retrigger);
+            accept(candidate, current.word, false);
             seedShadowAfterAccept(current, candidate);
-            if (retrigger) close();
-            else dismiss();
+            dismiss();
         },
-        [accept, close, dismiss],
+        [accept, dismiss, seedShadowAfterAccept],
     );
 
     return {state, offer, handleKey, select, acceptCandidate, close, dismiss, onCommandStart};

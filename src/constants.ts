@@ -244,6 +244,7 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     imeDuplicateInputFix: true,
     enableShellCompletions: true,
     shellCompletionsOnType: false,
+    shellCompletionsAppendSpace: true,
     rememberWindowPosition: false,
     rememberWindowSize: false,
     sessionSaveMode: "ask",

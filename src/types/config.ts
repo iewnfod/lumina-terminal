@@ -91,6 +91,10 @@ export interface GlobalConfig {
      *  time only — toggling affects NEW terminals, like webgl. Shells without
      *  hooks (bash/nu/pwsh/SSH) keep their native TAB behavior. */
     enableShellCompletions?: boolean;
+    /** When true (default), accepting a completion appends a trailing space
+     *  (like the shells' own TAB), so arguments can be typed right away.
+     *  Directories are exempt — a path continues, not terminates. */
+    shellCompletionsAppendSpace?: boolean;
     /** When true (default false), the suggest popup behaves like an IDE's
      *  as-you-type completion: after a short typing pause, Lumina asks the
      *  shell for fresh candidates on its own (no TAB needed) and the popup

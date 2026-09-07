@@ -299,6 +299,7 @@ export default function Term(props : TermProps) {
         ptyId,
         enabled: completionsEnabledAtSpawn,
         onType: config.shellCompletionsOnType === true,
+        appendSpace: config.shellCompletionsAppendSpace !== false,
         atPrompt: () => atPromptRef.current,
         // Live anchor for the instant-open: read AT OPEN TIME so the popup
         // lands where the cursor actually is — a stale, shifted copy of the

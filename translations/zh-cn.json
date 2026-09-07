@@ -264,5 +264,7 @@
     "Shell Completion Popup": "Shell 补全弹窗",
     "Show TAB completions from zsh/fish as a floating popup; applies to new terminals": "将 zsh/fish 的 TAB 补全显示为悬浮弹窗；仅对新终端生效",
     "Completions As You Type": "输入时自动补全",
-    "Experimental: request completions automatically while typing (no TAB needed)": "实验性：输入时自动请求补全（无需按 TAB），可能无法稳定工作"
+    "Experimental: request completions automatically while typing (no TAB needed)": "实验性：输入时自动请求补全（无需按 TAB），可能无法稳定工作",
+    "Append Space on Completion": "补全后附加空格",
+    "Add a trailing space when a completion is accepted (directories excluded)": "接受补全时在词尾附加空格（目录除外）"
 }

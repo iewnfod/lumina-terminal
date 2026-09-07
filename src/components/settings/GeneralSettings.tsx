@@ -24,6 +24,7 @@ interface GeneralDraft {
     imeDuplicateInputFix: boolean;
     enableShellCompletions: boolean;
     shellCompletionsOnType: boolean;
+    shellCompletionsAppendSpace: boolean;
     rememberWindowPosition: boolean;
     rememberWindowSize: boolean;
     sessionSaveMode: "never" | "always" | "ask";
@@ -66,6 +67,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         imeDuplicateInputFix: config.imeDuplicateInputFix !== false,
         enableShellCompletions: config.enableShellCompletions !== false,
         shellCompletionsOnType: config.shellCompletionsOnType ?? false,
+        shellCompletionsAppendSpace: config.shellCompletionsAppendSpace !== false,
         rememberWindowPosition: config.rememberWindowPosition ?? false,
         rememberWindowSize: config.rememberWindowSize ?? false,
         sessionSaveMode: config.sessionSaveMode ?? "ask",
@@ -90,6 +92,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 imeDuplicateInputFix: d.imeDuplicateInputFix,
                 enableShellCompletions: d.enableShellCompletions,
                 shellCompletionsOnType: d.shellCompletionsOnType,
+                shellCompletionsAppendSpace: d.shellCompletionsAppendSpace,
                 rememberWindowPosition: d.rememberWindowPosition,
                 rememberWindowSize: d.rememberWindowSize,
                 sessionSaveMode: d.sessionSaveMode,
@@ -108,7 +111,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.enableShellCompletions, config.shellCompletionsOnType, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.enableShellCompletions, config.shellCompletionsOnType, config.shellCompletionsAppendSpace, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
     );
 
     return (
@@ -592,6 +595,30 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                                 isSelected={draft.shellCompletionsOnType}
                                 isDisabled={!draft.enableShellCompletions}
                                 onChange={(v) => setDraft((prev) => ({...prev, shellCompletionsOnType: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+
+                        {/* Append Space on Accept: accepted completions gain a
+                            trailing space (like the shells' own TAB) so
+                            arguments can be typed right away. Directories are
+                            exempt — a path continues. */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className={draft.enableShellCompletions ? "cursor-pointer" : "cursor-pointer opacity-50"}>{t["Append Space on Completion"]}</Label>}
+                            description={t["Add a trailing space when a completion is accepted (directories excluded)"]}
+                            onClick={() => {
+                                if (!draft.enableShellCompletions) return;
+                                setDraft((prev) => ({...prev, shellCompletionsAppendSpace: !prev.shellCompletionsAppendSpace}));
+                            }}
+                        >
+                            <Switch
+                                isSelected={draft.shellCompletionsAppendSpace}
+                                isDisabled={!draft.enableShellCompletions}
+                                onChange={(v) => setDraft((prev) => ({...prev, shellCompletionsAppendSpace: v}))}
                             >
                                 <Switch.Control>
                                     <Switch.Thumb />
