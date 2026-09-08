@@ -216,7 +216,7 @@
     "Save Tabs?": "Save Tabs?",
     "Save your {n} open tab(s) and restore them next time?": "Save your {n} open tab(s) and restore them next time?",
     "Don't Save": "Don't Save",
-    "Remember this choice": "Remember this choice",
+    "Don't ask this again": "Don't ask this again",
     "Pin on Top": "Pin on Top",
     "Unpin from Top": "Unpin from Top",
     "Always on top is not supported on Wayland": "Always on top is not supported on Wayland",
