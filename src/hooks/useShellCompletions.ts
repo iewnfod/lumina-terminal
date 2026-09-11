@@ -2,11 +2,13 @@ import {useCallback, useEffect, useRef, useState} from "react";
 import {debug, info} from "@tauri-apps/plugin-log";
 import {
     type CompletionCandidate,
+    type CompletionCacheEntry,
     filterCandidates,
     insertionBytes,
     isPlainTypingKey,
     parseCompletionPayload,
     shouldRetrigger,
+    shouldShowCompletions,
     type SerializedCompletionIndex,
     mergeCompletionIndex,
 } from "../lib/completions.ts";
@@ -21,9 +23,6 @@ const PAGE_SIZE = 8;
  *  shell round-trip, short enough to feel immediate (the local filter and
  *  the warm cache give instant feedback in between). */
 const REQUEST_DEBOUNCE_MS = 100;
-
-/** How many fetched word→candidates sets to keep for instant backtracking. */
-const CACHE_CAP = 64;
 
 /** Warm-cache bounds: contexts kept per terminal, word sets kept per context
  *  (the in-memory index is unbounded by I/O cost; persistence prunes harder
@@ -44,13 +43,7 @@ const PERSIST_DEBOUNCE_MS = 3000;
  *  the suggest list is advisory; TAB is the refresh escape hatch. */
 const TRUST_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** A cached candidate set with its fetch time. */
-interface CachedSet {
-    candidates: CompletionCandidate[];
-    fetchedAt: number;
-}
-
-function isFresh(entry: CachedSet): boolean {
+function isFresh(entry: CompletionCacheEntry): boolean {
     return Date.now() - entry.fetchedAt < TRUST_HORIZON_MS;
 }
 
@@ -220,17 +213,17 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
     // Set by deliberate dismissals so an in-flight request's OSC can't reopen
     // the popup; cleared whenever we intentionally send a request TAB.
     const suppressedRef = useRef(false);
-    // Word → candidate-set cache (bounded LRU by insertion order). Every
-    // shell-fetched set lands here; backspacing below the shell-reported base
-    // word consults it so previously fetched words restore SYNCHRONOUSLY
-    // instead of closing the popup and waiting for a round-trip (the fetch is
-    // async and in-band — the shell's line editor is single-threaded, so a
-    // completion TAB mid-typing delays the echo of everything behind it;
-    // serving from cache keeps the main PTY untouched).
-    const cacheRef = useRef(new Map<string, CachedSet>());
-    // Warm cache across words: line-context → (word → cached set). The
-    // instant-open's candidate source for contexts already seen this session.
-    const indexRef = useRef(new Map<string, Map<string, CachedSet>>());
+    // Warm index: line-context → (word → cached set). Serves both the
+    // instant-open (a known context's stored word that the typed word
+    // extends is an exact superset) and open-popup backtracking below the
+    // shell-reported base word, so previously fetched positions restore
+    // SYNCHRONOUSLY instead of closing and waiting for a round-trip (the
+    // fetch is async and in-band — the shell's line editor is
+    // single-threaded, so a completion TAB mid-typing delays the echo of
+    // everything behind it; serving from the index keeps the main PTY
+    // untouched). Keyed by (ctx, word) so the same word under different
+    // contexts never aliases.
+    const indexRef = useRef(new Map<string, Map<string, CompletionCacheEntry>>());
     // Line tracking between shell responses (see ShadowLine).
     const shadowRef = useRef<ShadowLine | null>(null);
     // Live anchor getter (Term owns the xterm geometry).
@@ -301,18 +294,8 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    /** Store a fetched set under its word (MRU-ordered, bounded). */
-    const cachePut = useCallback((word: string, candidates: CompletionCandidate[]) => {
-        const cache = cacheRef.current;
-        cache.delete(word);
-        cache.set(word, {candidates, fetchedAt: Date.now()});
-        if (cache.size > CACHE_CAP) {
-            const oldest = cache.keys().next().value;
-            if (oldest !== undefined) cache.delete(oldest);
-        }
-    }, []);
-
-    /** Index a fetched set under (ctx, word) for the instant-open (bounded). */
+    /** Index a fetched set under (ctx, word) for the instant-open and
+     *  backtracking (bounded). */
     const indexPut = useCallback((ctx: string, word: string, candidates: CompletionCandidate[]) => {
         const index = indexRef.current;
         let words = index.get(ctx);
@@ -433,15 +416,17 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
             // running program.
             const atPrompt = atPromptRef.current;
             if (atPrompt && !atPrompt()) return;
-            const {ctx, word, candidates} = parseCompletionPayload(payload);
-            if (candidates.length === 0 || word === "") {
-                // No candidates — or nothing typed at the cursor (empty line,
-                // or right after a space): the shell answers those with a
-                // full "everything" list, which is pure noise. Don't popup.
+            const parsed = parseCompletionPayload(payload);
+            if (!shouldShowCompletions(parsed)) {
+                // No candidates, or a completely empty line (command position,
+                // nothing typed): the shell answers that with a full
+                // "everything" list, which is pure noise. An empty word under
+                // a NON-empty context (`gh ` + TAB) is the subcommand list
+                // the user explicitly asked for — it flows through.
                 close();
                 return;
             }
-            cachePut(word, candidates);
+            const {ctx, word, candidates} = parsed;
             indexPut(ctx, word, candidates);
             // The response IS the ground truth of where the line is.
             shadowRef.current = {ctx, word};
@@ -486,7 +471,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
                 anchor,
             });
         },
-        [accept, cachePut, close, indexPut],
+        [accept, close, indexPut],
     );
 
     /** Open the popup instantly from the warm index for the shadow line's
@@ -593,9 +578,10 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
                 if (isPlainTypingKey(event) || event.key === "Backspace") {
                     if (event.key === " ") {
                         // Word boundary: promote the finished word into the
-                        // context. NEVER request — the word is now empty, so
-                        // the response would be dropped by the empty-word
-                        // gate while its TAB still stalled the line editor.
+                        // context. NEVER auto-request — the in-band TAB would
+                        // stall the line editor mid-flow; listing the new
+                        // context's candidates is what an explicit TAB is for
+                        // (and the next keystroke re-queries anyway).
                         const shadow = shadowRef.current;
                         if (shadow && shadow.word !== "") {
                             shadowRef.current = {ctx: joinCtx(shadow.ctx, shadow.word), word: ""};
@@ -681,13 +667,22 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
                     return false;
                 case "Backspace": {
                     // The shell's line editor deletes the char (key passes
-                    // through). Above the shell-reported base word the set is
+                    // through). Backspacing AT an empty base word (the popup
+                    // lists `gh `'s subcommands) merges into the previous
+                    // token — untrackable, like the popup-closed word-start
+                    // case: drop everything and let the key reach the shell.
+                    if (current.word === "") {
+                        shadowRef.current = null;
+                        dismiss();
+                        return true;
+                    }
+                    // Above the shell-reported base word the set is
                     // still an exact superset — refine locally, NO request (an
                     // in-band TAB would block the echo of keys behind it).
                     // Below it the local set is invalid: serve a previously
-                    // fetched set for the shorter word from cache SYNCHRONOUSLY
-                    // (background-refresh via request), and only on a miss
-                    // close and let the (debounced) request re-query.
+                    // fetched set for the shorter word from the warm index
+                    // SYNCHRONOUSLY (background-refresh via request), and only
+                    // on a miss close and let the (debounced) request re-query.
                     shadowBackspace();
                     const word = [...current.word].slice(0, -1).join("");
                     const anchor = anchorShifted(current.anchor, -1);
@@ -695,7 +690,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
                         setState((prev) => (prev ? refine(prev, word, anchor) : prev));
                         return true;
                     }
-                    const cached = cacheRef.current.get(word);
+                    const cached = indexRef.current.get(current.ctx)?.get(word);
                     if (cached && cached.candidates.length > 0) {
                         setState({
                             ctx: current.ctx,
@@ -737,12 +732,18 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
                         } else {
                             // Word boundary (space) or no local match. A space
                             // seeds the shadow for the NEXT word and closes —
-                            // without a request: the next word is empty, so
-                            // the response would be dropped while its TAB
-                            // stalled the editor. Any other dead filter keeps
-                            // the re-query.
+                            // without a request: the in-band TAB would stall
+                            // the editor mid-flow (an explicit TAB lists the
+                            // new context). Any other dead filter keeps the
+                            // re-query.
                             if (event.key === " ") {
-                                shadowRef.current = {ctx: joinCtx(current.ctx, current.word), word: ""};
+                                shadowRef.current = {
+                                    // An already-empty word (space over an
+                                    // open context list, e.g. `gh ` + space)
+                                    // changes nothing — keep the context.
+                                    ctx: current.word === "" ? current.ctx : joinCtx(current.ctx, current.word),
+                                    word: "",
+                                };
                                 debug(`Completion popup closed by word boundary`).catch(() => {});
                                 setState(null);
                                 return true;

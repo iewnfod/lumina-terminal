@@ -122,6 +122,18 @@ export function shouldRetrigger(candidate: CompletionCandidate): boolean {
     return candidate.insert.endsWith("/");
 }
 
+/**
+ * Whether a parsed payload is worth opening the popup for: it must carry
+ * candidates, and the line must not be COMPLETELY empty. A bare TAB on an
+ * empty line makes the shell answer with its full "everything" list — pure
+ * noise. An empty word under a NON-empty context is legitimate and is exactly
+ * what an explicit TAB after a finished token asks for: `gh ` + TAB wants
+ * gh's subcommands.
+ */
+export function shouldShowCompletions(payload: CompletionPayload): boolean {
+    return payload.candidates.length > 0 && !(payload.ctx === "" && payload.word === "");
+}
+
 // ---------------------------------------------------------------------------
 // Warm-index persistence (pure helpers; the IO lives in lib/completionCache.ts)
 // ---------------------------------------------------------------------------

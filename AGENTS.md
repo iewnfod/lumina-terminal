@@ -267,17 +267,20 @@ src/
 │   │                        #   in-band (the shell's line editor is single-threaded — a TAB mid-typing
 │   │                        #   delays echo), so they fire ONLY when the local filter dies (word boundary,
 │   │                        #   no match, cache miss) — live typing/backtracking is served synchronously
-│   │                        #   from the local filter + a bounded word→set cache; responses that lag the
-│   │                        #   typing merge into the live word instead of regressing the popup. A second,
-│   │                        #   ctx-keyed warm index re-opens the popup INSTANTLY for line contexts already
+│   │                        #   from the local filter + the warm index; responses that lag the
+│   │                        #   typing merge into the live word instead of regressing the popup. The
+│   │                        #   ctx-keyed warm index (ctx → word → set) re-opens the popup INSTANTLY for
+│   │                        #   line contexts already
 │   │                        #   fetched this session (stored word ⊆ typed word ⇒ exact superset) — no sidecar
 │   │                        #   PTY, no bundled completion database; the shell stays the single source of
 │   │                        #   truth. Cache entries are freshness-stamped (FRESH_TTL_MS): a hit within the
 │   │                        #   TTL SKIPS the correction request entirely — measured, even a backgrounded
 │   │                        #   (`&`) job started from a fish key-binding stalls the line editor's echo
 │   │                        #   identically to a foreground one, so warm-path requests are pure loss — and a
-│   │                        #   word-boundary space NEVER requests (the empty-word gate would drop the
-│   │                        #   response anyway), and typing with the popup open never requests while the
+│   │                        #   word-boundary space NEVER requests (the in-band TAB would stall the editor
+│   │                        #   mid-flow; listing the new context is what an explicit TAB is for — an empty
+│   │                        #   word under a non-empty context IS shown, only the bare empty line is dropped
+│   │                        #   as noise), and typing with the popup open never requests while the
 │   │                        #   local filter survives (an unconditional per-char schedule here stalled the
 │   │                        #   echo behind the shell's completion compute on every typing pause);
 │   │                        #   fetched sets are TRUSTED for 7 days (explicit TAB is the

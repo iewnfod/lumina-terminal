@@ -8,6 +8,7 @@ import {
 	completionKind,
 	filterCandidates,
 	shouldRetrigger,
+	shouldShowCompletions,
 	isPlainTypingKey,
 	pruneCompletionIndex,
 	mergeCompletionIndex,
@@ -114,6 +115,25 @@ test("shouldRetrigger only for directory insertions", () => {
 	assert.equal(shouldRetrigger({insert: "src/nested/", label: "", description: ""}), true);
 	assert.equal(shouldRetrigger({insert: "vim", label: "", description: "Vi IMproved"}), false);
 	assert.equal(shouldRetrigger({insert: "notes.txt", label: "", description: ""}), false);
+});
+
+test("shouldShowCompletions: empty word is a context-level list, not noise", () => {
+	const payload = (ctx, word, n = 1) => ({
+		ctx,
+		word,
+		candidates: Array.from({length: n}, () => ({insert: "auth", label: "", description: ""})),
+	});
+	// `gh ` + TAB: empty word under a context → subcommands, show it.
+	assert.equal(shouldShowCompletions(payload("gh", "")), true);
+	assert.equal(shouldShowCompletions(payload("git checkout ", "")), true);
+	// Bare TAB on an empty line: the shell's "everything" list — noise.
+	assert.equal(shouldShowCompletions(payload("", "")), false);
+	// A typed word always eligible (command position or mid-line).
+	assert.equal(shouldShowCompletions(payload("", "gh")), true);
+	assert.equal(shouldShowCompletions(payload("gh", "au")), true);
+	// No candidates, whatever the position.
+	assert.equal(shouldShowCompletions(payload("gh", "", 0)), false);
+	assert.equal(shouldShowCompletions(payload("", "gh", 0)), false);
 });
 
 test("isPlainTypingKey accepts single printable chars without modifiers", () => {
