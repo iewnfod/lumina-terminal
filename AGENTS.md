@@ -6,6 +6,8 @@ high-cohesion / low-coupling and does not regress into duplication.
 
 > Read this **before** making changes. If a change would violate a rule below,
 > extract or refactor first rather than adding another copy.
+> This project does not rely on OpenSepc. Before doing any large changes, AI
+> should enter the plan mode of the harness tool instead of write a spec document.
 
 ---
 

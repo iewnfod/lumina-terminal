@@ -136,10 +136,17 @@ export function useEffectiveTheme(
         ? foregroundFor(effectiveBg)
         : currentTheme?.foreground;
     // Theme object with bg/fg overridden to the effective values, so children
-    // that read theme.background / theme.foreground stay consistent.
-    const effectiveTheme = currentTheme
+    // that read theme.background / theme.foreground stay consistent. When no
+    // profile theme has resolved yet but a background IS known (theme mode
+    // light/dark forces one from the first render, before any tab exists),
+    // build the minimal theme from it instead of returning null — every null
+    // fallback for `theme.background` in chrome consumers (TitleBar,
+    // Settings, About, UpdateModal) is black.
+    const effectiveTheme: ITheme | null = currentTheme
         ? {...currentTheme, background: effectiveBg ?? currentTheme.background, foreground: effectiveFg ?? currentTheme.foreground}
-        : currentTheme;
+        : effectiveBg
+            ? {background: effectiveBg, foreground: effectiveFg}
+            : null;
 
     // Sync HeroUI theme class with the resolved light/dark decision. When a
     // fullscreen TUI sets its own background and no override is active, the
