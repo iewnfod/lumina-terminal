@@ -10,7 +10,7 @@ import {useAlwaysOnTop} from "../hooks/useAlwaysOnTop.ts";
 import {useIsWayland} from "../hooks/useIsWayland.ts";
 import {useI18n} from "../hooks/i18n.tsx";
 import {glassSurface} from "../lib/glass.ts";
-import { info } from "@tauri-apps/plugin-log";
+import { info, error } from "@tauri-apps/plugin-log";
 import IconButton from "./ui/IconButton.tsx";
 import {CHROME_TITLE_BAR_HEIGHT} from "../constants.ts";
 
@@ -27,22 +27,30 @@ interface WindowControlProps {
 function WindowControl({size, isMaximized, hoverOverlay, activeOverlay, closeHover, fg}: WindowControlProps) {
     const handleMinimize = () => {
         info("Window minimized");
-        getCurrentWindow().minimize().then();
+        getCurrentWindow().minimize().catch((e) => {
+            error(`Failed to minimize window: ${e}`).catch(() => {});
+        });
     }
 
     const handleMaximize = () => {
         info("Window maximized");
-        getCurrentWindow().maximize().then();
+        getCurrentWindow().maximize().catch((e) => {
+            error(`Failed to maximize window: ${e}`).catch(() => {});
+        });
     }
 
     const handleUnmaximize = () => {
         info("Window unmaximized");
-        getCurrentWindow().unmaximize().then();
+        getCurrentWindow().unmaximize().catch((e) => {
+            error(`Failed to unmaximize window: ${e}`).catch(() => {});
+        });
     }
 
     const handleClose = () => {
         info("Window close requested");
-        getCurrentWindow().close().then();
+        getCurrentWindow().close().catch((e) => {
+            error(`Failed to close window: ${e}`).catch(() => {});
+        });
     }
 
     return (

@@ -379,8 +379,18 @@ fn generate_launcher(
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ =
-                    std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755));
+                // The launcher script must be executable or macOS refuses to
+                // run the bundle; a failed chmod leaves it inert, so surface it.
+                if let Err(e) = std::fs::set_permissions(
+                    &script_path,
+                    std::fs::Permissions::from_mode(0o755),
+                ) {
+                    log::warn!(
+                        "Failed to chmod launcher script {}: {}",
+                        script_path.display(),
+                        e
+                    );
+                }
             }
             if let Some(bytes) = icns_bytes.as_ref() {
                 write_file(&resources_dir.join(format!("{stem}.icns")), bytes)?;

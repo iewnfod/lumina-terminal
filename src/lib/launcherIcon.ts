@@ -16,6 +16,7 @@
 import {getAppIconSrc} from "../assets/app-icons/index.ts";
 import {customIconName, getAppIcon, isCustomIconId} from "./appIcon.ts";
 import {isLinux} from "./platform.ts";
+import {warn} from "@tauri-apps/plugin-log";
 import {GlobalConfig} from "../types/config.ts";
 import {TerminalProfile} from "../types/terminal.ts";
 
@@ -82,7 +83,11 @@ async function iconPayloadFor(id: string): Promise<LauncherIconPayload | undefin
         // can't rasterize SVG backend-side, so hand over a PNG instead.
         if (isLinux()) return {svg};
         return {pngBase64: await svgToPngBase64(svg)};
-    } catch {
+    } catch (e) {
+        // The launcher then falls back to the app's own icon — degraded, so
+        // record why (this is the only place icon-payload failures surface;
+        // syncLaunchersFromConfig's catch assumes it is logged here).
+        warn(`Failed to build launcher icon payload for "${id}": ${e}`).catch(() => {});
         return undefined;
     }
 }

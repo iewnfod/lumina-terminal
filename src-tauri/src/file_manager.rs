@@ -41,7 +41,11 @@ pub fn open_in_file_manager(path: String) -> Result<(), String> {
                 log::warn!("{}", msg);
                 Err(msg)
             }
-            Err(e) => Err(format!("Failed to open: {}", e)),
+            Err(e) => {
+                let msg = format!("Failed to open: {}", e);
+                log::warn!("{}", msg);
+                Err(msg)
+            }
         }
     }
 
@@ -54,7 +58,14 @@ pub fn open_in_file_manager(path: String) -> Result<(), String> {
         } else {
             Command::new("open").arg(&dir).status().map(|_| ())
         };
-        result.map_err(|e| format!("Failed to open: {}", e))
+        match result {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let msg = format!("Failed to open: {}", e);
+                log::warn!("{}", msg);
+                Err(msg)
+            }
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -69,7 +80,14 @@ pub fn open_in_file_manager(path: String) -> Result<(), String> {
         } else {
             Command::new("explorer").arg(&dir).status().map(|_| ())
         };
-        result.map_err(|e| format!("Failed to open: {}", e))
+        match result {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let msg = format!("Failed to open: {}", e);
+                log::warn!("{}", msg);
+                Err(msg)
+            }
+        }
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]

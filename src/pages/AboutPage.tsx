@@ -12,6 +12,7 @@ import enReadme from "../../README.md?raw";
 import zhReadme from "../../README_zh.md?raw";
 import {invoke} from "@tauri-apps/api/core";
 import {getVersion} from "@tauri-apps/api/app";
+import {warn} from "@tauri-apps/plugin-log";
 import {Button, Modal} from "@heroui/react";
 import {
 	AlertCircle,
@@ -88,9 +89,13 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
     useEffect(() => {
         invoke<string>("get_commit_hash").then((hash) => {
             setCommitHash(hash);
+        }).catch((e) => {
+            warn(`Failed to read commit hash: ${e}`).catch(() => {});
         });
         getVersion().then((version) => {
             setVersion(version);
+        }).catch((e) => {
+            warn(`Failed to read app version: ${e}`).catch(() => {});
         });
     }, []);
 

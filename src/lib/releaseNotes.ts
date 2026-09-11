@@ -3,8 +3,11 @@
  * Releases API. Used by the About page's "you're up to date" double-click
  * easter egg to show the *current* version's changelog.
  *
- * Returns the body string, or null if the release isn't found / fetch fails.
+ * Returns the body string, or null if the release isn't found / fetch fails
+ * (the failure is logged, never thrown).
  */
+
+import {warn} from "@tauri-apps/plugin-log";
 
 const REPO = "iewnfod/lumina-terminal";
 
@@ -19,7 +22,8 @@ export async function fetchReleaseNotes(version: string): Promise<string | null>
 		if (!res.ok) return null;
 		const data = (await res.json()) as { body?: string | null };
 		return data.body ?? null;
-	} catch {
+	} catch (e) {
+		warn(`Failed to fetch release notes for ${tag}: ${e}`).catch(() => {});
 		return null;
 	}
 }

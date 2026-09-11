@@ -34,6 +34,7 @@
  */
 import {Terminal} from "@xterm/xterm";
 import {loadBuffer, type Font} from "font-ligatures";
+import {warn} from "@tauri-apps/plugin-log";
 import {findFont} from "./terminalApi.ts";
 
 // Caches 100K characters worth of ligatures (~650 KB with moderate ligatures).
@@ -88,14 +89,21 @@ export function getOrLoadFont(family: string): Promise<Font | null> {
                     setTimeout(() => {
                         try {
                             resolve(loadBuffer(bytes.buffer, {cacheSize: CACHE_SIZE}));
-                        } catch {
+                        } catch (e) {
+                            // Malformed font binary — degrade to the fallback
+                            // ligature list instead of the font's own GSUB data.
+                            warn(`Failed to parse font "${family}" for ligatures: ${e}`).catch(() => {});
                             resolve(null as unknown as Font);
                         }
                     }, 0);
                 });
             })
             .then((font) => (font ?? null))
-            .catch(() => null);
+            .catch((e) => {
+                // Font lookup failed — degrade to the fallback ligature list.
+                warn(`Failed to load font "${family}" for ligatures: ${e}`).catch(() => {});
+                return null;
+            });
         fontCache.set(family, pending);
     }
     return pending;

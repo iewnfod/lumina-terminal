@@ -3,6 +3,7 @@ import {useI18n} from "../../hooks/i18n.tsx";
 import {useEffect, useState} from "react";
 import {type FontWeight, type ITerminalOptions, ITheme} from "@xterm/xterm";
 import {parseProfileTheme} from "../../lib/term.ts";
+import {error} from "@tauri-apps/plugin-log";
 import {Input, Label, ListBox, Select, Switch} from "@heroui/react";
 import ThemePreview from "../ThemePreview.tsx";
 import SettingRow from "../ui/SettingRow.tsx";
@@ -27,7 +28,9 @@ export default function RenderSettings({
     const [expanded, setExpanded] = useState(defaultExpanded);
 
     useEffect(() => {
-        parseProfileTheme(draft).then(setThemePreview);
+        parseProfileTheme(draft).then(setThemePreview).catch((e) => {
+            error(`Failed to resolve theme for preview: ${e}`).catch(() => {});
+        });
     }, [draft.themePath, draft.theme]);
 
     const fields = (

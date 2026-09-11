@@ -364,7 +364,12 @@ export default function WelcomePage() {
         if (profile) {
             info(`Welcome wizard finished with profile: ${profile.name}`);
             const defaultProfile = { ...profile, default: true };
+            // Finishing must never strand the user in the wizard: if the
+            // resizable unlock fails, log it and create the profile anyway.
             getCurrentWindow().setResizable(true).then(() => {
+                newProfile(defaultProfile);
+            }, (e: unknown) => {
+                error(`Welcome wizard: failed to re-enable window resizing: ${e}`).catch(() => {});
                 newProfile(defaultProfile);
             });
         }

@@ -4,6 +4,7 @@ import { ITheme } from "@xterm/xterm";
 import { useState } from "react";
 import { useI18n } from "../hooks/i18n.tsx";
 import { useSurfaceColors } from "../hooks/surfaceColors.ts";
+import { warn } from "@tauri-apps/plugin-log";
 import type { DownloadProgress, UpdateInfo, UpdateStatus } from "../lib/updater.ts";
 import type { InstallSource } from "../hooks/useInstallSource.ts";
 import Markdown from "./Markdown.tsx";
@@ -85,9 +86,10 @@ export default function UpdateModal({
 				setCopied(true);
 				window.setTimeout(() => setCopied(false), 1500);
 			})
-			.catch(() => {
+			.catch((e) => {
 				// Clipboard can reject (permissions, focused frame, etc.); the
 				// command stays selectable so the user can still copy manually.
+				warn(`Failed to copy update command: ${e}`).catch(() => {});
 			});
 	};
 
