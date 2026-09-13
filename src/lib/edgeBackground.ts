@@ -1,4 +1,5 @@
 import type {Terminal} from "@xterm/xterm";
+import {isColorDark} from "./color.ts";
 
 /**
  * A color must cover at least this share of the sampled edge cells to count as
@@ -123,4 +124,31 @@ export function sampleEdgeBackground(
     const dominantDefaultShare = dominant === colors.background.css ? defaultCount : 0;
     if (dominantCount - dominantDefaultShare <= 0) return null;
     return dominant;
+}
+
+/**
+ * Selection overlay to substitute when the canvas background flips light/dark
+ * polarity relative to the bg the profile theme was designed for — the forced
+ * bg of theme mode "light"/"dark", or a fullscreen TUI running the opposite
+ * scheme. A theme's selectionBackground is an overlay tuned for its designed
+ * bg (light overlay on a dark bg, dark overlay on a light bg); blended onto a
+ * bg of the SAME polarity it all but disappears — e.g. GitHub Light's
+ * rgba(36,41,47,0.3) over the forced dark #1a1a1a leaves the selection
+ * invisible. Returns the overlay appropriate for the APPLIED bg's polarity,
+ * or null when the polarities match (keep the theme's own selection).
+ *
+ * The two overlays are passed in (the built-in palettes' selection values) so
+ * this module keeps its zero-runtime-import shape and node --test loads it
+ * directly.
+ */
+export function selectionOverlayForFlip(
+    appliedBg: string | null | undefined,
+    designedBg: string | null | undefined,
+    darkOverlay: string,
+    lightOverlay: string,
+): string | null {
+    if (!appliedBg || !designedBg) return null;
+    const appliedDark = isColorDark(appliedBg);
+    if (appliedDark === isColorDark(designedBg)) return null;
+    return appliedDark ? darkOverlay : lightOverlay;
 }

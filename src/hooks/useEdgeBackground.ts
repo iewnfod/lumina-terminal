@@ -1,7 +1,8 @@
 import {useEffect, useRef, useState, type MutableRefObject, type RefObject} from "react";
 import type {Terminal} from "@xterm/xterm";
-import {sampleEdgeBackground} from "../lib/edgeBackground.ts";
+import {sampleEdgeBackground, selectionOverlayForFlip} from "../lib/edgeBackground.ts";
 import {foregroundFor, isColorDark} from "../lib/color.ts";
+import {DEFAULT_TERMINAL_THEME, GITHUB_LIGHT_TERMINAL_THEME} from "../constants.ts";
 
 interface UseEdgeBackgroundOptions {
     /** Tab id — keys the effect (re-arm on tab identity change). */
@@ -101,11 +102,44 @@ export function useEdgeBackground(options: UseEdgeBackgroundOptions): {container
                     ? foregroundFor(value)
                     : fg;
                 const fgChanged = contrastFg !== fg;
-                if (bgChanged || fgChanged) {
+                // The same polarity flip blinds the SELECTION: the theme's
+                // selectionBackground is an overlay tuned for the bg the theme
+                // was designed for, so a dark overlay (light theme) on the
+                // forced dark bg — or a light overlay (dark theme) on a light
+                // fullscreen TUI — blends into the background and the selected
+                // region turns invisible. Substitute the built-in palette's
+                // overlay for the applied polarity while the flip lasts, and
+                // restore the theme's own selection once it ends.
+                const designedBg = themeBgRef.current;
+                if (designedBg !== lastDesignedBg) {
+                    // The hot-apply effect swapped the whole theme (and updated
+                    // themeBgRef), re-seeding the live selectionBackground —
+                    // any earlier backup is stale.
+                    lastDesignedBg = designedBg;
+                    selectionBackup = null;
+                }
+                const flipOverlay = selectionOverlayForFlip(
+                    value || null,
+                    designedBg,
+                    // The built-in palettes always define a selection overlay
+                    // (ITheme marks it optional only to match xterm's type).
+                    DEFAULT_TERMINAL_THEME.selectionBackground!,
+                    GITHUB_LIGHT_TERMINAL_THEME.selectionBackground!,
+                );
+                let selectionPatch: {selectionBackground: string | undefined} | undefined;
+                if (flipOverlay !== null) {
+                    if (selectionBackup === null) selectionBackup = cur?.selectionBackground;
+                    if (cur?.selectionBackground !== flipOverlay) selectionPatch = {selectionBackground: flipOverlay};
+                } else if (selectionBackup !== null) {
+                    if (cur?.selectionBackground !== selectionBackup) selectionPatch = {selectionBackground: selectionBackup ?? undefined};
+                    selectionBackup = null;
+                }
+                if (bgChanged || fgChanged || selectionPatch) {
                     term.current.options.theme = {
                         ...cur,
                         background: value,
                         ...(fgChanged ? {foreground: contrastFg} : {}),
+                        ...selectionPatch,
                     };
                 }
             }
@@ -114,6 +148,14 @@ export function useEdgeBackground(options: UseEdgeBackgroundOptions): {container
 
         let lastApplied: string | null = null;
         let lastReported: string | null = null;
+        // Selection-polarity substitution bookkeeping (see apply below):
+        // `selectionBackup` holds the theme's own selectionBackground while a
+        // polarity flip is active (null = not currently substituted).
+        let selectionBackup: string | undefined | null = null;
+        // Last theme bg the sampler has seen — a change means the hot-apply
+        // effect reassigned options.theme wholesale (the live selection is the
+        // new theme's own again), invalidating any backup.
+        let lastDesignedBg: string | undefined;
         const tick = () => {
             if (!term.current) return;
             if (!isActiveRef.current) {
@@ -171,6 +213,14 @@ export function useEdgeBackground(options: UseEdgeBackgroundOptions): {container
             if (term.current && themeBgRef.current !== undefined
                 && term.current.options.theme?.background !== themeBgRef.current) {
                 term.current.options.theme = {...term.current.options.theme, background: themeBgRef.current};
+            }
+            // Restore the theme's own selection if it was substituted for a
+            // polarity flip, mirroring the background restore above.
+            if (term.current && selectionBackup !== null) {
+                term.current.options.theme = {
+                    ...term.current.options.theme,
+                    selectionBackground: selectionBackup ?? undefined,
+                };
             }
             setContainerBg(null);
         };

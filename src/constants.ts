@@ -7,7 +7,10 @@ export const DEFAULT_TERMINAL_THEME: ITheme = {
     foreground: "#ffffff",
     cursor: "#ffffff",
     cursorAccent: "#000000",
-    selectionBackground: "rgba(255, 255, 255, 0.3)",
+    // 0.4 alpha: 0.3 read too faint against dark backgrounds to tell what is
+    // selected. Also the substitute for a light-designed theme repainted onto
+    // a forced dark bg (useEdgeBackground).
+    selectionBackground: "rgba(255, 255, 255, 0.4)",
 
     // 标准 16 色 ANSI 工具盘
     black: "#000000",

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {sampleEdgeBackground} from "../src/lib/edgeBackground.ts";
+import {sampleEdgeBackground, selectionOverlayForFlip} from "../src/lib/edgeBackground.ts";
 
 const DEFAULT_BG = "#1e1e2e";
 
@@ -207,4 +207,36 @@ test("returns null when a lenient threshold is met by default cells alone", () =
     for (let c = 0; c < 10; c++) overrides.push([0, c, {bg: "rgb", value: 0xff0000}]);
     for (let r = 1; r <= 6; r++) overrides.push([r, 0, {bg: "rgb", value: 0xff0000}]);
     assert.equal(sampleEdgeBackground(makeTerm(grid(10, 10, {bg: "default"}, overrides)), 0.5), null);
+});
+
+// --- selectionOverlayForFlip: selection polarity vs the applied canvas bg ---
+
+const DARK_OVERLAY = "rgba(255,255,255,0.4)";
+const LIGHT_OVERLAY = "rgba(36,41,47,0.3)";
+
+test("substitutes the dark overlay for a light-designed theme on a forced dark bg", () => {
+    // The reported regression: themeMode "dark" (forced #1a1a1a) + a GitHub
+    // Light global profile — its dark selection overlay blended into the dark
+    // bg and the selection was invisible.
+    assert.equal(selectionOverlayForFlip("#1a1a1a", "#ffffff", DARK_OVERLAY, LIGHT_OVERLAY), DARK_OVERLAY);
+});
+
+test("substitutes the light overlay for a dark-designed theme on a forced light bg", () => {
+    assert.equal(selectionOverlayForFlip("#fafafa", "#000000", DARK_OVERLAY, LIGHT_OVERLAY), LIGHT_OVERLAY);
+});
+
+test("substitutes for a fullscreen TUI running the opposite scheme", () => {
+    // Light TUI edge sampled over a dark-designed theme.
+    assert.equal(selectionOverlayForFlip("#f5f5f5", "#1e1e2e", DARK_OVERLAY, LIGHT_OVERLAY), LIGHT_OVERLAY);
+});
+
+test("keeps the theme's own selection when the polarities match", () => {
+    assert.equal(selectionOverlayForFlip("#282c34", "#1e1e2e", DARK_OVERLAY, LIGHT_OVERLAY), null);
+    assert.equal(selectionOverlayForFlip("#ffffff", "#fafafa", DARK_OVERLAY, LIGHT_OVERLAY), null);
+});
+
+test("keeps the theme's own selection when a bg is unknown", () => {
+    assert.equal(selectionOverlayForFlip("", "#ffffff", DARK_OVERLAY, LIGHT_OVERLAY), null);
+    assert.equal(selectionOverlayForFlip(null, "#ffffff", DARK_OVERLAY, LIGHT_OVERLAY), null);
+    assert.equal(selectionOverlayForFlip("#1a1a1a", undefined, DARK_OVERLAY, LIGHT_OVERLAY), null);
 });
