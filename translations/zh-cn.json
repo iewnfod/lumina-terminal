@@ -131,7 +131,7 @@
     "Drop to Shell": "进入交互式 Shell",
     "Default": "默认",
     "Keyboard Shortcuts": "键盘快捷键",
-    "Click a shortcut and press the keys you want to use.": "点击某个快捷键，然后按下你想要使用的按键组合。",
+    "Click the edit button and press the keys you want to use.": "点击编辑按钮，然后按下你想要使用的按键组合。",
     "Reset to Defaults": "恢复默认",
     "Press keys to record...": "按下按键以录制…",
     "Recording... Esc to cancel": "录制中… Esc 取消",

@@ -168,7 +168,7 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
         >
             <SectionTitle mb="0.5rem">{t["Keyboard Shortcuts"]}</SectionTitle>
             <p className="text-xs text-muted mb-5">
-                {t["Click a shortcut and press the keys you want to use."]}
+                {t["Click the edit button and press the keys you want to use."]}
             </p>
 
             {/* Add binding row */}
@@ -320,14 +320,9 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                                     </button>
                                 </div>
                             ) : (
-                                <button
-                                    className="flex items-center gap-0.5 px-2.5 py-1.5 rounded-md cursor-pointer shrink-0 hover:bg-default/10"
-                                    style={{border: `1px solid ${borderColor}`}}
-                                    onClick={() => setRecordingIndex(i)}
-                                    title={t["Press keys to record..."]}
-                                >
-                                    {b.key.trim().length > 0 ? (
-                                        shortcut.map((key, j) => (
+                                b.key.trim().length > 0 && (
+                                    <div className="flex items-center gap-0.5 py-1.5 shrink-0">
+                                        {shortcut.map((key, j) => (
                                             <Kbd key={j}>
                                                 {key.abbr ? (
                                                     // @ts-ignore — keyValue is not typed in heroui
@@ -335,11 +330,9 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
                                                 ) : null}
                                                 <Kbd.Content>{key.content}</Kbd.Content>
                                             </Kbd>
-                                        ))
-                                    ) : (
-                                        <Pencil size={14} className="text-muted"/>
-                                    )}
-                                </button>
+                                        ))}
+                                    </div>
+                                )
                             )}
 
                             {/* Edit + delete / restore */}
