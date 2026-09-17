@@ -368,7 +368,7 @@ export default function ProfileSettings({
                     lib/launcherApi.ts; see types/terminal.ts ProfileLauncher. */}
                 <SettingRow
                     variant="toggle"
-                    label={<Label>{t["Wrap as App"]}</Label>}
+                    label={<Label className="cursor-pointer">{t["Wrap as App"]}</Label>}
                     description={t["wrap as app description"]}
                     onClick={() => toggleLauncher(!draft.launcher)}
                 >

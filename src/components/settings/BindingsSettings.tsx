@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useState} from "react";
+import {useCallback, useMemo, useState} from "react";
 import {Button, Kbd, Label, ListBox, Select} from "@heroui/react";
 import {Pencil, Plus, RotateCcw, Trash2, X} from "lucide-react";
 import {useGlobalConfig} from "../../hooks/config.tsx";
@@ -111,20 +111,14 @@ export default function BindingsSettings({borderColor}: { borderColor: string })
             args,
             __isDefault: false,
         };
-        setDraft((prev) => [...prev, candidate]);
+        setDraft((prev) => [candidate, ...prev]);
         setNewAction(NO_ACTION);
         setNewTabIndex("0");
         setNewProfileName(DEFAULT_PROFILE_KEY);
-        // Start recording for the newly added binding.
-        setRecordingIndex(-1); // temporary; will be patched once state settles
+        // The prepended candidate always lands at index 0 — start recording it
+        // right away so the row is visible without scrolling to it.
+        setRecordingIndex(0);
     }, [newAction, newTabIndex, newProfileName]);
-
-    // After adding, recordingIndex is -1 (sentinel). Resolve to the last index once.
-    useEffect(() => {
-        if (recordingIndex === -1) {
-            setRecordingIndex(draft.length - 1);
-        }
-    }, [recordingIndex, draft.length]);
 
     const handleReset = useCallback(() => {
         // "Reset to Defaults" restores the FACTORY bindings (not the last
