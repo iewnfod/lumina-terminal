@@ -112,14 +112,14 @@ export default function UpdateModal({
 						</h2>
 					</Modal.Header>
 
-					<Modal.Body className="max-h-96 overflow-y-auto">
+					<Modal.Body>
 						{info?.body ? (
 							<div className="flex flex-col gap-2">
 								<span className="text-xs font-medium text-muted uppercase tracking-wider">
 									{t["What's New"]}
 								</span>
 								<div
-									className="rounded-[var(--radius-md)] p-3 overflow-y-auto"
+									className="max-h-96 overflow-y-auto rounded-[var(--radius-md)] p-3"
 									style={{ background: colors.hoverOverlay, color: fg }}
 								>
 									<Markdown>{info.body}</Markdown>
