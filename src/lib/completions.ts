@@ -22,6 +22,8 @@
  *   `insert`.
  * - `label` is what the shell would have displayed (may differ from the
  *   insertable text, e.g. zsh display strings); empty means "same as insert".
+ *   Path candidates carry only the LAST path component — the typed line
+ *   already shows the prefix, and full paths overflow the popup row.
  * - `desc` is an optional human description (fish provides these natively,
  *   zsh via _describe display strings).
  *

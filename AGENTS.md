@@ -465,11 +465,14 @@ src-tauri/src/
 │                  #   parameterized by dir (tests/command_icons.rs)
 ├── shell_integration/  # bash/zsh/fish OSC-1337 injection (precmd/preexec hooks for exit codes
 │                  #   and command text) + TAB-completion interception for zsh/fish
-│                  #   (completion_hook_zsh: compadd recording shim, PREFIX filter, RS/US OSC payload;
-│                  #   completion_hook_fish: complete -C engine + fish_prompt-event rebinding so bundled
-│                  #   autopair can't steal TAB; both ship shell-ESCAPED insert text — zsh applies
-│                  #   ${(q)} unless the compadd call passed -Q (pre-quoted, e.g. _path_files), fish
-│                  #   runs string escape -n — so spaced paths replay as one word; both gated by the
+│                  #   (completion_hook_zsh: compadd recording shim — skips compsys's -D matching
+│                  #   probes (per-segment words that must never become candidates), applies PREFIX
+│                  #   filter, RS/US OSC payload; completion_hook_fish: complete -C engine +
+│                  #   fish_prompt-event rebinding so bundled autopair can't steal TAB; both ship
+│                  #   shell-ESCAPED insert text — zsh applies ${(q)} unless the compadd call passed
+│                  #   -Q (pre-quoted, e.g. _path_files), fish runs string escape -n — so spaced
+│                  #   paths replay as one word — and labels show only the LAST path component,
+│                  #   since the typed line already carries the prefix; both gated by the
 │                  #   spawn-time enableShellCompletions flag)
 │                  #   + the per-shell proxy-sync hooks whose env-file
 │                  #   (proxy.env, same dir) is written by proxy.rs; hook sources are

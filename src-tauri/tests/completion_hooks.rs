@@ -436,6 +436,77 @@ fn fish_hook_escapes_path_candidates_with_spaces() {
 }
 
 #[test]
+fn zsh_hook_labels_show_last_path_component() {
+    if !shell_runs("zsh") {
+        eprintln!("skipping zsh label test: zsh not available");
+        return;
+    }
+    let home = TempDir::new("zshlb-home");
+    let zdot = TempDir::new("zshlb-zdot");
+    let cwd = TempDir::new("zshlb-cwd");
+    std::fs::create_dir_all(cwd.path().join("proj a/src x/inner")).unwrap();
+    std::fs::write(cwd.path().join("proj a/src x/notes.txt"), b"x").unwrap();
+
+    let mut shell = spawn_zsh(&home, &zdot, Some(&cwd));
+    shell.wait_prompt(Duration::from_millis(700), Duration::from_secs(10));
+
+    // Nested path with spaces: the insert must stay the full escaped path
+    // (accepting replaces the whole word), but the label shown in the popup
+    // is only the last component — the typed line already carries the prefix,
+    // and full paths overflow the row.
+    shell.send("cat proj\\ a/src\\ x/n\t");
+    let payload = shell
+        .read_completion_osc(Duration::from_secs(8))
+        .unwrap_or_else(|| panic!("zsh completion OSC did not arrive"));
+    let ((_ctx, word), cands) = parse_payload(&payload);
+    assert_eq!(
+        word, "proj\\ a/src\\ x/n",
+        "word is the raw line-editor token; payload: {payload:?}"
+    );
+    let cand = cands
+        .iter()
+        .find(|(i, _, _)| i == "proj\\ a/src\\ x/notes.txt")
+        .unwrap_or_else(|| panic!("full escaped insert missing; payload: {payload:?}"));
+    assert_eq!(cand.1, "notes.txt", "label must be the last path component");
+}
+
+#[test]
+fn fish_hook_labels_show_last_path_component() {
+    if !shell_runs("fish") {
+        eprintln!("skipping fish label test: fish not available");
+        return;
+    }
+    let home = TempDir::new("fishlb-home");
+    let cwd = TempDir::new("fishlb-cwd");
+    std::fs::create_dir_all(cwd.path().join("proj a/src x/inner")).unwrap();
+    std::fs::write(cwd.path().join("proj a/src x/notes.txt"), b"x").unwrap();
+
+    let mut cmd = CommandBuilder::new("fish");
+    cmd.env("HOME", home.path().to_string_lossy().into_owned());
+    cmd.env("TERM", "dumb");
+    cmd.cwd(cwd.path().to_string_lossy().into_owned());
+    cmd.args(["--login", "-i", "-C", &completion_hook_fish()]);
+    let mut shell = PtyShell::spawn(cmd);
+
+    shell.wait_prompt(Duration::from_millis(900), Duration::from_secs(10));
+
+    shell.send("cat proj\\ a/src\\ x/n\t");
+    let payload = shell
+        .read_completion_osc(Duration::from_secs(8))
+        .unwrap_or_else(|| panic!("fish completion OSC did not arrive"));
+    let ((_ctx, word), cands) = parse_payload(&payload);
+    assert_eq!(
+        word, "proj\\ a/src\\ x/n",
+        "word must be the raw typed token; payload: {payload:?}"
+    );
+    let cand = cands
+        .iter()
+        .find(|(i, _, _)| i == "proj\\ a/src\\ x/notes.txt")
+        .unwrap_or_else(|| panic!("full escaped insert missing; payload: {payload:?}"));
+    assert_eq!(cand.1, "notes.txt", "label must be the last path component");
+}
+
+#[test]
 fn fish_hook_emits_completions() {
     if !shell_runs("fish") {
         eprintln!("skipping fish completion test: fish not available");

@@ -7,9 +7,9 @@ typeset -A _lumina_seen
 typeset _lumina_word= _lumina_ctx=
 lumina_compadd() {
 	emulate -L zsh
-	local -a _lld _lla _llP _llS _llp _lls _lrest _llQ
+	local -a _lld _lla _llP _llS _llp _lls _lrest _llQ _llD
 	zparseopts -D -E -a _lrest d:=_lld a:=_lla k:=_lla P:=_llP S:=_llS p:=_llp s:=_lls \
-		F: i: I: W: J: V: X: x: D: O: A: M: R: E: o:: r:: 1 2 q Q=_llQ f e n U l C
+		F: i: I: W: J: V: X: x: D:=_llD O: A: M: R: E: o:: r:: 1 2 q Q=_llQ f e n U l C
 	local _ln _lsrc _lfrom
 	local -a _lw
 	for (( _ln = 1; _ln <= $#_lla; _ln += 2 )); do
@@ -32,6 +32,14 @@ lumina_compadd() {
 		# spaces. Only a cache KEY — never replayed — so joined form suffices.
 		_lumina_ctx=${(j: :)words[1,CURRENT-1]}
 	}
+	# -D calls are compsys's internal matching probes — for nested paths they
+	# run PER SEGMENT with bare segment words that must never become
+	# standalone candidates (accepting `notes.txt` for `cat a/b/n<TAB>`
+	# would drop the directory). The real insertion call follows with the
+	# assembled words.
+	if (( $#_llD )); then
+		return 0
+	fi
 	local -a _ldsp
 	if (( $#_lld )); then
 		_lsrc=${_lld[$#_lld]}
@@ -65,7 +73,17 @@ lumina_compadd() {
 			_llabel=${_lldisp%%:*}
 			_ldesc=${_lldisp#*:}
 		else
-			_llabel=$_lldisp
+			if [[ -n $_lldisp ]]; then
+				_llabel=$_lldisp
+			else
+				# No curated display string: show only the last path
+				# component, unquoted — the typed line already carries the
+				# path prefix, and full paths overflow the popup row. Non-path
+				# candidates (commands, options) have no `/` and pass through
+				# unchanged.
+				_llabel=${${(Q)_lfull}:t}
+				[[ -n $_llabel ]] || _llabel=$_lfull
+			fi
 			_ldesc=
 		fi
 		# Keep the OSC framing intact: skip candidates whose insert text

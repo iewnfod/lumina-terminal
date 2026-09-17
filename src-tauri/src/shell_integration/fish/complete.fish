@@ -45,9 +45,14 @@ function __lumina_complete
 		# keystrokes — a typed bare space would split the argument. Backslash-
 		# escape it exactly like fish's own completion accept does; -n is
 		# required: the default style stopped escaping spaces in fish 4.9.
-		# The label keeps the raw text for display.
+		# The label displays only the last path component — the typed line
+		# already carries the path prefix, and full paths overflow the row.
 		set -l __lumina_ins (string escape -n -- $__lumina_label)
-		set -a __lumina_payload $__lumina_ins$__lumina_US$__lumina_label$__lumina_US$__lumina_desc
+		set -l __lumina_tail (string match -r -- '[^/]+/?$' $__lumina_label)
+		if not set -q __lumina_tail[1]
+			set __lumina_tail $__lumina_label
+		end
+		set -a __lumina_payload $__lumina_ins$__lumina_US$__lumina_tail$__lumina_US$__lumina_desc
 	end
 	if not set -q __lumina_payload[2]
 		commandline -f complete
