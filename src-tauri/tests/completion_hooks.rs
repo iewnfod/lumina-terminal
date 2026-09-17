@@ -301,6 +301,141 @@ fn zsh_hook_completes_files() {
 }
 
 #[test]
+fn zsh_hook_escapes_path_candidates_with_spaces() {
+    if !shell_runs("zsh") {
+        eprintln!("skipping zsh spaces completion test: zsh not available");
+        return;
+    }
+    let home = TempDir::new("zshsp-home");
+    let zdot = TempDir::new("zshsp-zdot");
+    let cwd = TempDir::new("zshsp-cwd");
+    std::fs::create_dir(cwd.path().join("My Target")).unwrap();
+    std::fs::write(cwd.path().join("My Notes.txt"), b"x").unwrap();
+
+    let mut shell = spawn_zsh(&home, &zdot, Some(&cwd));
+    shell.wait_prompt(Duration::from_millis(700), Duration::from_secs(10));
+
+    // Plain prefix: compsys has two compadd caller kinds for the same word —
+    // raw (e.g. _cd's listing, which the real compadd would quote at INSERT
+    // time) and pre-escaped -Q (_path_files). Both must arrive as the ESCAPED
+    // form; a raw candidate replayed as keystrokes would split the argument.
+    shell.send("cd My\t");
+    let payload = shell
+        .read_completion_osc(Duration::from_secs(8))
+        .unwrap_or_else(|| panic!("zsh completion OSC did not arrive"));
+    let ((_ctx, word), cands) = parse_payload(&payload);
+    assert_eq!(word, "My", "word must be the typed token; payload: {payload:?}");
+    let inserts: Vec<&str> = cands.iter().map(|(i, _, _)| i.as_str()).collect();
+    assert!(
+        inserts.contains(&"My\\ Target"),
+        "escaped dir candidate missing; got {inserts:?}"
+    );
+    assert!(
+        !inserts.contains(&"My Target"),
+        "the raw twin (escaped-space form deduped away) must not be offered; got {inserts:?}"
+    );
+
+    // Already-escaped input (the user typed `\ ` themselves) keeps matching
+    // and stays escaped.
+    shell.wait_prompt(Duration::from_millis(400), Duration::from_secs(5));
+    shell.send("\x15cd My\\ Ta\t");
+    let payload = shell
+        .read_completion_osc(Duration::from_secs(8))
+        .unwrap_or_else(|| panic!("zsh escaped-input OSC did not arrive"));
+    let ((_ctx, word), cands) = parse_payload(&payload);
+    assert_eq!(word, "My\\ Ta", "word is the raw line-editor token; payload: {payload:?}");
+    assert!(
+        cands.iter().any(|(i, _, _)| i == "My\\ Target"),
+        "escaped candidate missing for escaped input; payload: {payload:?}"
+    );
+
+    // Frontend insertion contract on the escaped candidate: DEL × 6 erases
+    // "My\ Ta", the escaped insert types one shell word, and cd actually
+    // lands inside the directory — pwd proves the space survived as one
+    // argument (the echoed `cd My\ Target` never contains a bare "My Target",
+    // so the marker can only come from the pwd output).
+    shell.wait_prompt(Duration::from_millis(400), Duration::from_secs(5));
+    shell.send("\x7f\x7f\x7f\x7f\x7f\x7fMy\\ Target\r");
+    shell.wait_prompt(Duration::from_millis(400), Duration::from_secs(5));
+    shell.send("pwd\r");
+    let out = shell
+        .read_until("My Target", Duration::from_secs(8))
+        .expect("pwd must report the spaced directory");
+    assert!(
+        !out.contains("no such file or directory"),
+        "cd must not fail; got: {out:?}"
+    );
+}
+
+#[test]
+fn fish_hook_escapes_path_candidates_with_spaces() {
+    if !shell_runs("fish") {
+        eprintln!("skipping fish spaces completion test: fish not available");
+        return;
+    }
+    let home = TempDir::new("fishsp-home");
+    let cwd = TempDir::new("fishsp-cwd");
+    std::fs::create_dir(cwd.path().join("My Target")).unwrap();
+
+    let mut cmd = CommandBuilder::new("fish");
+    cmd.env("HOME", home.path().to_string_lossy().into_owned());
+    // dumb skips fish's startup terminal negotiation (DA1/OSC11/XTVERSION),
+    // which a bare test PTY never answers — see the module comment.
+    cmd.env("TERM", "dumb");
+    cmd.cwd(cwd.path().to_string_lossy().into_owned());
+    cmd.args(["--login", "-i", "-C", &completion_hook_fish()]);
+    let mut shell = PtyShell::spawn(cmd);
+
+    shell.wait_prompt(Duration::from_millis(900), Duration::from_secs(10));
+
+    // complete -C reports raw tokens; the hook must ship the insert text
+    // backslash-escaped (fish's own accept form) while the label keeps the
+    // raw text for display.
+    shell.send("cd My\t");
+    let payload = shell
+        .read_completion_osc(Duration::from_secs(8))
+        .unwrap_or_else(|| panic!("fish completion OSC did not arrive"));
+    let ((_ctx, word), cands) = parse_payload(&payload);
+    assert_eq!(word, "My", "word must be the typed token; payload: {payload:?}");
+    let target = cands
+        .iter()
+        .find(|(i, _, _)| i == "My\\ Target/")
+        .unwrap_or_else(|| panic!("escaped dir candidate missing; payload: {payload:?}"));
+    assert_eq!(target.1, "My Target/", "label keeps the raw text for display");
+    assert!(
+        !cands.iter().any(|(i, _, _)| i == "My Target/"),
+        "the raw unescaped form must not be offered; payload: {payload:?}"
+    );
+
+    // Escaped input: the word is the raw line-editor token (`My\ Ta`) and the
+    // candidate stays escaped; the frontend contract (DEL × 6 + insert) must
+    // erase the user's `\ ` and retype a correctly quoted single word.
+    shell.wait_prompt(Duration::from_millis(500), Duration::from_secs(5));
+    shell.send("\x15cd My\\ Ta\t");
+    let payload = shell
+        .read_completion_osc(Duration::from_secs(8))
+        .unwrap_or_else(|| panic!("fish escaped-input OSC did not arrive"));
+    let ((_ctx, word), cands) = parse_payload(&payload);
+    assert_eq!(word, "My\\ Ta", "word must be the raw typed token; payload: {payload:?}");
+    assert!(
+        cands.iter().any(|(i, _, _)| i == "My\\ Target/"),
+        "escaped candidate missing; payload: {payload:?}"
+    );
+
+    shell.wait_prompt(Duration::from_millis(500), Duration::from_secs(5));
+    shell.send("\x7f\x7f\x7f\x7f\x7f\x7fMy\\ Target/\r");
+    shell.wait_prompt(Duration::from_millis(500), Duration::from_secs(5));
+    shell.send("pwd\r");
+    let out = shell
+        .read_until("My Target", Duration::from_secs(8))
+        .expect("pwd must report the spaced directory");
+    assert!(
+        !out.contains("cd: The directory") && !out.contains("No such directory"),
+        "cd must not fail; got: {out:?}"
+    );
+}
+
+#[test]
 fn fish_hook_emits_completions() {
     if !shell_runs("fish") {
         eprintln!("skipping fish completion test: fish not available");

@@ -33,15 +33,21 @@ function __lumina_complete
 		if set -q __lumina_parts[2]
 			set __lumina_desc $__lumina_parts[2]
 		end
-		# Skip candidates whose text would break the OSC framing; drop broken
-		# descriptions (label equals the insert text for fish).
+		# Skip candidates whose label would break the OSC framing; drop broken
+		# descriptions.
 		if string match -qr '[\t\n\r\x1b\x07\x1e\x1f]' -- $__lumina_label
 			continue
 		end
 		if string match -qr '[\t\n\r\x1b\x07\x1e\x1f]' -- $__lumina_desc
 			set __lumina_desc ''
 		end
-		set -a __lumina_payload $__lumina_label$__lumina_US$__lumina_US$__lumina_desc
+		# complete -C reports raw tokens, but the insert text is replayed as
+		# keystrokes — a typed bare space would split the argument. Backslash-
+		# escape it exactly like fish's own completion accept does; -n is
+		# required: the default style stopped escaping spaces in fish 4.9.
+		# The label keeps the raw text for display.
+		set -l __lumina_ins (string escape -n -- $__lumina_label)
+		set -a __lumina_payload $__lumina_ins$__lumina_US$__lumina_label$__lumina_US$__lumina_desc
 	end
 	if not set -q __lumina_payload[2]
 		commandline -f complete

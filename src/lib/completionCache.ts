@@ -24,7 +24,14 @@ import {
  */
 
 const store = new LazyStore(COMPLETION_CACHE_STORE_PATH);
-const INDEX_KEY = "index";
+/**
+ * Versioned store key. `v2` marks the shell-escaped-insert format (candidates
+ * with spaces are now quoted at the hook, so replaying them types one shell
+ * word): persisted pre-v2 entries carry raw inserts that would mis-accept
+ * through the instant-open until their trust TTL lapses, so the index simply
+ * restarts empty instead of mixing formats.
+ */
+const INDEX_KEY = "index-v2";
 
 /** Persistence bounds: per profile the freshest contexts/words survive, each
  *  set capped at the UI's display limit (more could never be shown). */

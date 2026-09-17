@@ -7,9 +7,9 @@ typeset -A _lumina_seen
 typeset _lumina_word= _lumina_ctx=
 lumina_compadd() {
 	emulate -L zsh
-	local -a _lld _lla _llP _llS _llp _lls _lrest
+	local -a _lld _lla _llP _llS _llp _lls _lrest _llQ
 	zparseopts -D -E -a _lrest d:=_lld a:=_lla k:=_lla P:=_llP S:=_llS p:=_llp s:=_lls \
-		F: i: I: W: J: V: X: x: D: O: A: M: R: E: o:: r:: 1 2 q Q f e n U l C
+		F: i: I: W: J: V: X: x: D: O: A: M: R: E: o:: r:: 1 2 q Q=_llQ f e n U l C
 	local _ln _lsrc _lfrom
 	local -a _lw
 	for (( _ln = 1; _ln <= $#_lla; _ln += 2 )); do
@@ -38,13 +38,26 @@ lumina_compadd() {
 		_ldsp=("${(@P)_lsrc}")
 	fi
 	local _lP=${_llP[$#_llP]} _lS=${_llS[$#_llS]} _lhp=${_llp[$#_llp]} _lhs=${_lls[$#_lls]}
-	local _li _lw2 _lldisp _llabel _ldesc _lfull
+	local _li _lw2 _lraw _lldisp _llabel _ldesc _lfull
 	for (( _li = 1; _li <= $#_lw; _li++ )); do
 		_lw2=${_lw[_li]}
-		_lfull=${_lP}${_lhp}${_lw2}${_lhs}${_lS}
+		_lraw=${_lP}${_lhp}${_lw2}${_lhs}${_lS}
 		# The real matcher never ran, so re-apply the prefix filter compsys
-		# would have applied (PREFIX is exposed in completion context).
-		[[ -n $PREFIX && $_lfull != "$PREFIX"* ]] && continue
+		# would have applied (PREFIX is exposed in completion context). Run it
+		# on the RAW form — PREFIX carries the user's quoting as typed.
+		[[ -n $PREFIX && $_lraw != "$PREFIX"* ]] && continue
+		# The real compadd shell-quotes un-pre-quoted words when it INSERTS
+		# them; this shim never inserts, and the frontend replays `insert` as
+		# keystrokes — a raw space would split the argument. Apply the same
+		# backslash quoting here unless the caller passed -Q (pre-quoted
+		# verbatim, e.g. _path_files). The result matches the pre-quoted
+		# callers' text, so the dedup below collapses both caller kinds into
+		# one candidate instead of also offering a broken raw twin.
+		if (( $#_llQ )); then
+			_lfull=$_lraw
+		else
+			_lfull=${_lP}${_lhp}${(q)_lw2}${_lhs}${_lS}
+		fi
 		[[ -z ${_lumina_seen[$_lfull]} ]] || continue
 		_lumina_seen[$_lfull]=1
 		_lldisp=${_ldsp[_li]:-}
