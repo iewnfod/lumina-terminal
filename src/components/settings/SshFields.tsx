@@ -2,6 +2,7 @@ import {Button, Input, Label} from "@heroui/react";
 import {useI18n} from "../../hooks/i18n.tsx";
 import {SSHConfig} from "../../types/terminal.ts";
 import {open} from "@tauri-apps/plugin-dialog";
+import {warn} from "@tauri-apps/plugin-log";
 
 interface SshFieldsProps {
     ssh: SSHConfig | undefined;
@@ -66,12 +67,16 @@ export default function SshFields({ssh, onChange, idPrefix = "ssh"}: SshFieldsPr
                         variant="outline"
                         size="sm"
                         onPress={async () => {
-                            const file = await open({
-                                multiple: false,
-                                directory: false,
-                                filters: [{name: "All Files", extensions: ["*"]}],
-                            });
-                            if (file) onChange({identityFile: file});
+                            try {
+                                const file = await open({
+                                    multiple: false,
+                                    directory: false,
+                                    filters: [{name: "All Files", extensions: ["*"]}],
+                                });
+                                if (file) onChange({identityFile: file});
+                            } catch (e) {
+                                warn(`File picker failed: ${e}`).catch(() => {});
+                            }
                         }}
                     >
                         {t["Select"]}

@@ -160,7 +160,37 @@ export function enableLigatures(
         // If the font's GSUB table is loaded, use it for precise, font-specific
         // ligature ranges (including Fira Code's `www`, `//`, etc.).
         if (font) {
-            return font.findLigatureRanges(text).map((r) => [r[0], r[1]] as Range);
+            const ranges = font.findLigatureRanges(text);
+            // font-ligatures indexes its ranges by CODE POINT (it builds the
+            // glyph sequence via spread iteration), but xterm interprets
+            // joiner offsets as UTF-16 code units. Without translation, any
+            // surrogate pair before a ligature on the same line (emoji
+            // prompt, CJK ext chars) shifts every later join right by one
+            // cell per pair and renders a broken glyph. ASCII-only lines
+            // (the overwhelmingly common case) skip the map.
+            let hasSurrogate = false;
+            for (let i = 0; i < text.length; i++) {
+                const code = text.charCodeAt(i);
+                if (code >= 0xd800 && code <= 0xdbff) {
+                    hasSurrogate = true;
+                    break;
+                }
+            }
+            if (!hasSurrogate) {
+                return ranges.map((r) => [r[0], r[1]] as Range);
+            }
+            // cuOfCp[i] = UTF-16 offset where code point i starts; the final
+            // entry doubles as the end sentinel for a range ending at the
+            // last code point.
+            const cuOfCp: number[] = [0];
+            for (let cu = 0; cu < text.length; ) {
+                cu += text.codePointAt(cu)! > 0xffff ? 2 : 1;
+                cuOfCp.push(cu);
+            }
+            return ranges.map((r) => [
+                cuOfCp[r[0]] ?? 0,
+                cuOfCp[r[1]] ?? text.length,
+            ] as Range);
         }
         // Font not loaded yet or unavailable — use the hardcoded fallback list.
         return fallbackRanges(text);

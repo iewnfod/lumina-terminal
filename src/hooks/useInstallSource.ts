@@ -7,10 +7,10 @@ import {error, info} from "@tauri-apps/plugin-log";
  * manager. Mirrors the backend `InstallSource` struct in `utils.rs`.
  */
 export interface InstallSource {
-	/** Lowercase package-manager family: "pacman" | "dpkg" | "rpm". */
-	manager: string;
-	/** Owning package name as reported by that manager. */
-	package: string;
+    /** Lowercase package-manager family: "pacman" | "dpkg" | "rpm". */
+    manager: string;
+    /** Owning package name as reported by that manager. */
+    package: string;
 }
 
 // Module-level cache, mirroring useShells: the install source never changes
@@ -32,35 +32,35 @@ export const MOCK_INSTALL_SOURCE_KEY = "LUMINA_MOCK_INSTALL_SOURCE";
 
 /** Resolve the install source once, memoized module-wide. */
 function resolveInstallSource(): Promise<InstallSource | null> {
-	if (cached !== undefined) return Promise.resolve(cached);
-	if (!pending) {
-		// DEV MOCK: force a package-managed install source (see the doc
-		// comment on useInstallSource). Sibling of the updater's
-		// LUMINA_MOCK_UPDATE; applies live via the Developer settings picker.
-		if (import.meta.env.DEV) {
-			const mock = typeof localStorage !== "undefined"
-				? localStorage.getItem(MOCK_INSTALL_SOURCE_KEY)
-				: null;
-			if (mock === "pacman" || mock === "dpkg" || mock === "rpm") {
-				info(`[install-source] DEV MOCK: forcing ${mock}-managed install`).catch(() => {});
-				cached = {manager: mock, package: "lumina-terminal-bin"};
-				pending = Promise.resolve(cached);
-			}
-		}
-		if (!pending) {
-			pending = invoke<InstallSource | null>("install_source")
-				.then((result) => {
-					cached = result ?? null;
-					return cached;
-				})
-				.catch((e) => {
-					error(`install_source failed: ${e}`).catch(() => {});
-					cached = null;
-					return null;
-				});
-		}
-	}
-	return pending;
+    if (cached !== undefined) return Promise.resolve(cached);
+    if (!pending) {
+        // DEV MOCK: force a package-managed install source (see the doc
+        // comment on useInstallSource). Sibling of the updater's
+        // LUMINA_MOCK_UPDATE; applies live via the Developer settings picker.
+        if (import.meta.env.DEV) {
+            const mock = typeof localStorage !== "undefined"
+                ? localStorage.getItem(MOCK_INSTALL_SOURCE_KEY)
+                : null;
+            if (mock === "pacman" || mock === "dpkg" || mock === "rpm") {
+                info(`[install-source] DEV MOCK: forcing ${mock}-managed install`).catch(() => {});
+                cached = {manager: mock, package: "lumina-terminal-bin"};
+                pending = Promise.resolve(cached);
+            }
+        }
+        if (!pending) {
+            pending = invoke<InstallSource | null>("install_source")
+                .then((result) => {
+                    cached = result ?? null;
+                    return cached;
+                })
+                .catch((e) => {
+                    error(`install_source failed: ${e}`).catch(() => {});
+                    cached = null;
+                    return null;
+                });
+        }
+    }
+    return pending;
 }
 
 /**
@@ -70,11 +70,11 @@ function resolveInstallSource(): Promise<InstallSource | null> {
  * of requiring a window reload.
  */
 export function invalidateInstallSourceCache(): void {
-	cached = undefined;
-	pending = null;
-	for (const notify of invalidateListeners) {
-		notify();
-	}
+    cached = undefined;
+    pending = null;
+    for (const notify of invalidateListeners) {
+        notify();
+    }
 }
 
 /**
@@ -99,22 +99,22 @@ export function invalidateInstallSourceCache(): void {
  * Only honored in dev builds (import.meta.env.DEV).
  */
 export function useInstallSource(): InstallSource | null | undefined {
-	const [source, setSource] = useState<InstallSource | null | undefined>(cached);
+    const [source, setSource] = useState<InstallSource | null | undefined>(cached);
 
-	useEffect(() => {
-		let cancelled = false;
-		const read = () => {
-			resolveInstallSource().then((s) => {
-				if (!cancelled) setSource(s);
-			});
-		};
-		read();
-		invalidateListeners.add(read);
-		return () => {
-			cancelled = true;
-			invalidateListeners.delete(read);
-		};
-	}, []);
+    useEffect(() => {
+        let cancelled = false;
+        const read = () => {
+            resolveInstallSource().then((s) => {
+                if (!cancelled) setSource(s);
+            });
+        };
+        read();
+        invalidateListeners.add(read);
+        return () => {
+            cancelled = true;
+            invalidateListeners.delete(read);
+        };
+    }, []);
 
-	return source;
+    return source;
 }

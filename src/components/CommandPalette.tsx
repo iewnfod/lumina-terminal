@@ -1,4 +1,4 @@
-import {ReactNode, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties} from "react";
 import {
     Modal,
     Kbd,
@@ -14,17 +14,7 @@ import {glassSurface, glassBorder, elevationShadow} from "../lib/glass.ts";
 import {useSurfaceColors} from "../hooks/surfaceColors.ts";
 import {useGlass} from "../hooks/useGlass.ts";
 import {whileHoverTap} from "../lib/motion.ts";
-
-export interface CommandAction {
-    id: string;
-    label: string;
-    description?: string;
-    icon: ReactNode;
-    shortcut?: { abbr?: string; content: string }[];
-    category?: string;
-    keywords?: string[];
-    onSelect: () => void;
-}
+import type {CommandAction} from "../types/commandAction.ts";
 
 interface CommandPaletteProps {
     isOpen: boolean;
@@ -105,15 +95,16 @@ export default function CommandPalette({
 
     // Reset state when modal opens/closes
     useEffect(() => {
-        if (isOpen) {
-            debug("Command palette opened");
-            setQuery("");
-            setSelectedIndex(0);
-            // Focus the search input after a short delay for the modal animation
-            setTimeout(() => {
-                inputRef.current?.focus();
-            }, 100);
-        }
+        if (!isOpen) return;
+        debug("Command palette opened");
+        setQuery("");
+        setSelectedIndex(0);
+        // Focus the search input after a short delay for the modal animation;
+        // cleared on close/unmount so a late timer can't fight the teardown.
+        const focusTimer = setTimeout(() => {
+            inputRef.current?.focus();
+        }, 100);
+        return () => clearTimeout(focusTimer);
     }, [isOpen]);
 
     // Scroll selected item into view

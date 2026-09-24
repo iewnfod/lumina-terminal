@@ -48,6 +48,11 @@ export function useWindowGeometry(isMainWindow: boolean) {
         // once-guard above without restoring anything, and the re-run after
         // load would bail on the guard — the saved geometry would never apply.
         if (isLoading) return;
+        // Same for the Wayland probe: it resolves to `false`-by-default only
+        // AFTER the async invoke lands, so proceeding now would consume the
+        // once-guard and issue setPosition under Wayland (persisting garbage
+        // 0,0) — exactly what the isWayland guards exist to prevent.
+        if (isWayland === undefined) return;
         restoredGeometryOnceRef.current = true;
 
         const wantPos = !isWayland && config.rememberWindowPosition && config.rememberedWindowPosition;
@@ -84,14 +89,54 @@ export function useWindowGeometry(isMainWindow: boolean) {
 
     // Runtime persistence: while either toggle is on, write position/size back
     // to config on move/resize. Skips writes during the startup restore
-    // (applyingRestoredGeometryRef) and when the value hasn't changed (avoid
-    // spurious writes + secondary feedback). Re-arms only when the toggles
-    // flip — the last-known geometry is read via refs so a write doesn't
-    // re-arm (which would churn listeners on every move tick).
+    // (applyingRestoredGeometryRef) and when the value hasn't changed. Move and
+    // resize events fire at compositor rate while the user drags; persisting
+    // per tick would rewrite config.toml (tmp+rename) and re-render the whole
+    // tree on every frame, so the newest geometry is held in refs and flushed
+    // once the events stop. Re-arms only when the toggles flip — the
+    // last-known geometry is read via refs so a write doesn't re-arm (which
+    // would churn listeners on every move tick).
     const lastPosRef = useRef(config.rememberedWindowPosition);
     lastPosRef.current = config.rememberedWindowPosition;
     const lastSizeRef = useRef(config.rememberedWindowSize);
     lastSizeRef.current = config.rememberedWindowSize;
+    const pendingPosRef = useRef<{x: number; y: number} | null>(null);
+    const pendingSizeRef = useRef<{width: number; height: number} | null>(null);
+    const flushTimerRef = useRef<number | null>(null);
+
+    const flushGeometry = () => {
+        const pos = pendingPosRef.current;
+        const size = pendingSizeRef.current;
+        pendingPosRef.current = null;
+        pendingSizeRef.current = null;
+        if (pos) {
+            updateConfig({rememberedWindowPosition: pos});
+            debug(`Persisted main window position: ${pos.x},${pos.y}`);
+        }
+        if (size) {
+            updateConfig({rememberedWindowSize: size});
+            debug(`Persisted main window size: ${size.width}x${size.height}`);
+        }
+    };
+    const scheduleGeometryFlush = () => {
+        if (flushTimerRef.current !== null) return;
+        flushTimerRef.current = window.setTimeout(() => {
+            flushTimerRef.current = null;
+            flushGeometry();
+        }, 400);
+    };
+    // Never lose the trailing geometry (e.g. a drag ended <400 ms before the
+    // window closed) and never leak the timer.
+    useEffect(() => {
+        return () => {
+            if (flushTimerRef.current !== null) {
+                clearTimeout(flushTimerRef.current);
+                flushTimerRef.current = null;
+            }
+            flushGeometry();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const subscribeMoved = useCallback(
         (handler: (event: Event<PhysicalPosition>) => void) => getCurrentWindow().onMoved(handler),
         [],
@@ -101,23 +146,25 @@ export function useWindowGeometry(isMainWindow: boolean) {
         [],
     );
     // Position is untrackable on Wayland (onMoved yields 0,0), so never arm
-    // the move listener there — otherwise it'd persist garbage.
-    const rememberPos = isMainWindow && !isWayland && config.rememberWindowPosition;
+    // the move listener there — otherwise it'd persist garbage. `undefined`
+    // (probe in flight) also doesn't arm: arming preemptively would persist
+    // garbage for the brief window before the probe lands.
+    const rememberPos = isMainWindow && isWayland === false && config.rememberWindowPosition;
     const rememberSize = isMainWindow && config.rememberWindowSize;
     useTauriSubscription(rememberPos ? subscribeMoved : null, ({payload}) => {
         if (applyingRestoredGeometryRef.current) return;
         const next = {x: payload.x, y: payload.y};
         const prev = lastPosRef.current;
         if (prev && prev.x === next.x && prev.y === next.y) return;
-        updateConfig({rememberedWindowPosition: next});
-        debug(`Persisted main window position: ${next.x},${next.y}`);
+        pendingPosRef.current = next;
+        scheduleGeometryFlush();
     }, "main-window move listener");
     useTauriSubscription(rememberSize ? subscribeResized : null, ({payload}) => {
         if (applyingRestoredGeometryRef.current) return;
         const next = {width: payload.width, height: payload.height};
         const prev = lastSizeRef.current;
         if (prev && prev.width === next.width && prev.height === next.height) return;
-        updateConfig({rememberedWindowSize: next});
-        debug(`Persisted main window size: ${next.width}x${next.height}`);
+        pendingSizeRef.current = next;
+        scheduleGeometryFlush();
     }, "main-window resize listener");
 }

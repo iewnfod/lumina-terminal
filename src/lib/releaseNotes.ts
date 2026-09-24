@@ -12,18 +12,23 @@ import {warn} from "@tauri-apps/plugin-log";
 const REPO = "iewnfod/lumina-terminal";
 
 export async function fetchReleaseNotes(version: string): Promise<string | null> {
-	// The app version has no leading "v"; git tags are prefixed with "v".
-	const tag = version.startsWith("v") ? version : `v${version}`;
-	const url = `https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(tag)}`;
-	try {
-		const res = await fetch(url, {
-			headers: { Accept: "application/vnd.github+json" },
-		});
-		if (!res.ok) return null;
-		const data = (await res.json()) as { body?: string | null };
-		return data.body ?? null;
-	} catch (e) {
-		warn(`Failed to fetch release notes for ${tag}: ${e}`).catch(() => {});
-		return null;
-	}
+    // The app version has no leading "v"; git tags are prefixed with "v".
+    const tag = version.startsWith("v") ? version : `v${version}`;
+    const url = `https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(tag)}`;
+    try {
+        const res = await fetch(url, {
+            headers: { Accept: "application/vnd.github+json" },
+        });
+        if (!res.ok) {
+            // 403/429 (rate limit) and 404 both land here; without this line
+            // the failure vanishes silently.
+            warn(`Release-notes fetch for ${tag} returned HTTP ${res.status}`).catch(() => {});
+            return null;
+        }
+        const data = (await res.json()) as { body?: string | null };
+        return data.body ?? null;
+    } catch (e) {
+        warn(`Failed to fetch release notes for ${tag}: ${e}`).catch(() => {});
+        return null;
+    }
 }

@@ -2,7 +2,7 @@ import {Terminal} from "@xterm/xterm";
 import {Actions, Binding, WithKeys} from "../types/config.ts";
 import {DEFAULT_BINDINGS} from "../constants.ts";
 import {isMacOS} from "./platform.ts";
-import {debug, error} from "@tauri-apps/plugin-log";
+import {error} from "@tauri-apps/plugin-log";
 import {useEffect} from "react";
 
 export function actionSignature(b: Binding): string {
@@ -112,6 +112,61 @@ export function keySignature(key: string, withKeys: WithKeys[]): string {
     return `${key.toLowerCase()}|${[...norm].sort().join(",")}`;
 }
 
+/**
+ * Auto-repeat suppression, shared by every `loadBindings` install: a key's
+ * signature stays "held" from keydown until keyup so OS key repeat doesn't
+ * re-fire the action. Module-level (not per-install) because a press started
+ * in one terminal can legitimately end in another (tab switch mid-press).
+ *
+ * xterm's custom handler only sees events delivered to its textarea, so the
+ * keyup that releases a signature may never reach it — e.g. an action moves
+ * focus elsewhere mid-press (command palette, settings form) or the window
+ * blurs. A leaked signature would make the NEXT press of the same shortcut
+ * silently swallowed. The window-level keyup mirror and blur clear below
+ * close that hole.
+ */
+const heldKeys = new Set<string>();
+if (typeof window !== "undefined") {
+    window.addEventListener("keyup", (event) => {
+        const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+        for (const sig of heldKeys) {
+            if (sig.split("|", 1)[0] === key) heldKeys.delete(sig);
+        }
+    }, true);
+    window.addEventListener("blur", () => heldKeys.clear());
+}
+
+/**
+ * Exact modifier comparison: every modifier the binding lists must be down
+ * AND every other modifier must be up. Presence-only matching would let
+ * Ctrl+Alt+T fire a plain ctrl+t binding (swallowing the chord from the
+ * shell), and would let a default binding shadow a user's stricter custom
+ * one. CtrlOrCommand normalizes per platform (cmd on macOS, ctrl elsewhere).
+ */
+function modifiersMatch(
+    e: {ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean},
+    withKeys: string[],
+): boolean {
+    const isMac = isMacOS();
+    const wantCtrl = withKeys.includes("ctrl") || (!isMac && withKeys.includes("CtrlOrCommand"));
+    const wantMeta = withKeys.includes("command") || (isMac && withKeys.includes("CtrlOrCommand"));
+    const wantShift = withKeys.includes("shift");
+    const wantAlt = withKeys.includes("alt");
+    return e.ctrlKey === wantCtrl && e.metaKey === wantMeta && e.shiftKey === wantShift && e.altKey === wantAlt;
+}
+
+/**
+ * While the bindings editor records a new shortcut (hooks/useKeyRecorder),
+ * App-level dispatch must stay silent: the recorder's own window capture
+ * listener is registered after (and therefore runs after) the one
+ * useKeyboardBindings installs in App, so without this flag a chord like
+ * Ctrl+W would close the Settings tab before the recorder ever sees it.
+ */
+let bindingRecorderActive = false;
+export function setBindingRecorderActive(active: boolean) {
+    bindingRecorderActive = active;
+}
+
 // Normalize a key for comparison. Single-character keys are compared case-insensitively so a
 // binding stored as "p" still matches event.key "P" when Shift is held (and vice-versa). This
 // keeps loadBindings consistent with matchBinding and lets the settings recorder store the
@@ -136,13 +191,15 @@ export function loadBindings(
      */
     intercept?: (event: KeyboardEvent) => boolean,
 ) {
-    const held = new Set<string>();
-
     term.attachCustomKeyEventHandler((event) => {
         if (event.type === "keyup") {
+            // heldKeys is normally released by the window-level keyup mirror
+            // (see heldKeys above); this branch is kept as a same-target
+            // backstop for events the mirror might miss (e.g. a custom
+            // key handler installed by another addon stopping propagation).
             for (const binding of bindings) {
                 if (keyMatches(binding.key, event.key)) {
-                    held.delete(keySignature(binding.key, binding.with));
+                    heldKeys.delete(keySignature(binding.key, binding.with));
                 }
             }
             return true;
@@ -152,35 +209,9 @@ export function loadBindings(
 
         if (intercept && !intercept(event)) return false;
 
-        debug(`XTerm Custom Key with key ${event.key} and type ${event.type}`);
-
         for (const binding of bindings) {
             if (keyMatches(binding.key, event.key)) {
-                let flag = true;
-                for (const w of binding.with) {
-                    switch (w) {
-                        case "ctrl":
-                            flag = flag && event.ctrlKey;
-                            break;
-                        case "shift":
-                            flag = flag && event.shiftKey;
-                            break;
-                        case "alt":
-                            flag = flag && event.altKey;
-                            break;
-                        case "command":
-                            flag = flag && event.metaKey;
-                            break;
-                        case "CtrlOrCommand":
-                            if (isMacOS()) {
-                                flag = flag && event.metaKey;
-                            } else {
-                                flag = flag && event.ctrlKey;
-                            }
-                            break;
-                    }
-                }
-                if (flag) {
+                if (modifiersMatch(event, binding.with)) {
                     // The copy action is dispatched here rather than through
                     // onAction: whether the key may be swallowed depends on
                     // the live selection. With a selection it goes to the
@@ -194,8 +225,8 @@ export function loadBindings(
                         return false;
                     }
                     const sig = keySignature(binding.key, binding.with);
-                    if (held.has(sig)) return false;
-                    held.add(sig);
+                    if (heldKeys.has(sig)) return false;
+                    heldKeys.add(sig);
                     onAction(binding.action, binding.args);
                     return false;
                 }
@@ -205,35 +236,12 @@ export function loadBindings(
     });
 }
 
-function checkModifiers(e: KeyboardEvent | { ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean }, withKeys: string[]): boolean {
-    for (const w of withKeys) {
-        switch (w) {
-            case "ctrl":
-                if (!e.ctrlKey) return false;
-                break;
-            case "shift":
-                if (!e.shiftKey) return false;
-                break;
-            case "alt":
-                if (!e.altKey) return false;
-                break;
-            case "command":
-                if (!e.metaKey) return false;
-                break;
-            case "CtrlOrCommand":
-                if (isMacOS() ? !e.metaKey : !e.ctrlKey) return false;
-                break;
-        }
-    }
-    return true;
-}
-
 export function matchBinding(e: KeyboardEvent, bindings: Binding[]): Binding | null {
     const eventKey = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     for (const binding of bindings) {
         const bindingKey = binding.key.length === 1 ? binding.key.toLowerCase() : binding.key;
         if (eventKey !== bindingKey) continue;
-        if (checkModifiers(e, binding.with)) {
+        if (modifiersMatch(e, binding.with)) {
             return binding;
         }
     }
@@ -249,6 +257,10 @@ export function useKeyboardBindings(
         if (!enabled) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
+            // A recording in the bindings editor owns the next key press —
+            // dispatching a matching action here (Ctrl+W closing the Settings
+            // tab, Ctrl+T opening a terminal) would destroy the recording.
+            if (bindingRecorderActive) return;
             const matched = matchBinding(e, bindings);
             if (matched) {
                 e.preventDefault();

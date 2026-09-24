@@ -259,6 +259,8 @@ export default function TabBar(props: TabBarProps) {
                                     "--lum-tab-active": colors.activeOverlay,
                                     color: isActive ? foregroundColor : colors.inactiveText,
                                 } as CSSProperties}
+                                aria-label={t["Close Tab"]}
+                                title={t["Close Tab"]}
                                 // draggable={false} so a press-drag starting on the
                                 // close button doesn't initiate the parent tab's
                                 // HTML5 tear-off drag — a click (no movement) still

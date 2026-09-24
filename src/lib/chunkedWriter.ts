@@ -234,7 +234,14 @@ export class ChunkedWriter {
             for (let i = this.head; i < this.pending.length; i++) {
                 rest += this.pending[i];
             }
-            this.term.write(rest);
+            // Same guard as drain(): a pathological backlog here can trip
+            // xterm's in-flight cap and throw — out of dispose() that would
+            // blow up the caller's unmount path.
+            try {
+                this.term.write(rest);
+            } catch (e) {
+                warn(`[writer] dispose term.write THREW: ${e}  backlog=${rest.length}B`).catch(() => {});
+            }
         }
         this.pending.length = 0;
         this.head = 0;

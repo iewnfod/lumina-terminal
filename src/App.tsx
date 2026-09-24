@@ -119,6 +119,27 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
         if (!currentId) return;
         openSearchFns.current.get(currentId)?.();
     }, [currentId]);
+    // Stable registrars handed to EVERY Term: identity never changes across
+    // renders, so Term's registration effects don't deregister/re-register on
+    // each App render (App re-renders on every tab-subtitle/edge-bg change).
+    const registerSearch = useCallback((id: string, open: () => void) => {
+        openSearchFns.current.set(id, open);
+        return () => {
+            // Only delete if it's still ours (avoids wiping a re-registered
+            // fn after a rapid remount).
+            if (openSearchFns.current.get(id) === open) {
+                openSearchFns.current.delete(id);
+            }
+        };
+    }, []);
+    const registerSerialize = useCallback((id: string, fn: () => string) => {
+        mgr.serializeFns.current.set(id, fn);
+        return () => {
+            if (mgr.serializeFns.current.get(id) === fn) {
+                mgr.serializeFns.current.delete(id);
+            }
+        };
+    }, [mgr.serializeFns]);
     // Check for updates once on startup unless the user opted out. Runs after
     // config loads; only checks (never auto-installs).
     useStartupUpdateCheck(config.autoUpdateOnStartup !== false);
@@ -475,26 +496,8 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
                                     onToTab={mgr.toTab}
                                     onToggleSidebar={toggleTabBar}
                                     onTearOff={() => mgr.tearOffTab(id)}
-                                    onRegisterSearch={(open) => {
-                                        openSearchFns.current.set(id, open);
-                                        return () => {
-                                            // Only delete if it's still ours (avoids wiping a
-                                            // re-registered fn after a rapid remount).
-                                            if (openSearchFns.current.get(id) === open) {
-                                                openSearchFns.current.delete(id);
-                                            }
-                                        };
-                                    }}
-                                    onRegisterSerialize={(fn) => {
-                                        mgr.serializeFns.current.set(id, fn);
-                                        return () => {
-                                            // Only delete if it's still ours (avoids wiping a
-                                            // re-registered fn after a rapid remount).
-                                            if (mgr.serializeFns.current.get(id) === fn) {
-                                                mgr.serializeFns.current.delete(id);
-                                            }
-                                        };
-                                    }}
+                                    onRegisterSearch={registerSearch}
+                                    onRegisterSerialize={registerSerialize}
                                     onEdgeBackgroundChange={(color) => {
                                         // Only the active tab's report is honored;
                                         // inactive tabs report null and are ignored.

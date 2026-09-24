@@ -1,5 +1,5 @@
 import {LazyStore} from "@tauri-apps/plugin-store";
-import {error, info} from "@tauri-apps/plugin-log";
+import {debug, error, info, warn} from "@tauri-apps/plugin-log";
 import {SESSION_STORE_PATH} from "../constants.ts";
 
 /**
@@ -64,19 +64,32 @@ export interface SavedSession {
 }
 
 /**
- * Read the saved session (one-shot). Returns null when no session exists or
- * the read fails — the latter is logged but not thrown so the app boots into
- * a normal single-tab state. Does NOT delete the key; the caller clears it
- * after a successful restore via {@link clearSession}.
+ * Read the saved session (one-shot). Returns null when no session exists, the
+ * stored JSON is not a valid session shape (partially-written/corrupted file —
+ * a truthy `{}` would otherwise crash the restore seed), or the read fails —
+ * the latter two are logged but not thrown so the app boots into a normal
+ * single-tab state. Does NOT delete the key; the caller clears it after a
+ * successful restore via {@link clearSession}.
  */
 export async function loadSession(): Promise<SavedSession | null> {
     try {
         const session = await store.get<SavedSession>(SESSION_KEY);
         if (!session) {
-            info("No saved session to restore");
+            // Routine on every launch with save-mode "never" — debug, not info.
+            debug("No saved session to restore");
             return null;
         }
-        info(`Loaded saved session: ${session.tabs?.length ?? 0} tab(s) from ${new Date(session.savedAt).toISOString()}`);
+        if (
+            !Array.isArray(session.tabs) ||
+            !session.tabs.every((tab) =>
+                (tab?.kind === "terminal" && typeof tab.profileName === "string")
+                || (tab?.kind === "chrome" && typeof tab.chromeId === "string"),
+            )
+        ) {
+            warn(`Saved session has an invalid shape (${Array.isArray(session.tabs) ? "bad tab entry" : "tabs not an array"}); ignoring it`).catch(() => {});
+            return null;
+        }
+        info(`Loaded saved session: ${session.tabs.length} tab(s) from ${new Date(session.savedAt).toISOString()}`);
         return session;
     } catch (e) {
         error(`Failed to load saved session: ${e}`).catch(() => {});

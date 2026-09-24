@@ -204,6 +204,31 @@ test("CurrentCommandParser picks the earliest prefix when several are pending", 
 	assert.equal(events[1].code, 1);
 });
 
+test("CurrentCommandParser keeps a ~40 KB completion payload (ls /usr/bin)", () => {
+	const parser = new CurrentCommandParser();
+	const records = [];
+	for (let i = 0; i < 2500; i++) records.push("candidate-" + i + US + US);
+	const payload = US + "can" + RS + records.join(RS);
+	assert.ok(payload.length > 32768, "payload must exceed the old 32 KiB cap");
+	assert.deepEqual(parser.feed("\x1b]1337;Completions=" + payload), []);
+	const events = parser.feed("\x07");
+	assert.equal(events.length, 1);
+	assert.equal(events[0].type, "completions");
+	assert.equal(events[0].payload, payload);
+});
+
+test("CurrentCommandParser caps a pathological payload from the head side", () => {
+	const parser = new CurrentCommandParser();
+	const big = US + "w" + RS + "x".repeat(300000); // > MAX_PENDING (256 KiB)
+	assert.deepEqual(parser.feed("\x1b]1337;Completions=" + big), []);
+	const events = parser.feed("\x07");
+	assert.equal(events.length, 1);
+	assert.equal(events[0].type, "completions");
+	// Truncated tail, but the prefix + head (ctx/word) survived so the
+	// payload still parses instead of being silently dropped.
+	assert.ok(events[0].payload.startsWith(US + "w"));
+});
+
 test("pruneCompletionIndex keeps freshest words and contexts, caps sets", () => {
 	const set = (n, at) => ({
 		fetchedAt: at,

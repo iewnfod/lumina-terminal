@@ -48,8 +48,16 @@ const urlCache = new Map<string, string>();
 let dirPromise: Promise<string> | null = null;
 
 async function iconsDir(): Promise<string> {
-    dirPromise ??= join(await appDataDir(), COMMAND_ICONS_DIR);
-    return dirPromise;
+    if (dirPromise) return dirPromise;
+    const p = appDataDir().then((dir) => join(dir, COMMAND_ICONS_DIR));
+    p.catch(() => {
+        // Don't cache a failure: a transient IPC error would otherwise poison
+        // every custom-icon resolve for the rest of the session. (The error
+        // itself is logged by each caller's catch.)
+        dirPromise = null;
+    });
+    dirPromise = p;
+    return p;
 }
 
 /** Synchronous cache peek — returns the webview URL for a stored icon file if

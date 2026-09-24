@@ -4,7 +4,7 @@ import {useI18n} from "../../hooks/i18n.tsx";
 import {useShells} from "../../hooks/useShells.ts";
 import {isWindows} from "../../lib/platform.ts";
 import {open} from "@tauri-apps/plugin-dialog";
-import {info} from "@tauri-apps/plugin-log";
+import {info, warn} from "@tauri-apps/plugin-log";
 
 // Sentinel for the "custom exe path" option in the shell dropdown.
 const CUSTOM_EXE = "__custom__";
@@ -43,16 +43,20 @@ export default function ShellSelector({exePath, onChange, idPrefix = "shell", cl
     };
 
     const browse = async () => {
-        const exe = await open({
-            multiple: false,
-            directory: false,
-            filters: isWindows()
-                ? [{name: "Executable File", extensions: ["exe"]}]
-                : [],
-        });
-        if (exe) {
-            info(`Shell exe path selected: ${exe}`);
-            onChange(exe);
+        try {
+            const exe = await open({
+                multiple: false,
+                directory: false,
+                filters: isWindows()
+                    ? [{name: "Executable File", extensions: ["exe"]}]
+                    : [],
+            });
+            if (exe) {
+                info(`Shell exe path selected: ${exe}`);
+                onChange(exe);
+            }
+        } catch (e) {
+            warn(`Shell executable picker failed: ${e}`).catch(() => {});
         }
     };
 

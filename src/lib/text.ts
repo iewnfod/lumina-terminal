@@ -29,18 +29,18 @@
  *   const tail = str.slice(cut);        // never starts with a low surrogate
  */
 export function safeCodeUnitLength(str: string, maxLength: number): number {
-	if (maxLength <= 0) return 0;
-	const len = str.length;
-	if (len <= maxLength) return len;
-	// A high surrogate (0xD800–0xDBFF) at the last taken position would be
-	// split from its trailing low surrogate. Back up by one to keep the pair.
-	if (isHighSurrogate(str.charCodeAt(maxLength - 1))) {
-		return maxLength - 1;
-	}
-	return maxLength;
+    if (maxLength <= 0) return 0;
+    const len = str.length;
+    if (len <= maxLength) return len;
+    // A high surrogate (0xD800–0xDBFF) at the last taken position would be
+    // split from its trailing low surrogate. Back up by one to keep the pair.
+    if (isHighSurrogate(str.charCodeAt(maxLength - 1))) {
+        return maxLength - 1;
+    }
+    return maxLength;
 }
 
 /** True if `code` is a UTF-16 high (leading) surrogate. */
 export function isHighSurrogate(code: number): boolean {
-	return code >= 0xd800 && code <= 0xdbff;
+    return code >= 0xd800 && code <= 0xdbff;
 }

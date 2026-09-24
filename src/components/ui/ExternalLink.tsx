@@ -2,11 +2,11 @@ import type {CSSProperties, MouseEvent, ReactNode} from "react";
 import {openExternal} from "../../lib/openerApi.ts";
 
 interface ExternalLinkProps {
-	href: string;
-	children: ReactNode;
-	className?: string;
-	style?: CSSProperties;
-	title?: string;
+    href: string;
+    children: ReactNode;
+    className?: string;
+    style?: CSSProperties;
+    title?: string;
 }
 
 /**
@@ -19,22 +19,22 @@ interface ExternalLinkProps {
  * in browsers (and in tests run outside Tauri).
  */
 export default function ExternalLink({href, children, className, style, title}: ExternalLinkProps) {
-	const onClick = (e: MouseEvent) => {
-		e.preventDefault();
-		openExternal(href);
-	};
+    const onClick = (e: MouseEvent) => {
+        e.preventDefault();
+        openExternal(href);
+    };
 
-	return (
-		<a
-			href={href}
-			target="_blank"
-			rel="noopener noreferrer"
-			className={className}
-			style={style}
-			title={title}
-			onClick={onClick}
-		>
-			{children}
-		</a>
-	);
+    return (
+        <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={className}
+            style={style}
+            title={title}
+            onClick={onClick}
+        >
+            {children}
+        </a>
+    );
 }

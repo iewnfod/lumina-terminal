@@ -35,6 +35,14 @@ const PREFIX_COMPLETIONS = "\x1b]1337;Completions=";
 const PREFIXES = [PREFIX_CMD, PREFIX_EXIT, PREFIX_COMPLETIONS] as const;
 const LONGEST_PREFIX = Math.max(...PREFIXES.map((p) => p.length));
 
+/**
+ * Backstop cap on the retained partial sequence. Real completion payloads are
+ * large — the shell hook emits every candidate, so `ls /usr/bin/<TAB>` is
+ * already ~40 KB — hence a generous 256 KiB. The cap only guards pathological
+ * streams that contain an OSC prefix without ever closing it.
+ */
+const MAX_PENDING = 262144;
+
 export type CommandParseEvent =
     | {type: "command"; value: string}
     | {type: "exit"; code: number}
@@ -93,11 +101,15 @@ export class CurrentCommandParser {
             if (end === -1) {
                 // Sequence is incomplete: keep from the PREFIX onward so the
                 // next chunk can finish it. Cap the retained tail to avoid
-                // pathological growth on streams that contain our PREFIX without
-                // ever closing it (completions payloads are bounded by the
-                // shell-side candidate count, but the guard stays).
+                // pathological growth on streams that contain our PREFIX
+                // without ever closing it — and keep the cap's HEAD, not its
+                // tail: slicing from the end would behead the prefix itself,
+                // so the payload would be silently dropped the moment its
+                // terminator arrives (killing TAB exactly for the largest
+                // candidate sets). An over-cap payload still parses — the
+                // record parser tolerates a torn trailing record.
                 const tail = buf.slice(idx);
-                this.pending = tail.length > 32768 ? tail.slice(-32768) : tail;
+                this.pending = tail.length > MAX_PENDING ? tail.slice(0, MAX_PENDING) : tail;
                 return events;
             }
 

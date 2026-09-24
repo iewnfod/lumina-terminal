@@ -10,10 +10,12 @@
  * returns the updated map (or null when nothing changed, so the caller can
  * skip a pointless state write).
  *
- * Deliberately generic and dependency-free (structural `{name}` typing only)
- * so `node --test` can load it directly, without the Tauri/xterm import
- * graph that lib/term.ts pulls in.
+ * Deliberately generic (structural `{name}` typing only) so `node --test`
+ * can load it directly, without the Tauri/xterm import graph that lib/term.ts
+ * pulls in. The equality check reuses configFormat's `semanticEqual` —
+ * key-order-insensitive, and itself dependency-free for node --test.
  */
+import {semanticEqual} from "./configFormat.ts";
 
 /**
  * Re-resolve every live entry by name against `sources`.
@@ -38,7 +40,7 @@ export async function reResolveByName<T extends {name: string}>(
         const source = byName.get(snapshot.name);
         if (!source) continue;
         const resolved = await resolve(source);
-        if (JSON.stringify(resolved) === JSON.stringify(snapshot)) continue;
+        if (semanticEqual(resolved, snapshot)) continue;
         next[id] = resolved;
         changed = true;
     }

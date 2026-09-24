@@ -1,6 +1,7 @@
 import {useEffect} from "react";
 import {WithKeys} from "../types/config.ts";
 import {modifiersFromEvent} from "../lib/bindingsSettings.ts";
+import {setBindingRecorderActive} from "../lib/bindings.ts";
 
 /**
  * Global keydown recorder for the bindings editor: while `recordingIndex` is
@@ -8,6 +9,11 @@ import {modifiersFromEvent} from "../lib/bindingsSettings.ts";
  * `onRecord` and recording ends. Esc cancels. Pure modifier taps are ignored
  * so the user can chord (Ctrl, then Shift, then the letter) without committing
  * on the first modifier.
+ *
+ * While recording, App-level binding dispatch is suppressed via
+ * setBindingRecorderActive: this hook's window capture listener registers
+ * after (and runs after) useKeyboardBindings' — without the flag, a chord
+ * like Ctrl+W would close the Settings tab before the recorder sees it.
  *
  * Extracted from BindingsSettings so the component renders rows instead of
  * owning window-level key capture.
@@ -19,6 +25,7 @@ export function useKeyRecorder(
 ) {
     useEffect(() => {
         if (recordingIndex === null) return;
+        setBindingRecorderActive(true);
         const handler = (e: KeyboardEvent) => {
             e.preventDefault();
             e.stopPropagation();
@@ -48,6 +55,9 @@ export function useKeyRecorder(
             onCancel();
         };
         window.addEventListener("keydown", handler, {capture: true});
-        return () => window.removeEventListener("keydown", handler, {capture: true});
+        return () => {
+            window.removeEventListener("keydown", handler, {capture: true});
+            setBindingRecorderActive(false);
+        };
     }, [recordingIndex, onRecord, onCancel]);
 }

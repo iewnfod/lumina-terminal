@@ -14,28 +14,28 @@ import { info, debug } from "@tauri-apps/plugin-log";
  * Pass `false` to skip (e.g. the user disabled auto-check in settings).
  */
 export function useStartupUpdateCheck(enabled: boolean): void {
-	useEffect(() => {
-		if (!enabled) return;
-		let cancelled = false;
+    useEffect(() => {
+        if (!enabled) return;
+        let cancelled = false;
 
-		info("Checking for updates on startup...");
-		checkForUpdate().then((res) => {
-			if (cancelled) return;
-			if (res.status === "available") {
-				setStartupUpdate(
-					res.info ? { status: "available", info: res.info } : null,
-				);
-				info(`Update available: v${res.info?.version ?? "?"}`);
-			} else if (res.status === "error") {
-				setStartupUpdate({ status: "error", error: res.error });
-				debug(`Startup update check failed: ${res.error}`);
-			} else {
-				setStartupUpdate({ status: "upToDate" });
-			}
-		});
+        info("Checking for updates on startup...");
+        checkForUpdate().then((res) => {
+            if (cancelled) return;
+            if (res.status === "available") {
+                setStartupUpdate(
+                    res.info ? { status: "available", info: res.info } : null,
+                );
+                info(`Update available: v${res.info?.version ?? "?"}`);
+            } else if (res.status === "error") {
+                setStartupUpdate({ status: "error", error: res.error });
+                debug(`Startup update check failed: ${res.error}`);
+            } else {
+                setStartupUpdate({ status: "upToDate" });
+            }
+        });
 
-		return () => {
-			cancelled = true;
-		};
-	}, [enabled]);
+        return () => {
+            cancelled = true;
+        };
+    }, [enabled]);
 }

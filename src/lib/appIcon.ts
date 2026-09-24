@@ -1,4 +1,5 @@
 import {CommandIconRule} from "../types/config.ts";
+import {exeBasename} from "./exe.ts";
 
 /**
  * Application icon resolution: given a running command line, decide which
@@ -68,16 +69,11 @@ const WRAPPERS = new Set([
     "xargs", "watch",
 ]);
 
-/** Extract the executable basename (no dir, no `.exe`) from a path string. */
-function exeBasename(exe: string): string {
-    const base = exe.split(/[\\/]/).pop() ?? exe;
-    return base.toLowerCase().replace(/\.exe$/, "");
-}
-
 /** Extract the "real" app basename from a full command line, skipping wrapper
- * commands. Returns the first non-wrapper, non-env-assignment token's basename.
- * e.g. "sudo nvim file.txt" → "nvim"; "env FOO=bar opencode" → "opencode".
- * Returns null for an empty/all-wrapper command line. */
+ * commands. Returns the first non-wrapper, non-flag, non-env-assignment
+ * token's basename. e.g. "sudo nvim file.txt" → "nvim"; "env FOO=bar
+ * opencode" → "opencode"; "watch -n1 vim" → "vim" (flags never resolve as
+ * the app). Returns null for an empty/all-wrapper command line. */
 export function resolveAppFromCommand(line: string): string | null {
     const tokens = line.trim().split(/\s+/);
     for (const tok of tokens) {
@@ -85,6 +81,7 @@ export function resolveAppFromCommand(line: string): string | null {
         if (!base) continue;
         if (WRAPPERS.has(base)) continue;
         if (base.includes("=")) continue; // env VAR=val assignment
+        if (base.startsWith("-")) continue; // option flag (e.g. -E, -n1, --color)
         return base;
     }
     return null;

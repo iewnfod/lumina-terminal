@@ -111,7 +111,7 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
             // only written on first run, migrations, and real config changes.
             // (When a write does happen, renderConfigToml patches the existing
             // document in place, so hand-written order and comments survive.)
-            setConfig(loadedConfig);
+            applyConfig(loadedConfig);
             info(`Config loaded: language=${loadedConfig.language}, profiles=${loadedConfig.profiles.length}`);
             setIsLoading(false);
             // Warm the cell-metrics cache (idempotent one-shot read) before any
@@ -155,10 +155,20 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
     // mid-flight the hot-reload watcher re-arms instead of reading: reading
     // then would race our own half-applied write and misclassify it.
     const writesInFlightRef = useRef(0);
-    // Mirror of the current config state for non-reactive readers (the
-    // watcher's semantic-equality guard).
+    // Mirror of the current config state: advanced SYNCHRONOUSLY by every
+    // writer (applyConfig), so back-to-back merges chain and unmount-time
+    // callers still read the latest value. The render-body assignment is a
+    // belt-and-braces backstop for any direct setConfig.
     const configRef = useRef(config);
     configRef.current = config;
+
+    // Apply a config change everywhere at once: the mirror (synchronously)
+    // and the React state. All writers go through this so the mirror can
+    // never go stale behind the state.
+    const applyConfig = (next: GlobalConfig) => {
+        configRef.current = next;
+        setConfig(next);
+    };
 
     const saveConfig = (newConfig: GlobalConfig): Promise<void> => {
         // Resolve once the flush to disk has settled (success or failure).
@@ -179,32 +189,69 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
         );
     };
 
+    // Save drain. updateConfig/newProfile advance the mirror and raise
+    // `savePendingRef`; a microtask later the drain writes `configRef.current`
+    // — by then every synchronous merge of the tick has chained through the
+    // mirror, so back-to-back updates coalesce into one write of the final
+    // state. Flushes are chained so a second save that starts while one is
+    // mid-flight lands strictly after it (out-of-order writes would let a
+    // stale merge win on disk). saveConfig never rejects (it logs and
+    // swallows), so the resolvers of every awaited updateConfig settle here.
+    const savePendingRef = useRef(false);
+    const pendingFlushResolversRef = useRef<Array<() => void>>([]);
+    const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+    const saveDrainScheduledRef = useRef(false);
+    const drainSave = () => {
+        if (!savePendingRef.current) return;
+        savePendingRef.current = false;
+        const resolvers = pendingFlushResolversRef.current;
+        pendingFlushResolversRef.current = [];
+        saveChainRef.current = saveChainRef.current
+            .then(() => saveConfig(configRef.current))
+            .then(() => {
+                for (const resolve of resolvers) resolve();
+            });
+    };
+    const scheduleSaveDrain = () => {
+        if (saveDrainScheduledRef.current) return;
+        saveDrainScheduledRef.current = true;
+        queueMicrotask(() => {
+            saveDrainScheduledRef.current = false;
+            drainSave();
+        });
+    };
+
     const updateConfig = (newConfig: Partial<GlobalConfig>): Promise<void> => {
         debug(`updateConfig: ${JSON.stringify(newConfig)}`);
-        // We need the *current* prevState to build the merged config before
-        // persisting; capture it from the functional updater, then flush. The
-        // returned Promise resolves once the disk flush settles so callers
+        // The returned Promise resolves once the disk flush settles so callers
         // (e.g. the session close hook remembering a choice) can await
-        // durability before tearing down the window.
+        // durability before tearing down the window. The merge is computed
+        // from the synchronous mirror (configRef), NOT inside a setState
+        // updater: updaters must stay pure (React double-invokes them under
+        // StrictMode and may drop a discarded render pass — either would
+        // double-write or persist a merge that never commits), and an
+        // unmount-time caller's updater never runs at all. The mirror is
+        // advanced here, so back-to-back calls in one tick chain correctly
+        // and the microtask drain below always saves the final state.
+        const updated: GlobalConfig = {...configRef.current, ...newConfig};
+        let resolveFlush!: () => void;
         const flush = new Promise<void>((resolve) => {
-            setConfig((prevState) => {
-                const updated: GlobalConfig = {...prevState, ...newConfig};
-                saveConfig(updated).then(() => resolve());
-                return updated;
-            });
+            resolveFlush = resolve;
         });
+        pendingFlushResolversRef.current.push(resolveFlush);
+        applyConfig(updated);
+        savePendingRef.current = true;
+        scheduleSaveDrain();
         return flush;
     };
 
     const newProfile = (profile: TerminalProfile) => {
-        setConfig((prevState) => {
-            const isFirst = prevState.profiles.length === 0 && !profile.default;
-            const updatedProfile = isFirst ? { ...profile, default: true } : profile;
-            const updatedProfiles = [...prevState.profiles, updatedProfile];
-            const updated: GlobalConfig = {...prevState, profiles: updatedProfiles};
-            saveConfig(updated);
-            return updated;
-        });
+        const prev = configRef.current;
+        const isFirst = prev.profiles.length === 0 && !profile.default;
+        const updatedProfile = isFirst ? { ...profile, default: true } : profile;
+        applyConfig({...prev, profiles: [...prev.profiles, updatedProfile]});
+        savePendingRef.current = true;
+        scheduleSaveDrain();
     };
 
     // Hot reload: watch the app data dir for config.toml edits and apply
@@ -248,7 +295,7 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
                     let merged = migrateLegacyCopyWithCtrl({...DEFAULT_CONFIG, ...parsed});
                     merged = stripLegacyProfileLastOpened(merged);
                     if (semanticEqual(merged, configRef.current)) return;
-                    setConfig(merged);
+                    applyConfig(merged);
                     info("Config hot-reloaded from disk").catch(() => {});
                 }).catch((e: unknown) => {
                     warn(`Config hot-reload failed (keeping current state): ${e}`).catch(() => {});
@@ -306,6 +353,9 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
             clearTimeout(backstop);
             show();
         });
+        // Cleanup (StrictMode's simulated unmount re-runs this effect): drop
+        // the backstop so a dev double-mount can't stack two show timers.
+        return () => clearTimeout(backstop);
     }, [isLoading]);
 
     // Children mount only once the real config has loaded. The window is

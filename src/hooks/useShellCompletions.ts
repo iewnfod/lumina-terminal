@@ -250,7 +250,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
         const profile = profileNameRef.current;
         if (!profile || !persistDirtyRef.current) return;
         persistDirtyRef.current = false;
-        persistCompletionIndex(profile, serializeIndex()).then();
+        persistCompletionIndex(profile, serializeIndex());
     }, [serializeIndex]);
 
     // Load the profile's persisted index once at mount, merging UNDER the
@@ -271,6 +271,13 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
         return () => {
             cancelled = true;
             if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
+            // A request scheduled <100ms before unmount would otherwise fire
+            // writeToTerminal at a dead PTY (backend warn + unhandled
+            // rejection after tear-off/close).
+            if (requestTimerRef.current !== null) {
+                clearTimeout(requestTimerRef.current);
+                requestTimerRef.current = null;
+            }
             flushPersist();
         };
         // profileName is spawn-stable for a terminal; serializeIndex/flushPersist are stable.
@@ -345,7 +352,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
         if (atPrompt && !atPrompt()) return;
         suppressedRef.current = false;
         debug("Completion request sent (TAB)").catch(() => {});
-        writeToTerminal(ptyId, "\t").then();
+        writeToTerminal(ptyId, "\t").catch(() => {}); // logged by invokeWithLog already
     }, [ptyId]);
 
     /** Schedule a debounced request (as-you-type mode); coalesces bursts. */
@@ -393,7 +400,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
             ).catch(() => {});
             if (bytes !== "") {
                 if (retrigger) suppressedRef.current = false;
-                writeToTerminal(ptyId, bytes).then();
+                writeToTerminal(ptyId, bytes).catch(() => {}); // logged by invokeWithLog already
             }
         },
         [acceptSuffix, ptyId],
@@ -557,7 +564,12 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
             const next =
                 delta === "start" ? 0
                 : delta === "end" ? n - 1
-                : (prev.selected + delta + n) % n;
+                // Mathematical modulo: JS `%` keeps the dividend's sign, so a
+                // PageUp past the top of a list shorter than PAGE_SIZE would
+                // otherwise land on a negative index (no highlighted row,
+                // `-2/5` footer, and Tab/Enter reading `filtered[-3]`
+                // undefined → TypeError inside xterm's keydown chain).
+                : ((((prev.selected + delta) % n) + n) % n);
             return next === prev.selected ? prev : {...prev, selected: next};
         });
     }, []);
@@ -765,7 +777,7 @@ export function useShellCompletions({ptyId, enabled, onType, atPrompt, profileNa
                 }
             }
         },
-        [accept, close, dismiss, maybeScheduleRequest, moveSelection, shadowBackspace, shadowType, tryInstantOpen],
+        [accept, close, dismiss, maybeScheduleRequest, moveSelection, seedShadowAfterAccept, shadowBackspace, shadowType, tryInstantOpen],
     );
 
     /** Select a row by index (mouse hover/click from the popup component). */

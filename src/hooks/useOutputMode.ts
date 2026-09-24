@@ -22,7 +22,7 @@ export function useOutputMode(id: string) {
     const apply = useCallback((next: boolean) => {
         if (lowLatencyRef.current === next) return;
         lowLatencyRef.current = next;
-        setOutputMode(id, next).then();
+        setOutputMode(id, next).catch(() => {}); // failure logged by invokeWithLog
     }, [id]);
 
     useEffect(() => {

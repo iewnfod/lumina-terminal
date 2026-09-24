@@ -146,15 +146,22 @@ function Step2({onNext, onPrev} : {
         }
         if (profile.exePath.length === 0) {
             setExePathExist(true);
-        } else {
-            invoke<boolean>("path_exist", {path: profile.exePath}).then((value) => {
-                setExePathExist(value);
-            }).catch((e) => {
-                // Degrade to "exists" so the wizard never blocks on the check.
-                error(`Failed to check shell path ${profile.exePath}: ${e}`).catch(() => {});
-                setExePathExist(true);
-            });
+            return;
         }
+        // Cancelled guard: the check is per keystroke, and a late response
+        // for an older path must not overwrite the verdict for the current
+        // one (wrong "File not exist" / wrongly-enabled Next).
+        let cancelled = false;
+        invoke<boolean>("path_exist", {path: profile.exePath}).then((value) => {
+            if (!cancelled) setExePathExist(value);
+        }).catch((e) => {
+            // Degrade to "exists" so the wizard never blocks on the check.
+            error(`Failed to check shell path ${profile.exePath}: ${e}`).catch(() => {});
+            if (!cancelled) setExePathExist(true);
+        });
+        return () => {
+            cancelled = true;
+        };
     }, [profile.exePath, profileType]);
 
     return (

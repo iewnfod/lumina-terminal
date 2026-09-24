@@ -2,7 +2,7 @@ import {ProfileLauncher, SSHConfig, TerminalProfile} from "../../types/terminal.
 import {useGlobalConfig} from "../../hooks/config.tsx";
 import {useI18n} from "../../hooks/i18n.tsx";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {info} from "@tauri-apps/plugin-log";
+import {info, warn} from "@tauri-apps/plugin-log";
 import {open} from "@tauri-apps/plugin-dialog";
 import {Button, Input, Label, ListBox, Select, Switch} from "@heroui/react";
 import RenderSettings from "./RenderSettings.tsx";
@@ -44,14 +44,18 @@ export default function ProfileSettings({
     // still applied for consistency with the other panels.
     const [draft, setDraft] = useState<TerminalProfile | null>(null);
 
-    // Reset draft when profile identity changes
+    // Reset draft when the profile object changes — identity, not just the
+    // name: a hot-reload config update (hand-edited config.toml, another
+    // window's save) replaces the profile object while keeping its name, and
+    // a name-only dep would leave the draft seeded from the stale snapshot
+    // (Save would then silently revert fields the user never touched).
     useEffect(() => {
         if (profile) {
             setDraft({...profile});
         } else {
             setDraft(null);
         }
-    }, [profile?.name]);
+    }, [profile]);
 
     const isDirty = useMemo(() => {
         if (!profile || !draft) return false;
@@ -292,11 +296,15 @@ export default function ProfileSettings({
                             variant="outline"
                             size="sm"
                             onPress={async () => {
-                                const dir = await open({
-                                    multiple: false,
-                                    directory: true,
-                                });
-                                if (dir) updateDraft({cwd: dir});
+                                try {
+                                    const dir = await open({
+                                        multiple: false,
+                                        directory: true,
+                                    });
+                                    if (dir) updateDraft({cwd: dir});
+                                } catch (e) {
+                                    warn(`Directory picker failed: ${e}`).catch(() => {});
+                                }
                             }}
                         >
                             {t["Select"]}
@@ -407,11 +415,15 @@ export default function ProfileSettings({
                                     variant="outline"
                                     size="sm"
                                     onPress={async () => {
-                                        const dir = await open({
-                                            multiple: false,
-                                            directory: true,
-                                        });
-                                        if (dir) updateLauncher({workingDirectory: dir});
+                                        try {
+                                            const dir = await open({
+                                                multiple: false,
+                                                directory: true,
+                                            });
+                                            if (dir) updateLauncher({workingDirectory: dir});
+                                        } catch (e) {
+                                            warn(`Directory picker failed: ${e}`).catch(() => {});
+                                        }
                                     }}
                                 >
                                     {t["Select"]}

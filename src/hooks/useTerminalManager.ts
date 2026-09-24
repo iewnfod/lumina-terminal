@@ -167,8 +167,24 @@ export function useTerminalManager(): TerminalManager {
             parseProfile(raw, config.globalProfile, systemTheme),
         ).then((next) => {
             if (!cancelled && next) {
-                setTerminals(next);
-                info(`Hot-applied profile/global-profile changes to ${Object.keys(next).length} terminal(s)`);
+                // Commit only the entries this pass actually re-resolved,
+                // merged into the LIVE map. The pass was computed from the
+                // `terminals` snapshot captured when this effect ran, and
+                // `resolve` does async theme-file reads — a tab opened or
+                // closed while the pass was in flight must not be dropped
+                // or resurrected by a wholesale replace.
+                setTerminals((prev) => {
+                    const merged = {...prev};
+                    let applied = 0;
+                    for (const id of Object.keys(next)) {
+                        if (next[id] === terminals[id]) continue; // unchanged in this pass
+                        if (!(id in prev)) continue; // closed while the pass was in flight
+                        merged[id] = next[id];
+                        applied++;
+                    }
+                    return applied > 0 ? merged : prev;
+                });
+                info(`Hot-applied profile/global-profile changes (${Object.keys(next).length} terminal(s) re-checked)`);
             }
         }).catch((e) => {
             warn(`Failed to hot-apply profile changes (tabs keep their current options): ${e}`).catch(() => {});
@@ -301,6 +317,20 @@ export function useTerminalManager(): TerminalManager {
             delete newState[id];
             return newState;
         });
+        // Drop the per-tab bookkeeping too — stale entries would otherwise
+        // accumulate for the window's lifetime.
+        setCommands((prev) => {
+            if (!(id in prev)) return prev;
+            const next = {...prev};
+            delete next[id];
+            return next;
+        });
+        setInitialScrollbackTabs((prev) => {
+            if (!(id in prev)) return prev;
+            const next = {...prev};
+            delete next[id];
+            return next;
+        });
         setIds(newIds);
         setCurrentId(newCurrentId);
         info(`Terminal closed: id=${id}, remaining=${newIds.length}`);
@@ -348,6 +378,20 @@ export function useTerminalManager(): TerminalManager {
                 const newState = {...prevState};
                 delete newState[id];
                 return newState;
+            });
+            // Drop the per-tab bookkeeping too — the torn-off tab owns it in
+            // its new window now; stale entries would leak here.
+            setCommands((prev) => {
+                if (!(id in prev)) return prev;
+                const next = {...prev};
+                delete next[id];
+                return next;
+            });
+            setInitialScrollbackTabs((prev) => {
+                if (!(id in prev)) return prev;
+                const next = {...prev};
+                delete next[id];
+                return next;
             });
             setIds(newIds);
             setCurrentId(newCurrentId);
@@ -542,8 +586,7 @@ export function useTerminalManager(): TerminalManager {
         if (tearoff === "no") {
             // Main window: also wait for the session-restore probe to finish.
             if (session.restoreTabs === undefined) return;
-            if (config.profiles.length && ids.length === 0) {
-                isInitialized.current = true;
+            if (config.profiles.length && ids.length === 0) {                isInitialized.current = true;
                 setInitialized(true);
                 getCurrentWindow().setResizable(true).catch((e) =>
                     error(`Failed to set window resizable: ${e}`)
@@ -662,6 +705,16 @@ export function useTerminalManager(): TerminalManager {
                         info("Startup seeded no tabs: empty state takes over (the empty-state sizer will size the window)");
                     }
                 }
+            } else if (config.profiles.length === 0) {
+                // No profiles configured (first run → WelcomePage): nothing to
+                // seed, but still mark seeding done — App's empty-state path
+                // (and the window sizer, which settles the initial-size show
+                // gate for the welcome screen) is gated on `initialized`.
+                // Without this, the gate only releases via the 1.5 s show
+                // backstop and every fresh install's welcome window shows late.
+                isInitialized.current = true;
+                setInitialized(true);
+                session.markRestored();
             }
             return;
         }

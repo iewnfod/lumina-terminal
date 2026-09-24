@@ -1,6 +1,6 @@
 import {useMemo} from "react";
 import {Terminal as TerminalIcon, X, PanelLeftClose, PanelLeftOpen, Monitor, MonitorOff, Settings as SettingsIcon, Info, ExternalLink, Search} from "lucide-react";
-import type {CommandAction} from "../components/CommandPalette.tsx";
+import type {CommandAction} from "../types/commandAction.ts";
 import {TerminalProfile} from "../types/terminal.ts";
 import {Binding, Actions} from "../types/config.ts";
 import {bindingToShortcut, findBinding, profileNewTabShortcut} from "../lib/bindings.ts";

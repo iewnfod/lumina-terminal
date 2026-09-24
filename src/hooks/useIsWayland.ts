@@ -9,13 +9,17 @@ let cached: boolean | null = null;
 let pending: Promise<boolean> | null = null;
 
 /**
- * True when the app is running under a Wayland session. Wayland forbids
- * clients from knowing or setting their absolute window position, so features
- * depending on that (notably "remember window position") should hide
- * themselves when this is true.
+ * True when the app is running under a Wayland session; `undefined` while the
+ * one-shot backend probe is still in flight. Wayland forbids clients from
+ * knowing or setting their absolute window position, so features depending on
+ * that (notably "remember window position") should hide themselves when this
+ * is true. Consumers that only branch on the final answer should treat
+ * `undefined` as "not yet known" — e.g. by waiting (the geometry restore
+ * below) — rather than guessing `false`, which would consume one-shot
+ * Wayland guards before the probe lands.
  */
-export function useIsWayland(): boolean {
-    const [isWayland, setIsWayland] = useState<boolean>(cached ?? false);
+export function useIsWayland(): boolean | undefined {
+    const [isWayland, setIsWayland] = useState<boolean | undefined>(cached ?? undefined);
 
     useEffect(() => {
         if (cached !== null) {

@@ -62,7 +62,7 @@ let appDataDirPromise: Promise<string> | null = null;
 /** themePath → joined absolute path (the join is an IPC; memoized per path). */
 const themeFullPathCache = new Map<string, string>();
 /** Absolute path → parsed theme JSON + the mtime it was read at. */
-const themeFileCache = new Map<string, {mtimeSec: number | null; json: Record<string, unknown> | null}>();
+const themeFileCache = new Map<string, {mtimeMs: number | null; json: Record<string, unknown> | null}>();
 
 /**
  * Read + parse a theme file (JSON), trying the app-data-relative path first
@@ -81,9 +81,13 @@ async function readThemeFile(themePath: string): Promise<Record<string, unknown>
     for (const path of [fullPath, themePath]) {
         const info = await stat(path).catch(() => null);
         if (!info?.isFile) continue;
-        const mtimeSec = info.mtime ? Math.floor(info.mtime.getTime() / 1000) : null;
+        // Millisecond precision: a same-second rewrite (theme hot-reload tools,
+        // quick manual edits — including one that FIXES a cached parse error)
+        // must not keep serving the stale parse the way a floored-to-seconds
+        // key would.
+        const mtimeMs = info.mtime ? info.mtime.getTime() : null;
         const cached = themeFileCache.get(path);
-        if (cached && cached.mtimeSec === mtimeSec) return cached.json;
+        if (cached && cached.mtimeMs === mtimeMs) return cached.json;
         const text = await invoke<string>("read_file", {path});
         let json: Record<string, unknown> | null = null;
         if (text) {
@@ -93,7 +97,7 @@ async function readThemeFile(themePath: string): Promise<Record<string, unknown>
                 error(`Failed to parse theme at ${path}: ${e}`).catch(() => {});
             }
         }
-        themeFileCache.set(path, {mtimeSec, json});
+        themeFileCache.set(path, {mtimeMs, json});
         return json;
     }
     return null;

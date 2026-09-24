@@ -84,13 +84,15 @@ interface TermProps {
     // boots below it. Distinct from reattach: a tab is in at most one mode.
     initialScrollback?: string;
     // Register a serialize function (captures the xterm buffer for tear-off)
-    // with the parent. The parent stores it and calls it right before tearing
-    // the tab off. Returns a cleanup that deregisters the function.
-    onRegisterSerialize?: (fn: () => string) => () => void;
+    // with the parent. The parent stores it keyed by the terminal's id and
+    // calls it right before tearing the tab off. The registrar takes the id so
+    // the parent can pass ONE stable callback for every tab. Returns a
+    // cleanup that deregisters the function.
+    onRegisterSerialize?: (id: string, fn: () => string) => () => void;
     // Register an "open search" trigger with the parent so the command palette
     // (which lives in App) can open this terminal's in-terminal search bar.
     // Returns a cleanup that deregisters the trigger. Mirrors onRegisterSerialize.
-    onRegisterSearch?: (open: () => void) => () => void;
+    onRegisterSearch?: (id: string, open: () => void) => () => void;
     // Tear this tab off into its own window. Wired to the `tearOffTab` action.
     onTearOff?: () => void;
 }
@@ -124,6 +126,11 @@ export default function Term(props : TermProps) {
     const term = useRef<Terminal | null>(null);
     const termRef = useRef<HTMLDivElement>(null);
     const isInitialized = useRef<boolean>(false);
+    // Pending deferred disposal of the xterm instance (see the init effect's
+    // cleanup). Held in a ref so the effect's re-run — which under React
+    // StrictMode (dev) follows its own cleanup immediately — can cancel it
+    // and keep reusing the live terminal.
+    const disposeTimerRef = useRef<number | null>(null);
     // SerializeAddon instance (loaded once at init). Used by the parent to
     // capture the buffer when tearing this tab off into a new window.
     const serializeAddonRef = useRef<SerializeAddon | null>(null);
@@ -348,7 +355,7 @@ export default function Term(props : TermProps) {
                 const filePaths = event.payload.paths.map(p =>
                     p.includes(' ') ? `"${p}"` : p
                 ).join(' ');
-                writeToTerminal(id, filePaths + ' ').then();
+                writeToTerminal(id, filePaths + ' ').catch(() => {}); // failure logged by invokeWithLog
             }
         } else if (event.payload.type === 'leave') {
             setIsDragOver(false);
@@ -357,6 +364,13 @@ export default function Term(props : TermProps) {
 
     // Initialize terminal
     useEffect(() => {
+        // Cancel a pending deferred disposal: this effect re-ran before the
+        // macrotask landed (React StrictMode's dev remount runs cleanup →
+        // re-run back to back), so the live terminal is still wanted.
+        if (disposeTimerRef.current !== null) {
+            clearTimeout(disposeTimerRef.current);
+            disposeTimerRef.current = null;
+        }
         if (isInitialized.current) return;
         isInitialized.current = true;
 
@@ -454,7 +468,7 @@ export default function Term(props : TermProps) {
         info(`Bindings loaded for terminal with id ${id}`);
 
         term.current.onData((data) => {
-            writeToTerminal(ptyId, data).then();
+            writeToTerminal(ptyId, data).catch(() => {}); // failure logged by invokeWithLog
             markInteractive();
         });
         // One-shot: what the first fit() actually settled on. Compared with the
@@ -470,7 +484,7 @@ export default function Term(props : TermProps) {
                     `inner=${window.innerWidth}x${window.innerHeight} container=${termRef.current?.clientWidth ?? "?"}x${termRef.current?.clientHeight ?? "?"}`,
                 ).catch(() => {});
             }
-            resizeTerminal(ptyId, cols, rows).then();
+            resizeTerminal(ptyId, cols, rows).catch(() => {}); // failure logged by invokeWithLog
             markInteractive();
         });
 
@@ -484,7 +498,7 @@ export default function Term(props : TermProps) {
             // xterm isn't flooded faster than it can render. Fire-and-forget —
             // invokeWithLog records any failure. ptyId routes to the right PTY
             // (torn-off tabs reuse the original PTY, not this tab's id).
-            setThrottle(ptyId, throttled).then();
+            setThrottle(ptyId, throttled).catch(() => {}); // failure logged by invokeWithLog
         });
 
         // Backend streams PTY output over this Channel (low-overhead,
@@ -508,7 +522,7 @@ export default function Term(props : TermProps) {
             }
             reattachTerminal(ptyId, outputChannel).then(() => {
                 info(`Terminal reattached: ptyId=${ptyId} in window for tab ${id}`);
-                resizeTerminal(ptyId, term.current!.cols, term.current!.rows).then();
+                resizeTerminal(ptyId, term.current!.cols, term.current!.rows).catch(() => {}); // failure logged by invokeWithLog
             }).catch((e) => {
                 error(`Failed to reattach terminal ptyId=${ptyId}: ${e}`).catch(() => {});
             });
@@ -522,11 +536,33 @@ export default function Term(props : TermProps) {
             }
             startTerminal(id, profile, outputChannel, config.enableShellCompletions !== false).then(() => {
                 info(`Terminal started: id=${id} profile=${profile.name}`);
-                resizeTerminal(id, term.current!.cols, term.current!.rows).then();
+                resizeTerminal(id, term.current!.cols, term.current!.rows).catch(() => {}); // failure logged by invokeWithLog
             }).catch((e) => {
                 error(`Failed to start terminal id=${id} (profile=${profile.name}): ${e}`).catch(() => {});
             });
         }
+
+        return () => {
+            // Dispose the xterm instance one macrotask later: React StrictMode
+            // (dev) runs cleanup → re-run back to back on mount, and the re-run
+            // cancels this timer so the live terminal keeps serving. A real
+            // unmount has no re-run — the terminal and its addons (the WebGL
+            // context included) are released instead of leaking per closed or
+            // torn-off tab. The PTY is deliberately NOT killed here: tear-off
+            // relies on it surviving for the new window to reattach.
+            disposeTimerRef.current = window.setTimeout(() => {
+                disposeTimerRef.current = null;
+                writer.dispose();
+                term.current?.dispose();
+                term.current = null;
+                fitAddonRef.current = null;
+                serializeAddonRef.current = null;
+                searchAddonRef.current = null;
+                ligatureJoinerIdRef.current = undefined;
+                isInitialized.current = false;
+                debug(`Terminal disposed: id=${id}`).catch(() => {});
+            }, 0);
+        };
     }, [id]);
 
     // Hot-apply render options when the profile changes (config hot reload,
@@ -624,14 +660,14 @@ export default function Term(props : TermProps) {
                 return "";
             }
         };
-        return props.onRegisterSerialize(serialize);
+        return props.onRegisterSerialize(id, serialize);
     }, [props.onRegisterSerialize, id]);
 
     // Register an "open search" trigger with the parent so the command palette
     // can open this terminal's search bar. Mirrors the serialize registration.
     useEffect(() => {
         if (!props.onRegisterSearch) return;
-        return props.onRegisterSearch(openSearch);
+        return props.onRegisterSearch(id, openSearch);
     }, [props.onRegisterSearch, openSearch]);
 
     // ResizeObserver: refit the terminal whenever its container changes size.
@@ -735,10 +771,16 @@ export default function Term(props : TermProps) {
 
     // Auto-focus xterm when this tab becomes active
     useEffect(() => {
-        if (isActive && term.current) {
-            term.current.focus();
+        if (!isActive) return;
+        // When the search bar is open (it stays mounted across tab switches),
+        // keep focus in its input — dumping keystrokes into the shell behind
+        // the visible bar is never what the user meant.
+        if (searchOpen) {
+            setSearchFocusTick((tick) => tick + 1);
+            return;
         }
-    }, [isActive]);
+        term.current?.focus();
+    }, [isActive, searchOpen]);
 
     // An inactive tab receives no keys, so a completion popup left open there
     // would be stuck (only keypresses close it) — drop it on focus loss, and

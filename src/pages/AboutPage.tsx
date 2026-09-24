@@ -15,12 +15,12 @@ import {getVersion} from "@tauri-apps/api/app";
 import {warn} from "@tauri-apps/plugin-log";
 import {Button, Modal} from "@heroui/react";
 import {
-	AlertCircle,
-	CheckCircle2,
-	Download,
-	LoaderCircle,
-	RefreshCw,
-	ChevronRight,
+    AlertCircle,
+    CheckCircle2,
+    Download,
+    LoaderCircle,
+    RefreshCw,
+    ChevronRight,
 } from "lucide-react";
 import Markdown from "../components/Markdown.tsx";
 import TechStackModal from "../components/TechStackModal.tsx";
@@ -28,13 +28,13 @@ import ExternalLink from "../components/ui/ExternalLink.tsx";
 import SettingRow from "../components/ui/SettingRow.tsx";
 
 interface AboutPageProps {
-	theme: ITheme | null;
-	/** Shared updater state (owned by App so the sidebar/modal stay in sync). */
-	updater: UpdaterState;
-	/** Detected install source; when set, the in-app updater is disabled. */
-	installSource?: InstallSource | null;
-	/** Open the update-detail modal (About never installs directly). */
-	onShowUpdateModal: () => void;
+    theme: ITheme | null;
+    /** Shared updater state (owned by App so the sidebar/modal stay in sync). */
+    updater: UpdaterState;
+    /** Detected install source; when set, the in-app updater is disabled. */
+    installSource?: InstallSource | null;
+    /** Open the update-detail modal (About never installs directly). */
+    onShowUpdateModal: () => void;
 }
 
 // Inline GitHub mark SVG; inherits text color via currentColor.
@@ -83,6 +83,12 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
         setCurrentNotes(null);
         fetchReleaseNotes(version)
             .then((body) => setCurrentNotes(body))
+            .catch((e: unknown) => {
+                // fetchReleaseNotes is never-reject by contract; this guards
+                // against a future contract change producing an unhandled
+                // rejection (and keeps the loading state honest either way).
+                warn(`Release-notes load failed unexpectedly: ${e}`).catch(() => {});
+            })
             .finally(() => setNotesLoading(false));
     };
 
@@ -159,17 +165,17 @@ export default function AboutPage({ theme, updater, installSource, onShowUpdateM
                                     title={t["What's New"]}
                                     onClick={onShowUpdateModal}
                                 >
-								<Download size={14} />
-								{updater.info
-									? t["Update available: v{version}"].replace("{version}", updater.info.version)
-									: t["A new version is available"]}
-								{installSource && (
-									<span className="text-muted">
-										{" · "}
-										{installSource.manager}
-									</span>
-								)}
-							</span>
+                                <Download size={14} />
+                                {updater.info
+                                    ? t["Update available: v{version}"].replace("{version}", updater.info.version)
+                                    : t["A new version is available"]}
+                                {installSource && (
+                                    <span className="text-muted">
+                                        {" · "}
+                                        {installSource.manager}
+                                    </span>
+                                )}
+                            </span>
                             ) : updater.status === "upToDate" ? (
                                 <span
                                     className="flex items-center gap-1.5 cursor-pointer select-none text-success"

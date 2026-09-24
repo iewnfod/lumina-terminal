@@ -201,7 +201,13 @@ export default function CompletionPopup({state, fillBg, onHover, onAccept}: Comp
             >
                 {filtered.map((candidate, i) => (
                     <CompletionRow
-                        key={`${candidate.insert}\u0000${i}`}
+                        // Key by candidate identity, NOT the index: narrowing
+                        // while typing shifts indices, and index keys would
+                        // remount every row after the change point — defeating
+                        // the memo below. insert+label is unique per row (the
+                        // shell dedupes candidates; a pathological duplicate
+                        // only costs one reuse).
+                        key={`${candidate.insert}\u0000${candidate.label}`}
                         candidate={candidate}
                         isSelected={i === selected}
                         dataCi={i}

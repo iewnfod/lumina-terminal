@@ -12,7 +12,9 @@ import {useTauriSubscription} from "./useTauriListen.ts";
  *  state without re-deriving (the handler is registered once on mount). */
 interface PersistenceRefs {
     config: GlobalConfig;
-    updateConfig: (partial: Partial<GlobalConfig>) => void;
+    /** Promise-returning by contract: the close handler awaits durability
+     *  (remember-this-choice rewrites) BEFORE the window is torn down. */
+    updateConfig: (partial: Partial<GlobalConfig>) => Promise<void>;
     idsRef: React.MutableRefObject<string[]>;
     terminalsRef: React.MutableRefObject<Record<string, TerminalProfile>>;
     currentIdRef: React.MutableRefObject<string | null>;
@@ -112,10 +114,26 @@ export function useSessionPersistence(refs: PersistenceRefs) {
             finalizingRef.current = false;
             return;
         }
-        if (handlingRef.current) return;
+        if (handlingRef.current) {
+            // A duplicate close request while the dialog (or the save work)
+            // is still in flight: keep the window alive and let the in-flight
+            // flow finish — it re-requests close itself via the finalizing
+            // flag. Swallowing the duplicate WITHOUT preventDefault would
+            // close the window out from under the open dialog and skip the
+            // session save the user is being asked about.
+            event.preventDefault();
+            return;
+        }
         handlingRef.current = true;
         try {
             const r = refsRef.current;
+            // EVERY path below does async work (dialog await, store writes,
+            // clearSession) — so the close is prevented up front and
+            // re-requested at the end via the finalizing flag. Letting the
+            // original close proceed on the async paths would race window
+            // teardown against the store flush (a stale session.json could
+            // survive).
+            event.preventDefault();
             // Save ALL tabs (terminal + chrome: Settings/About) in tab-bar
             // order, not just terminal tabs — the user expects their whole
             // tab layout restored. A chrome tab id is one of the sentinels;
@@ -133,9 +151,9 @@ export function useSessionPersistence(refs: PersistenceRefs) {
             } else if (mode === "always") {
                 decision = "save";
             } else if (mode === "ask") {
-                // Open the dialog, await the user's choice. preventDefault
-                // keeps the window alive until we finish (save + remember).
-                event.preventDefault();
+                // Open the dialog, await the user's choice. The close was
+                // already prevented up front; the window stays alive until
+                // we finish (save + remember).
                 const result = await new Promise<{decision: "save" | "nosave"; remember: boolean}>((resolve) => {
                     pendingResolve.current = resolve;
                     // Count is the user-facing tab count (everything open).
@@ -152,9 +170,8 @@ export function useSessionPersistence(refs: PersistenceRefs) {
                 // restored next launch.
                 await clearSession();
             } else {
-                // (save path): preventDefault not yet called for "always"
-                // mode — call it now so the window survives the store write.
-                event.preventDefault();
+                // (save path): the close was prevented up front like every
+                // other path; nothing to do here but the writes.
                 const saveScrollback = r.config.sessionSaveScrollback === true;
                 const tabs = await Promise.all(
                     allIds.map(async (id): Promise<SavedTab> => {
@@ -203,18 +220,13 @@ export function useSessionPersistence(refs: PersistenceRefs) {
                 info(`Session save mode remembered as "${newMode}"`);
             }
 
-            // If we preventDefault'd (ask-mode or save path), the original
-            // close was canceled — re-request it. close() re-emits
-            // closeRequested; the finalizing flag (checked above) lets
-            // that second pass through without preventDefault. On the
-            // nosave/empty path we never preventDefault'd, so the original
-            // close is already proceeding — do nothing.
-            if (event.isPreventDefault()) {
-                finalizingRef.current = true;
-                getCurrentWindow().close().catch((e) =>
-                    error(`Session save: failed to re-close window: ${e}`).catch(() => {})
-                );
-            }
+            // The close was prevented up front, so re-request it. close()
+            // re-emits closeRequested; the finalizing flag (checked above)
+            // lets that second pass through without preventDefault.
+            finalizingRef.current = true;
+            getCurrentWindow().close().catch((e) =>
+                error(`Session save: failed to re-close window: ${e}`).catch(() => {})
+            );
         } catch (e) {
             error(`Session save handler failed: ${e}`).catch(() => {});
             // Best-effort: don't trap the user in an un-closable window.

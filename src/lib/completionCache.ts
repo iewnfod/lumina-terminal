@@ -55,27 +55,41 @@ export async function loadCompletionIndex(profile: string): Promise<SerializedCo
  * Merge `mine` (this terminal's in-memory snapshot) into the profile's
  * persisted section (newer fetchAt wins per entry), prune to the bounds, and
  * save. Failures are logged and swallowed.
+ *
+ * The read-merge-write is serialized through a module-level promise chain:
+ * every tab of the same profile flushes on unmount, and closing a window with
+ * 2+ tabs fires those flushes concurrently — without the chain, two interleaved
+ * passes would each merge from the same on-disk snapshot and the last writer
+ * would drop the other's contribution.
  */
-export async function persistCompletionIndex(
+let persistChain: Promise<void> = Promise.resolve();
+
+export function persistCompletionIndex(
     profile: string,
     mine: SerializedCompletionIndex,
 ): Promise<void> {
-    try {
-        const all = (await store.get<Record<string, SerializedCompletionIndex>>(INDEX_KEY)) ?? {};
-        const merged = pruneCompletionIndex(
-            mergeCompletionIndex(all[profile] ?? {}, mine),
-            PERSIST_CTX_CAP,
-            PERSIST_WORD_CAP,
-            PERSIST_SET_CAP,
-        );
-        all[profile] = merged;
-        await store.set(INDEX_KEY, all);
-        await store.save();
-        debug(
-            `Persisted completion cache for profile ${profile}: ` +
-                `${Object.keys(merged).length} context(s)`,
-        );
-    } catch (e) {
-        error(`Failed to persist completion cache for profile ${profile}: ${e}`).catch(() => {});
-    }
+    const run = persistChain.then(async () => {
+        try {
+            const all = (await store.get<Record<string, SerializedCompletionIndex>>(INDEX_KEY)) ?? {};
+            const merged = pruneCompletionIndex(
+                mergeCompletionIndex(all[profile] ?? {}, mine),
+                PERSIST_CTX_CAP,
+                PERSIST_WORD_CAP,
+                PERSIST_SET_CAP,
+            );
+            all[profile] = merged;
+            await store.set(INDEX_KEY, all);
+            await store.save();
+            debug(
+                `Persisted completion cache for profile ${profile}: ` +
+                    `${Object.keys(merged).length} context(s)`,
+            );
+        } catch (e) {
+            error(`Failed to persist completion cache for profile ${profile}: ${e}`).catch(() => {});
+        }
+    });
+    // The chain must never wedge on a rejected link; the body already swallows
+    // everything, this is defensive only.
+    persistChain = run.then(() => undefined, () => undefined);
+    return run;
 }

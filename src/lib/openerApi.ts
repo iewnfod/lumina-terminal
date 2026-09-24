@@ -16,7 +16,7 @@ import {error} from "@tauri-apps/plugin-log";
  * Fire-and-forget; never rejects.
  */
 export function openExternal(url: string): void {
-	openUrl(url).catch((err) =>
-		error(`Failed to open external link ${url}: ${err}`).catch(() => {}),
-	);
+    openUrl(url).catch((err) =>
+        error(`Failed to open external link ${url}: ${err}`).catch(() => {}),
+    );
 }
