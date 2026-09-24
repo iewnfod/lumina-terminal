@@ -14,12 +14,12 @@
 #   2. 确定版本号并 bump(bump-version.sh 同步四处:package.json / Cargo.toml /
 #      tauri.conf.json / Cargo.lock,并跑 cargo test 把关)
 #   3. commit + tag + push(直连失败自动走代理)
-#   4. 按 docs/RELEASE_PROMPT.md 用 AI 生成 Release Note(claude CLI)
+#   4. 按 docs/RELEASE_PROMPT.md 用 AI 生成 Release Note(opencode CLI + DeepSeek V4.1 Flash)
 #   5. 创建 GitHub Release → 触发 release.yml 自动构建 + AUR 推送
 #
 # 依赖:
 #   - bump-version.sh(同目录)
-#   - claude CLI(生成 Release Note;没有则只生成任务文件)
+#   - opencode CLI(生成 Release Note,模型 $AI_MODEL;没有则只生成任务文件)
 #   - gh CLI(建 Release;没有则提示手动,不影响前面步骤)
 #
 # 注意:Release Note 的 Prompt 每次运行从 docs/RELEASE_PROMPT.md 读取,不硬编码。
@@ -32,6 +32,7 @@ cd "$ROOT"
 
 PROMPT_FILE="docs/RELEASE_PROMPT.md"
 NOTES_FILE="notes.md"
+AI_MODEL="deepseek/deepseek-flash"
 REMOTE_BRANCH="master"
 PROXY="http://127.0.0.1:7890"
 
@@ -120,31 +121,32 @@ do_push() {
 }
 
 # ---- Release Note 生成 -----------------------------------------------------
-# 每次运行读取 docs/RELEASE_PROMPT.md,交给 claude 在项目目录执行
+# 每次运行读取 docs/RELEASE_PROMPT.md,交给 opencode(DeepSeek V4.1 Flash)在项目目录执行
 generate_notes() {
   [ -f "$PROMPT_FILE" ] || die "缺少 $PROMPT_FILE(Release Note 的 Prompt 定义文件)"
-  log "读取 $PROMPT_FILE 生成 Release Note"
+  log "读取 $PROMPT_FILE 生成 Release Note($AI_MODEL)"
 
   if [ "$DRY_RUN" = "1" ]; then
-    run claude -p "\$(cat $PROMPT_FILE)" --output-format text "> $NOTES_FILE"
+    run opencode run -m "$AI_MODEL" --auto "\$(cat $PROMPT_FILE)" "> $NOTES_FILE"
     return
   fi
 
-  if command -v claude >/dev/null 2>&1; then
+  if command -v opencode >/dev/null 2>&1; then
     # 读取 Prompt 文件(每次运行,不硬编码),追加一条 CLI 输出纪律:
-    # 只输出 Release Note 正文,不要过程说明/分析/总结
+    # 只输出 Release Note 正文,不要过程说明/分析/总结,也不要整个包在代码块里
     local prompt
     prompt="$(cat "$PROMPT_FILE")"
     prompt+="
 
 ---
-IMPORTANT OUTPUT DISCIPLINE: Output ONLY the Release Note markdown itself. Do not include any preamble, scope analysis, progress notes, or trailing summary — nothing outside the note."
-    claude -p "$prompt" --output-format text > "$NOTES_FILE"
+IMPORTANT OUTPUT DISCIPLINE: Output ONLY the Release Note markdown itself. Do not include any preamble, scope analysis, progress notes, or trailing summary — nothing outside the note. Do not wrap the entire note in a Markdown code fence."
+    # stdout 是 AI 回复正文;工具调用/状态行走 stderr,不会污染 notes.md
+    opencode run -m "$AI_MODEL" --auto "$prompt" > "$NOTES_FILE"
     [ -s "$NOTES_FILE" ] || die "$NOTES_FILE 为空,AI 生成失败?"
     ok "已生成 $NOTES_FILE($(wc -l < "$NOTES_FILE") 行)"
   else
     cp "$PROMPT_FILE" /tmp/lumina-release-note-task.md
-    die "未找到 claude CLI。请把 /tmp/lumina-release-note-task.md 交给 AI 生成 notes.md,然后运行 ./scripts/release.sh --publish"
+    die "未找到 opencode CLI。请把 /tmp/lumina-release-note-task.md 交给 AI 生成 notes.md,然后运行 ./scripts/release.sh --publish"
   fi
 }
 
