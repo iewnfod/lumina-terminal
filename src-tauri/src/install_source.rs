@@ -35,12 +35,16 @@ pub fn dpkg_owner_package(stdout: &str) -> Option<&str> {
 }
 
 /// Parse `rpm -qf --queryformat=%{NAME} <path>` stdout → pkg. `rpm` prints
-/// "not installed" / "not owned by any package" on a miss; guard against both
-/// (and empty output) in case a distro customizes the exit code. Pure — see
-/// [`pacman_owner_package`].
+/// "not installed" / "not owned by any package" on a miss; guard against the
+/// exact miss strings (a `starts_with("not")` prefix would also reject real
+/// packages like `noto-sans-fonts`). Pure — see [`pacman_owner_package`].
 pub fn rpm_owner_package(stdout: &str) -> Option<&str> {
     let pkg = stdout.trim();
-    if pkg.is_empty() || pkg.starts_with("not") {
+    if pkg.is_empty()
+        || pkg == "not installed"
+        || pkg == "not owned by any package"
+        || pkg.starts_with("not owned")
+    {
         None
     } else {
         Some(pkg)

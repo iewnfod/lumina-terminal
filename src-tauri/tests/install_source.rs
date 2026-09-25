@@ -54,6 +54,15 @@ fn rpm_miss_shapes_are_none() {
     assert_eq!(rpm_owner_package("  \n"), None);
 }
 
+#[test]
+fn rpm_real_packages_starting_with_not_are_hits() {
+    // Regression: a `starts_with("not")` prefix guard rejected rpm packages
+    // like Google's noto-* fonts, wrongly enabling the in-app updater for
+    // package-managed installs.
+    assert_eq!(rpm_owner_package("noto-sans-fonts"), Some("noto-sans-fonts"));
+    assert_eq!(rpm_owner_package("notification-daemon\n"), Some("notification-daemon"));
+}
+
 /// Read-only e2e on a pacman-host: the REAL `pacman -Qo` output, spawned the
 /// way `install_source` does, must still parse under a localized user locale
 /// (under zh_CN the raw line reads "… 由 pacman x.y-z 所拥有", which the

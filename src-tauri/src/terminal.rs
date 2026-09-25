@@ -10,7 +10,7 @@ use crate::command_tracker::{foreground_command, CommandInfo};
 use crate::ssh::SshConfig;
 use crate::state::{
     CommandChild, CommandHistoryEntry, ExitedTab, ExitInfo, OutputChannel, RecentOutput,
-    SharedChild, TerminalEntry, TerminalState,
+    SharedChild, SharedWriter, TerminalEntry, TerminalState,
 };
 
 /// One flush pass of the reader thread's streaming-UTF-8 decode: emit the
@@ -436,10 +436,21 @@ fn spawn_watcher_thread(
         // `term-exit-<id>` with it as payload.
         let exit: ExitInfo = loop {
             let exit_info: Option<ExitInfo> = {
-                let mut child_guard = shared_child.try_lock().unwrap_or_else(|e| {
-                    log::error!("Failed to lock child in watcher {}: {}", id, e);
-                    panic!("Failed to lock child in watcher: {}", e);
-                });
+                // WouldBlock is a TRANSIENT condition (kill_terminal or the
+                // MCP surface holds the child lock right now) — skip this
+                // tick and re-poll. Only a poisoned lock (a panic while
+                // held) is fatal for the watcher.
+                let mut child_guard = match shared_child.try_lock() {
+                    Ok(guard) => guard,
+                    Err(std::sync::TryLockError::Poisoned(e)) => {
+                        log::error!("Failed to lock child in watcher {}: {}", id, e);
+                        panic!("Failed to lock child in watcher: {}", e);
+                    }
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        thread::sleep(Duration::from_millis(200));
+                        continue;
+                    }
+                };
                 match child_guard.try_wait() {
                     Ok(Some(status)) => {
                         let info = ExitInfo {
@@ -500,10 +511,22 @@ fn spawn_watcher_thread(
         // for this tab after its live entry is gone.
         log::debug!("Cleaning up state for terminal {}", id);
         {
-            let mut terminals = state.terminals.try_lock().unwrap_or_else(|e| {
-                log::error!("Failed to lock terminals in watcher {}: {}", id, e);
-                panic!("Failed to lock terminals in watcher: {}", e);
-            });
+            // Retry on contention instead of panicking: every map-lock
+            // section is short now, so the next attempt always makes
+            // progress; a cleanup that gave up would leak the entry (and
+            // skip the term-exit the frontend waits on).
+            let mut terminals = loop {
+                match state.terminals.try_lock() {
+                    Ok(guard) => break guard,
+                    Err(std::sync::TryLockError::Poisoned(e)) => {
+                        log::error!("Failed to lock terminals in watcher {}: {}", id, e);
+                        panic!("Failed to lock terminals in watcher: {}", e);
+                    }
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                }
+            };
             if let Some(entry) = terminals.remove(&id) {
                 state.record_exit(
                     id.clone(),
@@ -551,7 +574,7 @@ pub fn start_terminal(
     shell_completions: Option<bool>,
 ) {
     {
-        let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+        let terminals = state.terminals.lock().unwrap_or_else(|e| {
             log::error!("Failed to lock terminals for start {}: {}", id, e);
             panic!("Failed to lock terminals: {}", e);
         });
@@ -599,14 +622,20 @@ pub fn start_terminal(
         log::error!("Failed to clone reader for terminal {}: {}", id, e);
         panic!("Failed to clone reader: {}", e);
     });
-    let writer = pty_pair.master.take_writer().unwrap_or_else(|e| {
-        log::error!("Failed to clone writer for terminal {}: {}", id, e);
-        panic!("Failed to clone writer: {}", e);
-    });
+    let writer: SharedWriter = {
+        let w = pty_pair.master.take_writer().unwrap_or_else(|e| {
+            log::error!("Failed to clone writer for terminal {}: {}", id, e);
+            panic!("Failed to clone writer: {}", e);
+        });
+        // Shared so `write_to_terminal` can clone it out and write WITHOUT
+        // holding the terminals-map lock (a blocked PTY write must not stall
+        // the whole app — see write_to_terminal).
+        Arc::new(std::sync::Mutex::new(w))
+    };
 
     let shared_child: SharedChild = Arc::new(std::sync::Mutex::new(child));
     let shell_pid = {
-        let guard = shared_child.try_lock().unwrap_or_else(|e| {
+        let guard = shared_child.lock().unwrap_or_else(|e| {
             log::error!("Failed to lock child for terminal {}: {}", id, e);
             panic!("Failed to lock child: {}", e);
         });
@@ -628,10 +657,27 @@ pub fn start_terminal(
 
     // Store in state
     {
-        let mut terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+        let mut terminals = state.terminals.lock().unwrap_or_else(|e| {
             log::error!("Failed to lock terminals for state insert {}: {}", id, e);
             panic!("Failed to lock terminals: {}", e);
         });
+        // Re-check under the SAME lock that inserts: the early contains_key
+        // above released its guard before the PTY was spawned, and a
+        // concurrent start with the same id (dev StrictMode double-effect)
+        // must not silently overwrite — the loser's PTY would be orphaned.
+        if terminals.contains_key(&id) {
+            log::warn!(
+                "Terminal with id {} appeared concurrently; dropping the newly spawned PTY",
+                id
+            );
+            drop(terminals);
+            if let Ok(mut child) = shared_child.try_lock() {
+                if let Err(e) = child.kill() {
+                    log::error!("Failed to kill orphaned child for terminal {}: {}", id, e);
+                }
+            }
+            return;
+        }
         terminals.insert(
             id.clone(),
             TerminalEntry {
@@ -678,7 +724,7 @@ pub fn start_terminal(
 /// detach for the previous holder.
 #[tauri::command]
 pub fn reattach_terminal(id: String, on_output: Channel<String>, state: State<TerminalState>) {
-    let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+    let terminals = state.terminals.lock().unwrap_or_else(|e| {
         log::error!("Failed to lock terminals for reattach {}: {}", id, e);
         panic!("Failed to lock terminals: {}", e);
     });
@@ -696,13 +742,19 @@ pub fn reattach_terminal(id: String, on_output: Channel<String>, state: State<Te
 
 #[tauri::command]
 pub fn kill_terminal(id: String, state: State<TerminalState>) {
-    let mut terminals = state.terminals.try_lock().unwrap_or_else(|e| {
-        log::error!("Failed to lock terminals for kill {}: {}", id, e);
-        panic!("Failed to lock terminals: {}", e);
-    });
-    if let Some(entry) = terminals.remove(&id) {
+    // Remove under a SHORT map lock, kill outside it: kill() can be slow
+    // (signal delivery, Windows process teardown) and the map lock must not
+    // be held across it — other tabs' operations wait on the same lock.
+    let entry = {
+        let mut terminals = state.terminals.lock().unwrap_or_else(|e| {
+            log::error!("Failed to lock terminals for kill {}: {}", id, e);
+            panic!("Failed to lock terminals: {}", e);
+        });
+        terminals.remove(&id)
+    };
+    if let Some(entry) = entry {
         log::info!("Killing terminal {}", id);
-        let mut child = entry.child.try_lock().unwrap_or_else(|e| {
+        let mut child = entry.child.lock().unwrap_or_else(|e| {
             log::error!("Failed to lock child for kill {}: {}", id, e);
             panic!("Failed to lock child: {}", e);
         });
@@ -714,49 +766,71 @@ pub fn kill_terminal(id: String, state: State<TerminalState>) {
     }
     // Drop this tab's MCP-side data (recent exit + command history) now that
     // the user closed it, so these bounded stores don't leak closed-tab entries.
-    if let Ok(mut exits) = state.recent_exits.try_lock() {
-        exits.remove(&id);
+    match state.recent_exits.try_lock() {
+        Ok(mut exits) => {
+            exits.remove(&id);
+        }
+        Err(e) => {
+            log::warn!("kill_terminal {}: failed to lock recent_exits: {}", id, e);
+        }
     }
     state.clear_command_history(&id);
 }
 
 #[tauri::command]
 pub fn write_to_terminal(id: String, content: &[u8], state: State<TerminalState>) {
-    let mut terminals = state.terminals.try_lock().unwrap_or_else(|e| {
-        log::error!("Failed to lock terminals for write {}: {}", id, e);
-        panic!("Failed to lock terminals: {}", e);
+    // Clone the shared writer out under a SHORT map lock, then write with the
+    // map lock released: a PTY master write blocks when the slave's input
+    // queue is full (stopped job, unresponsive TUI, stalled SSH tab), and
+    // holding the single map lock across it would stall — or, with the fatal
+    // try_lock pattern, panic — every other terminal's operations.
+    let writer = {
+        let terminals = state.terminals.lock().unwrap_or_else(|e| {
+            log::error!("Failed to lock terminals for write {}: {}", id, e);
+            panic!("Failed to lock terminals: {}", e);
+        });
+        match terminals.get(&id) {
+            Some(entry) => entry.writer.clone(),
+            None => {
+                log::warn!("write_to_terminal: terminal {} not found", id);
+                return;
+            }
+        }
+    };
+    let mut writer = writer.lock().unwrap_or_else(|e| {
+        log::error!("Failed to lock writer for terminal {}: {}", id, e);
+        panic!("Failed to lock writer: {}", e);
     });
-    if let Some(entry) = terminals.get_mut(&id) {
-        entry.writer.write_all(content).unwrap_or_else(|e| {
-            log::error!("Failed to write to terminal {}: {}", id, e);
-            panic!("Failed to write to terminal: {}", e);
-        });
-        entry.writer.flush().unwrap_or_else(|e| {
-            log::error!("Failed to flush writer for terminal {}: {}", id, e);
-            panic!("Failed to flush writer: {}", e);
-        });
-    } else {
-        log::warn!("write_to_terminal: terminal {} not found", id);
+    // A dead PTY (EIO on Linux once the child has exited, before the
+    // watcher's next poll removes the entry) is a routine edge the frontend
+    // can still be typing into — degrade, don't panic.
+    if let Err(e) = writer.write_all(content) {
+        log::warn!("write_to_terminal {}: pty write failed (child gone?): {}", id, e);
+        return;
+    }
+    if let Err(e) = writer.flush() {
+        log::warn!("write_to_terminal {}: pty flush failed: {}", id, e);
     }
 }
 
 #[tauri::command]
 pub fn resize_terminal(id: String, cols: u16, rows: u16, state: State<TerminalState>) {
-    let mut terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+    let terminals = state.terminals.lock().unwrap_or_else(|e| {
         log::error!("Failed to lock terminals for resize {}: {}", id, e);
         panic!("Failed to lock terminals: {}", e);
     });
-    if let Some(entry) = terminals.get_mut(&id) {
+    if let Some(entry) = terminals.get(&id) {
         let size = PtySize {
             rows,
             cols,
             pixel_width: 0,
             pixel_height: 0,
         };
-        entry.pty_pair.master.resize(size).unwrap_or_else(|e| {
-            log::error!("Failed to resize terminal {}: {}", id, e);
-            panic!("Failed to resize terminal: {}", e);
-        });
+        // A dead master fails the ioctl with EIO — same routine edge as the
+        // write path above (watcher cleanup is imminent), not a fatal state.
+        if let Err(e) = entry.pty_pair.master.resize(size) {
+            log::warn!("resize_terminal {}: pty resize failed (child gone?): {}", id, e);
+        }
     } else {
         log::warn!("resize_terminal: terminal {} not found", id);
     }
@@ -769,7 +843,7 @@ pub fn resize_terminal(id: String, cols: u16, rows: u16, state: State<TerminalSt
 /// boolean transitions — never per input event.
 #[tauri::command]
 pub fn set_output_mode(id: String, low_latency: bool, state: State<TerminalState>) {
-    let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+    let terminals = state.terminals.lock().unwrap_or_else(|e| {
         log::error!("Failed to lock terminals for set_output_mode {}: {}", id, e);
         panic!("Failed to lock terminals: {}", e);
     });
@@ -791,7 +865,7 @@ pub fn set_output_mode(id: String, low_latency: bool, state: State<TerminalState
 /// transitions, never per chunk.
 #[tauri::command]
 pub fn set_throttle(id: String, throttled: bool, state: State<TerminalState>) {
-    let terminals = state.terminals.try_lock().unwrap_or_else(|e| {
+    let terminals = state.terminals.lock().unwrap_or_else(|e| {
         log::error!("Failed to lock terminals for set_throttle {}: {}", id, e);
         panic!("Failed to lock terminals: {}", e);
     });
@@ -839,7 +913,7 @@ pub fn get_terminal_cwd(id: String, state: State<TerminalState>) -> Option<Strin
 /// MCP surface. Called by the frontend whenever the active tab changes.
 #[tauri::command]
 pub fn set_active_tab(id: Option<String>, state: State<TerminalState>) {
-    let mut active = state.active_id.try_lock().unwrap_or_else(|e| {
+    let mut active = state.active_id.lock().unwrap_or_else(|e| {
         log::error!("Failed to lock active_id for set_active_tab: {}", e);
         panic!("Failed to lock active_id: {}", e);
     });

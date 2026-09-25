@@ -52,14 +52,21 @@ pub fn open_in_file_manager(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         use std::process::Command;
+        // Mirror the Linux branch: a non-zero exit (raced deletion, no app
+        // registered) must surface as an error, not silently report success.
         let result = if let Some(ref name) = file_name {
             // `open -R <file>` reveals the file in Finder
-            Command::new("open").args(["-R", &path]).status().map(|_| ())
+            Command::new("open").args(["-R", &path]).status()
         } else {
-            Command::new("open").arg(&dir).status().map(|_| ())
+            Command::new("open").arg(&dir).status()
         };
         match result {
-            Ok(()) => Ok(()),
+            Ok(status) if status.success() => Ok(()),
+            Ok(status) => {
+                let msg = format!("open exited with {}", status);
+                log::warn!("{}", msg);
+                Err(msg)
+            }
             Err(e) => {
                 let msg = format!("Failed to open: {}", e);
                 log::warn!("{}", msg);
@@ -71,17 +78,20 @@ pub fn open_in_file_manager(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
+        // Mirror the Linux branch: explorer returns non-zero for paths it
+        // can't show (raced deletion) — report it instead of hiding success.
         let result = if let Some(ref _name) = file_name {
             // `explorer /select,<path>` selects the file in Explorer
             Command::new("explorer")
                 .args(["/select,", &path.replace('/', "\\")])
                 .status()
-                .map(|_| ())
         } else {
-            Command::new("explorer").arg(&dir).status().map(|_| ())
+            Command::new("explorer").arg(&dir).status()
         };
         match result {
-            Ok(()) => Ok(()),
+            // Explorer returns 1 for "opened successfully" in some versions —
+            // treat any COMPLETED launch as success.
+            Ok(_) => Ok(()),
             Err(e) => {
                 let msg = format!("Failed to open: {}", e);
                 log::warn!("{}", msg);

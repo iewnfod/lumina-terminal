@@ -17,9 +17,18 @@ function __lumina_complete
 	if string match -qr '[\t\n\r\x1b\x07\x1e\x1f]' -- $__lumina_ctx
 		set __lumina_ctx ''
 	end
+	if string match -qr '[\t\n\r\x1b\x07\x1e\x1f]' -- $__lumina_word
+		set __lumina_word ''
+	end
 	set -l __lumina_out
 	if set -q __lumina_line[1]
 		set __lumina_out (complete -C -- "$__lumina_line")
+		# Cap the emitted candidates (2x the popup's display cap): a giant set
+		# (`ls /usr/bin`) would otherwise build a multi-hundred-KB OSC payload
+		# for a popup that only ever shows the first rows.
+		if set -q __lumina_out[201]
+			set __lumina_out $__lumina_out[1..200]
+		end
 	end
 	if not set -q __lumina_out[1]
 		commandline -f complete

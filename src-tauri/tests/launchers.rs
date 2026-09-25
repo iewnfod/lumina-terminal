@@ -244,6 +244,25 @@ fn powershell_script_quotes_paths_and_joins_args() {
 }
 
 #[test]
+fn powershell_script_quotes_args_with_spaces() {
+    // Regression: bare `args.join(" ")` split a spaced title into separate
+    // argv tokens, which clap then rejected — the launcher failed to open.
+    let script = shortcut_ps1(
+        r"C:\Menu\Dev.lnk",
+        r"C:\Program Files\Lumina\lumina.exe",
+        &[
+            "--profile".to_string(),
+            "My Dev Shell".to_string(),
+            "--working-directory".to_string(),
+            r"C:\My Dir".to_string(),
+        ],
+        None,
+        None,
+    );
+    assert!(script.contains("'--profile \"My Dev Shell\" --working-directory \"C:\\My Dir\"'"));
+}
+
+#[test]
 fn stems_and_file_names_are_safe() {
     assert_eq!(launcher_stem("Neovim"), "lumina-neovim");
     // CJK collapses to the sanitizer's fallback stem.

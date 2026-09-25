@@ -256,6 +256,19 @@ pub fn parse_kioslaverc(text: &str) -> ProxySnapshot {
     }
 }
 
+/// Strip a `scutil` ExceptionsList entry's leading `<digits> :` index and
+/// surrounding quotes: `0 : "*.local"` → `*.local`; a bare entry passes
+/// through unchanged.
+fn strip_scutil_index(line: &str) -> String {
+    let mut entry = line.trim();
+    if let Some((idx, rest)) = entry.split_once(':') {
+        if !idx.trim().is_empty() && idx.trim().chars().all(|c| c.is_ascii_digit()) {
+            entry = rest.trim();
+        }
+    }
+    entry.trim_matches('"').to_string()
+}
+
 /// Parse macOS `scutil --proxy` output (a `<dictionary> { K : V … }` block).
 pub fn parse_scutil_proxy(text: &str) -> ProxySnapshot {
     let mut http = (false, String::new(), 0u16);
@@ -269,7 +282,13 @@ pub fn parse_scutil_proxy(text: &str) -> ProxySnapshot {
             if line.contains('}') {
                 in_exceptions = false;
             } else if !line.is_empty() {
-                no_proxy.push(line.to_string());
+                // Real `scutil --proxy` prints indexed entries — `0 : "*.local"`,
+                // `1 : 169.254/16` — strip the `<digits> :` prefix and the
+                // surrounding quotes so the entry actually matches hosts.
+                let entry = strip_scutil_index(line);
+                if !entry.is_empty() {
+                    no_proxy.push(entry);
+                }
             }
             continue;
         }
@@ -346,10 +365,14 @@ pub fn parse_windows_registry(enable: &str, server: &str, override_list: &str) -
 pub fn proxy_from_env_pairs<I: IntoIterator<Item = (String, String)>>(pairs: I) -> ProxySnapshot {
     // Collected once (env sets are tiny) so several keys can be looked up.
     let collected: Vec<(String, String)> = pairs.into_iter().collect();
+    // Two-pass lookup so the documented "lowercase wins" actually holds: a
+    // single `find(k == lower || k == upper)` would depend on the arbitrary
+    // iteration order of the env set.
     let lookup = |lower: &str, upper: &str| -> Option<String> {
         collected
             .iter()
-            .find(|(k, _)| k == lower || k == upper)
+            .find(|(k, _)| k == lower)
+            .or_else(|| collected.iter().find(|(k, _)| k == upper))
             .map(|(_, v)| v.clone())
     };
     let mut snap = ProxySnapshot {
@@ -598,25 +621,37 @@ fn watcher_loop(
     while running.load(Ordering::Relaxed) {
         let snap = detect_snapshot(source);
         if last.as_ref() != Some(&snap) {
-            last = Some(snap.clone());
             // utils::write_atomic (tmp+rename) so a hook never reads a
-            // half-written env-file.
-            if let Err(e) = crate::utils::write_atomic(&env_path, render_proxy_env(&snap).as_bytes()) {
-                log::warn!(
-                    "Proxy watcher failed to write {}: {} (will retry on next change)",
-                    env_path.display(),
-                    e
-                );
-            } else if snap.is_off() {
-                log::info!("System proxy: off");
-            } else {
-                log::info!(
-                    "System proxy changed: http={:?} https={:?} all={:?} no_proxy={}",
-                    snap.http,
-                    snap.https,
-                    snap.all,
-                    snap.no_proxy.join(",")
-                );
+            // half-written env-file. On failure DON'T latch `last`: the next
+            // poll retries the write instead of waiting for the system proxy
+            // to change again (which could be hours away). Control flow still
+            // reaches the sliced sleep below — no busy retry.
+            let written = crate::utils::write_atomic(
+                &env_path,
+                render_proxy_env(&snap).as_bytes(),
+            );
+            match written {
+                Err(e) => {
+                    log::warn!(
+                        "Proxy watcher failed to write {}: {} (will retry next poll)",
+                        env_path.display(),
+                        e
+                    );
+                }
+                Ok(()) => {
+                    last = Some(snap.clone());
+                    if snap.is_off() {
+                        log::info!("System proxy: off");
+                    } else {
+                        log::info!(
+                            "System proxy changed: http={:?} https={:?} all={:?} no_proxy={}",
+                            snap.http,
+                            snap.https,
+                            snap.all,
+                            snap.no_proxy.join(",")
+                        );
+                    }
+                }
             }
         }
         // Sliced sleep: stop() flips the flag and joins within one slice.
@@ -636,7 +671,7 @@ pub fn start_proxy_sync(
     app: tauri::AppHandle,
     state: tauri::State<ProxySyncHandle>,
 ) -> Result<(), String> {
-    let mut guard = state.watcher.try_lock().unwrap_or_else(|e| {
+    let mut guard = state.watcher.lock().unwrap_or_else(|e| {
         log::error!("Failed to lock proxy watcher state for start: {}", e);
         panic!("Failed to lock proxy watcher state: {}", e);
     });
@@ -663,7 +698,7 @@ pub fn stop_proxy_sync(
     state: tauri::State<ProxySyncHandle>,
 ) -> Result<(), String> {
     {
-        let mut guard = state.watcher.try_lock().unwrap_or_else(|e| {
+        let mut guard = state.watcher.lock().unwrap_or_else(|e| {
             log::error!("Failed to lock proxy watcher state for stop: {}", e);
             panic!("Failed to lock proxy watcher state: {}", e);
         });

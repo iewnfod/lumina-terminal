@@ -169,6 +169,59 @@ fn zsh_hook_lifecycle() {
     );
 }
 
+/// Regression: the exit-code hook must report the USER's command status even
+/// when their rc registered precmd hooks that clobber `$?` first (theme
+/// frameworks like oh-my-zsh/powerlevel10k/starship always do). The generated
+/// .zshrc sources the user's rc BEFORE adding our hook, so ours must run
+/// FIRST in `precmd_functions` (and preserve the code for later hooks).
+/// Simulates zsh's precmd dispatch (array order) after `true` and `false`.
+#[test]
+fn zsh_exit_code_survives_user_precmd_hooks() {
+    use lumina_terminal_lib::shell_integration::zshrc_core;
+
+    if !shell_runs("zsh") {
+        eprintln!("skipping zsh exit-code test: zsh not available");
+        return;
+    }
+    let home = std::env::temp_dir().join(format!("lumina-zsh-exit-{}", std::process::id()));
+    std::fs::create_dir_all(&home).expect("create temp dir");
+    // A user rc whose precmd hook clobbers $? (runs `false`).
+    std::fs::write(
+        home.join(".zshrc"),
+        "user_precmd() { false; }\nprecmd_functions+=(user_precmd)\n",
+    )
+    .expect("write fake user rc");
+    let zshrc_path = home.join("lumina-zshrc");
+    std::fs::write(&zshrc_path, zshrc_core()).expect("write generated zshrc");
+
+    let script = format!(
+        r#"source "{zshrc}"
+true
+for f in $precmd_functions; do $f; done
+false
+for f in $precmd_functions; do $f; done
+"#,
+        zshrc = zshrc_path.to_string_lossy(),
+    );
+    let out = isolated("zsh")
+        .arg("-c")
+        .arg(&script)
+        .env("HOME", &home)
+        .output()
+        .expect("spawn zsh");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let codes: Vec<&str> = stdout
+        .split("\u{1b}]1337;CurrentCommandExit=")
+        .skip(1)
+        .map(|rest| rest.split('\u{7}').next().unwrap_or(""))
+        .collect();
+    assert!(
+        codes == ["0", "1"],
+        "exit codes clobbered by user precmd hooks: got {codes:?}\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 #[test]
 fn fish_hook_lifecycle() {
     let env_file = temp_env_file("fish");

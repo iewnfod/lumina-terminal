@@ -11,6 +11,13 @@ pub type CommandChild = Box<dyn Child + Send + Sync>;
 pub type SharedChild = Arc<Mutex<CommandChild>>;
 type TerminalWriter = Box<dyn Write + Send>;
 
+/// The PTY writer, wrapped so it can be cloned out of the terminals map and
+/// written to WITHOUT holding the map lock: a PTY master write blocks when
+/// the slave's input queue is full (a stopped job, an unresponsive TUI, a
+/// stalled SSH tab), and holding the single map lock across that write would
+/// stall every other terminal's operations.
+pub type SharedWriter = Arc<Mutex<TerminalWriter>>;
+
 /// The output sink the reader thread forwards decoded PTY bytes to. Stored as
 /// a swappable `Option` so the PTY can be reattached to a different window
 /// (tab tear-off): the new window's `reattach_terminal` call replaces this in
@@ -71,7 +78,7 @@ impl RecentOutput {
 pub struct TerminalEntry {
     pub pty_pair: PtyPair,
     pub child: SharedChild,
-    pub writer: TerminalWriter,
+    pub writer: SharedWriter,
     /// PID of the spawned shell, captured right after spawn via
     /// `Child::process_id()`. Used to distinguish "shell is the foreground
     /// process group" (= idle at prompt) from "a child command is running".

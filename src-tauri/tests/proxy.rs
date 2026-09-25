@@ -94,11 +94,12 @@ fn kioslaverc_proxy_type_none_is_off() {
     assert!(snap.is_off());
 }
 
+// Indexed entries + quotes — the shape real `scutil --proxy` prints.
 const SCUTIL_SAMPLE: &str = "\
 <dictionary> {
   ExceptionsList : <array> {
-    localhost
-    127.0.0.1
+    0 : \"*.local\"
+    1 : 169.254/16
   }
   HTTPEnable : 1
   HTTPPort : 7890
@@ -120,7 +121,10 @@ fn scutil_enabled_proxies_produce_snapshot() {
     assert_eq!(snap.https.as_deref(), Some("http://127.0.0.1:7890"));
     // SOCKSEnable : 0 → all must stay off despite SOCKSProxy being set.
     assert_eq!(snap.all, None);
-    assert!(snap.no_proxy.contains(&"127.0.0.1".to_string()));
+    // Index prefix stripped, quotes removed.
+    assert!(snap.no_proxy.contains(&"*.local".to_string()));
+    assert!(snap.no_proxy.contains(&"169.254/16".to_string()));
+    assert!(!snap.no_proxy.iter().any(|e| e.contains(": ")));
 }
 
 #[test]
@@ -279,9 +283,11 @@ no_proxy=
 
 #[test]
 fn env_pairs_lowercase_wins_and_splits_no_proxy() {
+    // UPPERCASE first in the pair order: the win must come from the two-pass
+    // lookup, not from the (arbitrary) iteration order of the env set.
     let snap = proxy_from_env_pairs([
-        ("http_proxy".to_string(), "http://127.0.0.1:7890".to_string()),
         ("HTTP_PROXY".to_string(), "http://ignored:1".to_string()),
+        ("http_proxy".to_string(), "http://127.0.0.1:7890".to_string()),
         ("HTTPS_PROXY".to_string(), "http://127.0.0.1:7890".to_string()),
         ("all_proxy".to_string(), "socks5://127.0.0.1:7890".to_string()),
         ("no_proxy".to_string(), "localhost,.corp.example.com".to_string()),

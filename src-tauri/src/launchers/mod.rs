@@ -565,8 +565,14 @@ fn prune_launchers(
                 else {
                     continue;
                 };
-                if plist.contains(BUNDLE_ID_PREFIX) && std::fs::remove_dir_all(&entry).is_ok() {
-                    removed.push(entry.to_string_lossy().to_string());
+                if plist.contains(BUNDLE_ID_PREFIX) {
+                    match std::fs::remove_dir_all(&entry) {
+                        Ok(()) => removed.push(entry.to_string_lossy().to_string()),
+                        Err(e) => log::warn!(
+                            "Failed to prune launcher bundle {}: {e}",
+                            entry.display()
+                        ),
+                    }
                 }
             }
         }

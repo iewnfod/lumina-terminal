@@ -111,8 +111,13 @@ lumina_complete() {
 	BUFFER=$_lbuf CURSOR=$_lcur
 	if (( $#_lumina_ins )); then
 		[[ $_lumina_ctx == *[$'\t\n\r\033\007\036\037']* ]] && _lumina_ctx=
+		[[ $_lumina_word == *[$'\t\n\r\033\007\036\037']* ]] && _lumina_word=
+		# Cap the emitted candidates (2x the popup's display cap): a giant set
+		# (`ls /usr/bin`) would otherwise build a multi-hundred-KB OSC payload
+		# for a popup that only ever shows the first rows.
+		local -ri _lcap=200
 		local _li2 _lout="${_lumina_ctx}"$'\037'"$_lumina_word"
-		for (( _li2 = 1; _li2 <= $#_lumina_ins; _li2++ )); do
+		for (( _li2 = 1; _li2 <= $#_lumina_ins && _li2 <= _lcap; _li2++ )); do
 			_lout+=$'\036'"${_lumina_ins[_li2]}"$'\037'"${_lumina_lbl[_li2]}"$'\037'"${_lumina_dsc[_li2]}"
 		done
 		printf '\033]1337;Completions=%s\007' "$_lout"

@@ -40,15 +40,25 @@ pub fn content_hash_hex(bytes: &[u8]) -> String {
 /// .desktop entry or proxy env-file). POSIX rename overwrites atomically;
 /// Windows' does not, so drop the target first — the gap is harmless for our
 /// readers (hooks/pickers treat a missing file as "keep current state").
-/// Creates parent directories as needed.
+/// Creates parent directories as needed. The tmp name is pid-suffixed: two
+/// Lumina processes (profile launchers spawn separate instances) writing the
+/// same target must not interleave through one shared tmp file.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension("tmp");
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
     std::fs::write(&tmp, bytes)?;
     #[cfg(windows)]
-    let _ = std::fs::remove_file(path);
+    {
+        if let Err(e) = std::fs::remove_file(path) {
+            // NotFound just means the target didn't exist yet; anything else
+            // is logged (§3.6) — the rename below surfaces the real failure.
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::debug!("write_atomic: target pre-remove failed for {}: {}", path.display(), e);
+            }
+        }
+    }
     std::fs::rename(&tmp, path)
 }
 

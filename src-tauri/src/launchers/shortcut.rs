@@ -12,6 +12,19 @@ fn ps_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 
+/// Quote one argument for a Windows command line: tokens containing
+/// whitespace or quotes are wrapped in `"…"`` with inner quotes doubled
+/// (`\"`-style escaping as WScript.Shell's Arguments property expects).
+/// Joining bare tokens would split `My Dev Shell` into three argv entries
+/// clap then rejects — the sibling builders (desktop/bundle) quote per token
+/// for the same reason.
+fn win_arg(s: &str) -> String {
+    if !s.is_empty() && !s.contains([' ', '\t', '"']) {
+        return s.to_string();
+    }
+    format!("\"{}\"", s.replace('"', "\\\""))
+}
+
 /// A one-line PowerShell script that creates a `.lnk` via the
 /// `WScript.Shell` COM object. Single line + `;` separators so it can be
 /// passed as one `-Command` argument without newline quoting concerns.
@@ -25,11 +38,12 @@ pub fn shortcut_ps1(
     working_directory: Option<&str>,
     icon: Option<&str>,
 ) -> String {
+    let quoted_args: Vec<String> = args.iter().map(|a| win_arg(a)).collect();
     let mut script = format!(
         "$ErrorActionPreference='Stop';$s=(New-Object -ComObject WScript.Shell).CreateShortcut({});$s.TargetPath={};$s.Arguments={}",
         ps_quote(lnk_path),
         ps_quote(exe),
-        ps_quote(&args.join(" ")),
+        ps_quote(&quoted_args.join(" ")),
     );
     if let Some(wd) = working_directory.filter(|s| !s.is_empty()) {
         script.push_str(&format!(";$s.WorkingDirectory={}", ps_quote(wd)));

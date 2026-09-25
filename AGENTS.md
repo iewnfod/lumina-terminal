@@ -56,6 +56,9 @@ src/
 │                            #   Languages (the UI-language union lives here so GlobalConfig can
 │                            #   reference it without types/ reaching into hooks/i18n.tsx)
 │   ├── cli.ts               # CliArgs — parsed launch flags (mirrors src-tauri/src/cli.rs CliArgs)
+│   ├── commandAction.ts     # CommandAction — one command-palette entry. Lives in types/ (not in
+│                            #   components/CommandPalette.tsx) so hooks/useCommandPaletteActions can
+│                            #   build the list without importing the components layer
 │   └── terminal.ts          # TerminalProfile (+ keepAfterExit: "exit"|"freeze"|"shell" — what
 │                            #   happens after startupCommand finishes) + ProfileLauncher (the
 │                            #   wrap-as-app section: title/workingDirectory/sidebar/icon; presence
@@ -92,11 +95,14 @@ src/
 │   ├── openerApi.ts         # openExternal — opener-plugin URL wrapper (log-on-reject); the one
 │   │                        #   way external links reach the system browser (plain target="_blank"
 │   │                        #   anchors are dead in the Tauri webview)
-│   ├── appIcon.ts           # Command→tab-icon mapping: resolveAppFromCommand (wrapper-skipping)
-│   │                        #   + getAppIcon(line, userRules?) — user rules (config commandIcons,
-│   │                        #   plain basename or regex-vs-whole-line) run before the built-in
-│   │                        #   APP_COMMANDS table. Also the custom:" icon id helpers. Single
+│   ├── appIcon.ts           # Command→tab-icon mapping: resolveAppFromCommand (wrapper-skipping
+│   │                        #   + flag-skipping) + getAppIcon(line, userRules?) — user rules (config
+│   │                        #   commandIcons, plain basename or regex-vs-whole-line) run before the
+│   │                        #   built-in APP_COMMANDS table. Also the custom:" icon id helpers. Single
 │   │                        #   source of truth for which running command shows which app icon.
+│   ├── exe.ts               # exeBasename — shared executable-name extraction (dir strip + .exe
+│   │                        #   strip + lowercase); the one source appIcon.ts and shellIcon.ts both
+│   │                        #   use (previously duplicated byte-for-byte)
 │   ├── commandIconApi.ts    # importCommandIcon/pruneCommandIcons/listCommandIcons invoke wrappers
 │   │                        #   (log-on-reject) + cached asset-protocol URL resolution for custom:
 │   │                        #   icon ids — the custom command-icon domain API (sibling to terminalApi.ts)

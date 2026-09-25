@@ -161,6 +161,12 @@ pub fn completion_hook_zsh() -> String {
     COMPLETE_ZSH.to_string()
 }
 
+/// The core generated `.zshrc` (user-rc sourcing + preexec/precmd hooks).
+/// Public for the real-shell lifecycle test in tests/shell_hooks.rs.
+pub fn zshrc_core() -> String {
+    ZSH_INIT.to_string()
+}
+
 /// fish completion-interception hook (passed via `-C`). Public for the
 /// real-shell test in tests/completion_hooks.rs; the script itself lives in
 /// [`COMPLETE_FISH`] (`fish/complete.fish`).

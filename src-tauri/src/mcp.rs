@@ -616,8 +616,23 @@ pub fn load_or_create_token_in(data_dir: &std::path::Path) -> Result<String, Str
             return Ok(tok);
         }
     }
+    // Only a missing/empty token regenerates: a transient READ failure
+    // (permissions, IO error) must not mint a fresh token — that would
+    // silently break every AI client configured with the old URL.
+    match std::fs::read_to_string(&path) {
+        Ok(_) => {} // handled above (empty) — fall through to regenerate
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(format!(
+                "Failed to read MCP token at {}: {} (not regenerating — the configured client URLs depend on it)",
+                path.display(),
+                e
+            ));
+        }
+    }
     let tok = generate_token();
-    if let Err(e) = std::fs::write(&path, &tok) {
+    // Atomic (tmp+rename): a crash mid-write must not leave a torn token.
+    if let Err(e) = crate::utils::write_atomic(&path, tok.as_bytes()) {
         log::warn!("Failed to persist MCP token to {}: {}", path.display(), e);
     }
     log::info!("Generated new MCP token (saved to {})", path.display());
