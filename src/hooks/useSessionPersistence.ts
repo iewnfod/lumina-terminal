@@ -6,7 +6,12 @@ import {TerminalProfile} from "../types/terminal.ts";
 import {clearSession, loadSession, saveSession, type SavedSession, type SavedTab} from "../lib/session.ts";
 import {getTerminalCwd} from "../lib/terminalApi.ts";
 import {SETTINGS_TAB_ID, ABOUT_TAB_ID} from "../constants.ts";
-import {useTauriSubscription} from "./useTauriListen.ts";
+import {useTauriListen, useTauriSubscription} from "./useTauriListen.ts";
+
+/** Tray quit broadcast — mirrors the Rust const of the same name in
+ *  src-tauri/src/tray.rs. Every window listens and closes itself through
+ *  the normal save flow; the app exits once the last one is gone. */
+const TRAY_QUIT_EVENT = "lumina-tray-quit";
 
 /** Refs passed in from useTerminalManager so the close handler reads live
  *  state without re-deriving (the handler is registered once on mount). */
@@ -107,6 +112,67 @@ export function useSessionPersistence(refs: PersistenceRefs) {
     // the core:window:allow-destroy capability.
     const finalizingRef = useRef(false);
 
+    // Set while a close triggered by the tray's Quit broadcast is running:
+    // that close must take the real exit path (session save etc.), not hide
+    // back into the tray. Reset in the handler's finally.
+    const quitRef = useRef(false);
+
+    // Only the main window collapses into the tray; tear-off windows close
+    // normally (their tab PTYs are merged back or killed as before).
+    const isMainWindow = getCurrentWindow().label === "main";
+
+    /** Hide this window into the tray. Rejects (after logging) if the OS
+     *  call fails, so the caller can fall back to a real close — the user
+     *  must never be left with a window that refuses to close. */
+    const hideWindow = () =>
+        getCurrentWindow().hide().catch(async (e) => {
+            await error(`Close-to-tray: failed to hide window: ${e}`).catch(() => {});
+            throw e;
+        });
+
+    /** Serialize every open tab (terminal + chrome, in tab-bar order) and
+     *  write the session store. Shared by the normal save-on-close path and
+     *  the close-to-tray silent save (sessionSaveMode "always"). */
+    const persistSession = async (r: PersistenceRefs, allIds: string[]) => {
+        const isChrome = (id: string) => id === SETTINGS_TAB_ID || id === ABOUT_TAB_ID;
+        const saveScrollback = r.config.sessionSaveScrollback === true;
+        const tabs = await Promise.all(
+            allIds.map(async (id): Promise<SavedTab> => {
+                // Chrome tabs (Settings/About): no PTY, no profile —
+                // store just the sentinel id and restore as chrome.
+                if (isChrome(id)) {
+                    return {kind: "chrome", chromeId: id};
+                }
+                const p = r.terminalsRef.current[id];
+                // Capture the LIVE cwd (where the user cd'd to), not the
+                // profile's static default. Fall back to the profile cwd
+                // if the read fails (unsupported OS, process gone).
+                let cwd = p.cwd ?? "";
+                try {
+                    cwd = (await getTerminalCwd(id)) ?? cwd;
+                } catch (e) {
+                    warn(`Session save: live cwd read failed for ${id}, using profile cwd: ${e}`);
+                }
+                const tab: SavedTab = {kind: "terminal", profileName: p.name, cwd};
+                if (saveScrollback) {
+                    tab.scrollback = r.serializeFns.current.get(id)?.() ?? "";
+                }
+                return tab;
+            }),
+        );
+        // Index of the active tab in the saved list — clamped on
+        // restore. -1 (no active id / id not found) → undefined.
+        const activeIdx = r.currentIdRef.current
+            ? allIds.indexOf(r.currentIdRef.current)
+            : -1;
+        await saveSession({
+            version: 1,
+            savedAt: Date.now(),
+            activeIndex: activeIdx >= 0 ? activeIdx : undefined,
+            tabs,
+        });
+    };
+
     const handleCloseRequested = async (event: CloseRequestedEvent) => {
         // Second pass: we re-requested close after our work finished. Let it
         // through this time (no preventDefault) so the window actually closes.
@@ -139,8 +205,37 @@ export function useSessionPersistence(refs: PersistenceRefs) {
             // tab layout restored. A chrome tab id is one of the sentinels;
             // everything else in `ids` that has a profile is a terminal tab.
             const allIds = r.idsRef.current;
-            const isChrome = (id: string) => id === SETTINGS_TAB_ID || id === ABOUT_TAB_ID;
             const mode = r.config.sessionSaveMode ?? "ask";
+
+            // Close-to-tray (config-gated, main window only): hide instead
+            // of tearing down, so every PTY and the commands running in
+            // them stay alive until the user quits from the tray. Skipped
+            // only when the close was triggered by the tray's Quit
+            // broadcast (quitRef — that must really exit). Applies with or
+            // without open tabs: the tray icon always provides a way back,
+            // so an empty trayed app is never unreachable.
+            if (
+                isMainWindow &&
+                r.config.closeToTray === true &&
+                !quitRef.current
+            ) {
+                try {
+                    await hideWindow();
+                    info("Close-to-tray: window hidden, terminals keep running");
+                    // Always-persist mode writes the session silently here
+                    // (no dialog — the app keeps running, but a crash while
+                    // trayed then still restores). Ask mode deliberately
+                    // does NOT prompt on tray-hide — hiding must never
+                    // block on a dialog; the prompt happens at tray-quit.
+                    if (r.config.sessionSaveMode === "always") {
+                        await persistSession(r, allIds);
+                    }
+                    return;
+                } catch {
+                    // hide failed (logged by hideWindow) — fall through to
+                    // the normal close flow so the window never gets stuck.
+                }
+            }
 
             let decision: "save" | "nosave";
             let remember = false;
@@ -172,43 +267,7 @@ export function useSessionPersistence(refs: PersistenceRefs) {
             } else {
                 // (save path): the close was prevented up front like every
                 // other path; nothing to do here but the writes.
-                const saveScrollback = r.config.sessionSaveScrollback === true;
-                const tabs = await Promise.all(
-                    allIds.map(async (id): Promise<SavedTab> => {
-                        // Chrome tabs (Settings/About): no PTY, no profile —
-                        // store just the sentinel id and restore as chrome.
-                        if (isChrome(id)) {
-                            return {kind: "chrome", chromeId: id};
-                        }
-                        const p = r.terminalsRef.current[id];
-                        // Capture the LIVE cwd (where the user cd'd to), not
-                        // the profile's static default. Fall back to the
-                        // profile cwd if the read fails (unsupported OS,
-                        // process gone).
-                        let cwd = p.cwd ?? "";
-                        try {
-                            cwd = (await getTerminalCwd(id)) ?? cwd;
-                        } catch (e) {
-                            warn(`Session save: live cwd read failed for ${id}, using profile cwd: ${e}`);
-                        }
-                        const tab: SavedTab = {kind: "terminal", profileName: p.name, cwd};
-                        if (saveScrollback) {
-                            tab.scrollback = r.serializeFns.current.get(id)?.() ?? "";
-                        }
-                        return tab;
-                    }),
-                );
-                // Index of the active tab in the saved list — clamped on
-                // restore. -1 (no active id / id not found) → undefined.
-                const activeIdx = r.currentIdRef.current
-                    ? allIds.indexOf(r.currentIdRef.current)
-                    : -1;
-                await saveSession({
-                    version: 1,
-                    savedAt: Date.now(),
-                    activeIndex: activeIdx >= 0 ? activeIdx : undefined,
-                    tabs,
-                });
+                await persistSession(r, allIds);
             }
 
             // "Remember this choice" rewrites the mode so future closes
@@ -237,6 +296,10 @@ export function useSessionPersistence(refs: PersistenceRefs) {
             getCurrentWindow().close().catch(() => {});
         } finally {
             handlingRef.current = false;
+            // The quit flag only ever guards the close it was set for; the
+            // finalizing pass re-enters the handler before this reset could
+            // affect it (it returns at the finalizing check above).
+            quitRef.current = false;
         }
     };
 
@@ -245,6 +308,22 @@ export function useSessionPersistence(refs: PersistenceRefs) {
         [],
     );
     useTauriSubscription(subscribeClose, handleCloseRequested, "close-requested handler");
+
+    // Tray Quit: the backend broadcast arrives in EVERY window; each closes
+    // itself through the handler above (quitRef skips the tray branch in the
+    // main window; tear-off windows never tray anyway). The window is shown
+    // first so the "ask every time" dialog — if the mode raises one — is
+    // actually visible instead of rendering inside a tray-hidden window.
+    useTauriListen(TRAY_QUIT_EVENT, () => {
+        info("Tray quit requested: closing through the session-save flow");
+        quitRef.current = true;
+        getCurrentWindow()
+            .show()
+            .then(() => getCurrentWindow().close())
+            .catch((e) =>
+                error(`Tray quit: failed to close window: ${e}`).catch(() => {})
+            );
+    });
 
     return {
         restoreTabs,

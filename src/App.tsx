@@ -6,6 +6,7 @@ import {getCurrentWindow} from "@tauri-apps/api/window";
 import {useGlobalConfig} from "./hooks/config.tsx";
 import {useMcpServerLifecycle} from "./hooks/useMcpServer.ts";
 import {useProxySync} from "./hooks/useProxySync.ts";
+import {useTrayLifecycle} from "./hooks/useTray.ts";
 import {useI18n} from "./hooks/i18n.tsx";
 import TitleBar from "./components/TitleBar.tsx";
 import TabBar, { type TabInfo } from "./components/TabBar.tsx";
@@ -59,6 +60,10 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // panel), keeping proxy env vars in sync inside running shells. See
     // hooks/useProxySync.ts.
     useProxySync();
+    // System tray ("close to tray"): created/removed from config.closeToTray
+    // so background terminals keep running after the window is closed. See
+    // hooks/useTray.ts.
+    useTrayLifecycle();
     const t = useI18n();
 
     // Terminal lifecycle: tab list, profiles, active id, tear-off + merge.

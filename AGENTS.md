@@ -88,6 +88,9 @@ src/
 │   │                        #   read-only MCP server domain API (sibling to terminalApi.ts)
 │   ├── proxyApi.ts          # startProxySync/stopProxySync invoke wrappers (log-on-reject) — the
 │   │                        #   system-proxy watcher domain API (sibling to terminalApi.ts)
+│   ├── trayApi.ts           # setTrayEnabled(enabled, labels) — the system-tray domain API
+│   │                        #   (sibling to terminalApi.ts); carries the localized menu labels
+│   │                        #   since translations live in the frontend
 │   ├── cliApi.ts            # getCliArgs() wrapper — reads parsed launch flags (log-on-reject)
 │   ├── clipboardApi.ts      # readClipboardText() — clipboard-plugin read wrapper (log-on-degrade);
 │   │                        #   the only clipboard READ path (navigator.clipboard.readText is
@@ -249,6 +252,11 @@ src/
 │   │                        #   (default on). Same app-lifecycle pattern as useMcpServerLifecycle;
 │   │                        #   disabling stops the watcher and deletes the hooks' env-file so
 │   │                        #   running shells drop (only) the values Lumina injected
+│   ├── useTray.ts           # useTrayLifecycle() — drives the system tray from config.closeToTray
+│   │                        #   (main window only; same app-lifecycle pattern as useMcpServer-
+│   │                        #   Lifecycle). Re-calls set_tray_enabled on language change too — the
+│   │                        #   Rust-built tray menu takes localized labels from the frontend. The
+│   │                        #   close-to-tray interception itself lives in useSessionPersistence
 │   ├── useCliArgs.ts        # useCliArgs() — cached get_cli_args; Alacritty-style launch flags,
 │   │                        #   consumed by useTerminalManager's seed effect to shape the main
 │   │                        #   window's first tab (--profile/--command/--working-directory/--hold/--title)
@@ -350,7 +358,11 @@ src/
 │   └── useSessionPersistence.ts # useSessionPersistence(refs) — the app's only window close hook
 │                            #   (onCloseRequested): saves open tabs to session.json per sessionSaveMode,
 │                            #   drives the "ask" dialog, and one-shot-loads a saved session on mount for
-│                            #   useTerminalManager's seed effect to restore.
+│                            #   useTerminalManager's seed effect to restore. Also owns the close-to-tray
+│                            #   branch (config.closeToTray, main window only — with or without tabs
+│                            #   open: hide instead of close, silently saving when mode is "always") and
+│                            #   the lumina-tray-quit listener (every window force-closes through the
+│                            #   normal save flow — dialogs show because the window is shown first).
 │
 ├── components/
 │   ├── ui/                  # Shared design primitives (the visual system — one of each thing)
@@ -501,6 +513,16 @@ src-tauri/src/
 │                  #   parse_proxy_env, PROXY_ENV_KEYS-only filter) — a -c command runs
 │                  #   before the hooks' first prompt. Parsers are
 │                  #   tested in tests/proxy.rs
+├── tray.rs        # System-tray ("close to tray") support: set_tray_enabled is a
+│                  #   stateless, idempotent rebuild-or-remove driven by the frontend
+│                  #   config (hooks/useTray.ts) — enabling (re)builds the tray icon +
+│                  #   localized menu (labels come from the frontend so a language
+│                  #   change rebuilds), disabling removes it and shows the main window
+│                  #   again if it was hidden in the tray. Menu/click show the window;
+│                  #   Quit broadcasts lumina-tray-quit so every window closes through
+│                  #   its own session-save flow. show_main is shared with the macOS
+│                  #   Dock-reopen run event (lib.rs). sanitize_label is the pure,
+│                  #   tested surface (tests/tray.rs)
 ├── mcp.rs         # Read-only MCP (Model Context Protocol) server: rmcp tool handlers
 │                  #   (list_tabs/get_active_tab/get_tab/get_foreground_command/get_recent_output/
 │                  #   get_terminal_cwd) reusing TerminalState + command_tracker + the per-tab
@@ -570,7 +592,9 @@ tests/             # Backend integration tests (mandatory for backend work — s
 ├── utils.rs       # path_exist / read_file over real temp files + content_hash_hex (shape,
 │                  #   stability), write_atomic (overwrite/parents/no-tmp-leftover) and
 │                  #   prune_files_not_in (keep-vs-drop, subdir-safe, missing-dir no-op)
-└── file_manager.rs # nonexistent-path guard (rejected before any OS spawn)
+├── file_manager.rs # nonexistent-path guard (rejected before any OS spawn)
+└── tray.rs        # sanitize_label: tray menu label trim + empty/blank fallback (the
+                   #   tray itself needs a live AppHandle — manual checklist instead)
 ```
 
 ---

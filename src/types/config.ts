@@ -135,6 +135,14 @@ export interface GlobalConfig {
      * default tab on first run) regardless of this flag. When false, a "never"-
      * mode launch starts with no tabs (the empty state takes over). */
     loadDefaultProfileOnStartup?: boolean;
+    /** When true (default false), closing the main window hides it to the
+     *  system tray instead of exiting — every PTY (and the commands running
+     *  in them) stays alive in the background until the user quits from the
+     *  tray. Only the main window trays; tear-off windows close normally,
+     *  and a close with no terminal tabs open exits as before. Quitting
+     *  from the tray runs the normal session-save flow. The tray menu is
+     *  localized by the frontend (lib/trayApi.ts). */
+    closeToTray?: boolean;
     /** @deprecated The recency map is runtime state, not a user setting — it
      *  lives in profile-usage.json now (see lib/profileUsage.ts +
      *  hooks/useProfileUsage.ts). Still read once by the one-time migration

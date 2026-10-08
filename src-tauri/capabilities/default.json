@@ -25,6 +25,7 @@
     "core:window:allow-close",
     "core:window:allow-is-maximized",
     "core:window:allow-show",
+    "core:window:allow-hide",
     "core:window:allow-destroy",
     {
       "identifier": "opener:allow-open-path",

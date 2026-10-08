@@ -73,6 +73,7 @@ curl -fsSL https://raw.githubusercontent.com/iewnfod/lumina-terminal/master/scri
 * **Custom Title Bar** — window controls integrated with the terminal theme on Windows & Linux; double-click any drag region (title bar, sidebar header, empty state) to maximize/restore
 * **Auto Theme** — UI light/dark mode syncs to the terminal background color
 * **Color Spread** — a fullscreen TUI's uniform edge background fills the window chrome for an immersive look (toggleable)
+* **Close to Tray** — keep Lumina running in the system tray after the window is closed, so background commands keep running (works with or without tabs open); click the tray icon (or its menu) to bring the window back — a minimized window is restored and focused — and quit from the tray menu runs the normal session-save flow first. Toggle in Settings → General. On GNOME, tray icons require the AppIndicator extension.
 
 ### Keyboard Shortcuts
 * Fully customizable keybindings stored in the config file. Defaults:

@@ -27,6 +27,7 @@ interface GeneralDraft {
     shellCompletionsAppendSpace: boolean;
     rememberWindowPosition: boolean;
     rememberWindowSize: boolean;
+    closeToTray: boolean;
     sessionSaveMode: "never" | "always" | "ask";
     sessionSaveScrollback: boolean;
     loadDefaultProfileOnStartup: boolean;
@@ -70,6 +71,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         shellCompletionsAppendSpace: config.shellCompletionsAppendSpace !== false,
         rememberWindowPosition: config.rememberWindowPosition ?? false,
         rememberWindowSize: config.rememberWindowSize ?? false,
+        closeToTray: config.closeToTray ?? false,
         sessionSaveMode: config.sessionSaveMode ?? "ask",
         sessionSaveScrollback: config.sessionSaveScrollback ?? false,
         loadDefaultProfileOnStartup: config.loadDefaultProfileOnStartup !== false,
@@ -95,6 +97,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 shellCompletionsAppendSpace: d.shellCompletionsAppendSpace,
                 rememberWindowPosition: d.rememberWindowPosition,
                 rememberWindowSize: d.rememberWindowSize,
+                closeToTray: d.closeToTray,
                 sessionSaveMode: d.sessionSaveMode,
                 sessionSaveScrollback: d.sessionSaveScrollback,
                 loadDefaultProfileOnStartup: d.loadDefaultProfileOnStartup,
@@ -111,7 +114,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.enableShellCompletions, config.shellCompletionsOnType, config.shellCompletionsAppendSpace, config.rememberWindowPosition, config.rememberWindowSize, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.enableShellCompletions, config.shellCompletionsOnType, config.shellCompletionsAppendSpace, config.rememberWindowPosition, config.rememberWindowSize, config.closeToTray, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
     );
 
     return (
@@ -354,6 +357,27 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                             <Switch
                                 isSelected={draft.rememberWindowSize}
                                 onChange={(v) => setDraft((prev) => ({...prev, rememberWindowSize: v}))}
+                            >
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                            </Switch>
+                        </SettingRow>
+
+                        {/* Close to Tray: closing the main window hides it to
+                            the system tray instead of exiting, so terminals
+                            (and the commands running in them) stay alive in
+                            the background — with or without tabs open. Main
+                            window only; tear-off windows close normally. */}
+                        <SettingRow
+                            variant="toggle"
+                            label={<Label className="cursor-pointer">{t["Close to Tray"]}</Label>}
+                            description={t["Keep Lumina running in the system tray when the window is closed, so background commands keep running"]}
+                            onClick={() => setDraft((prev) => ({...prev, closeToTray: !prev.closeToTray}))}
+                        >
+                            <Switch
+                                isSelected={draft.closeToTray}
+                                onChange={(v) => setDraft((prev) => ({...prev, closeToTray: v}))}
                             >
                                 <Switch.Control>
                                     <Switch.Thumb />

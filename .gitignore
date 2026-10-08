@@ -33,3 +33,5 @@ notes.md
 # Tauri updater signing key (NEVER commit; keep private & in GitHub Secrets)
 lumina-updater.key
 lumina-updater.key.pub
+
+.lumina/

@@ -19,6 +19,7 @@ pub mod shells;
 pub mod ssh;
 pub mod state;
 pub mod terminal;
+pub mod tray;
 pub mod utils;
 mod system;
 
@@ -35,6 +36,7 @@ use crate::ssh::*;
 use crate::state::TerminalState;
 use crate::system::*;
 use crate::terminal::*;
+use crate::tray::*;
 use crate::utils::*;
 #[cfg(target_os = "macos")]
 use tauri::Emitter;
@@ -222,12 +224,28 @@ pub fn run() {
             open_in_file_manager,
             find_font,
             get_cli_args,
+            set_tray_enabled,
             #[cfg(debug_assertions)]
             open_devtools,
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .unwrap_or_else(|e| {
             log::error!("Failed to startup Lumina Terminal: {}", e);
             panic!("Failed to startup Lumina Terminal: {}", e);
+        })
+        // Run-event hook: on macOS, clicking the Dock icon of a windowless
+        // (tray-hidden) app must bring the main window back — without this
+        // the app would be unreachable from the Dock while it sits in the
+        // tray. With a visible window the reopen is a no-op, matching the
+        // platform convention.
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = _event
+            {
+                show_main(_app);
+            }
         });
 }
