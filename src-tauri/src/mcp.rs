@@ -71,6 +71,7 @@ struct HistoryParams {
 /// cheap; ask for it explicitly with `get_tab` / `get_terminal_cwd` /
 /// `get_foreground_command`.
 #[derive(Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct TabBrief {
     id: String,
     /// Shell or program executable path this tab runs.
@@ -84,6 +85,7 @@ struct TabBrief {
 
 /// Detailed per-tab info returned by `get_tab` / `get_active_tab`.
 #[derive(Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct TabDetail {
     id: String,
     shell: String,
@@ -114,6 +116,7 @@ struct TabDetail {
 
 /// A recently-exited terminal, returned by `list_recent_exits`.
 #[derive(Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct RecentExitEntry {
     id: String,
     shell: String,
@@ -122,6 +125,61 @@ struct RecentExitEntry {
     exit_code: Option<i32>,
     /// Signal name if killed by a signal (Unix); else null.
     exit_signal: Option<String>,
+}
+
+// ---- tool output wrappers ----
+//
+// The MCP spec requires every tool's `outputSchema` — and the matching
+// `structuredContent` value — to be a top-level JSON OBJECT. rmcp derives
+// both straight from the `Json<T>` return type, so each tool returns a
+// single-field wrapper struct instead of a bare string/array/null: strict
+// clients (OpenCode, ...) otherwise reject the whole `tools/list` result
+// with "Invalid result for tools/list".
+
+/// Output of `list_tabs`: `{ tabs: [...] }`.
+#[derive(Serialize, schemars::JsonSchema)]
+struct TabList {
+    tabs: Vec<TabBrief>,
+}
+
+/// Output of `get_tab` / `get_active_tab`: `{ tab: {...} | null }` — null
+/// when the id is unknown or no tab is focused.
+#[derive(Serialize, schemars::JsonSchema)]
+struct TabLookup {
+    tab: Option<TabDetail>,
+}
+
+/// Output of `list_recent_exits`: `{ exits: [...] }`.
+#[derive(Serialize, schemars::JsonSchema)]
+struct RecentExitList {
+    exits: Vec<RecentExitEntry>,
+}
+
+/// Output of `list_command_history`: `{ history: [...] }` (newest last).
+#[derive(Serialize, schemars::JsonSchema)]
+struct CommandHistoryList {
+    history: Vec<CommandHistoryEntry>,
+}
+
+/// Output of `get_foreground_command`: `{ command: {...} | null }` — null
+/// when the shell is idle at the prompt / on SSH / non-Unix.
+#[derive(Serialize, schemars::JsonSchema)]
+struct ForegroundCommandResult {
+    command: Option<CommandInfo>,
+}
+
+/// Output of `get_recent_output`: `{ output: "..." }` — plain text with
+/// ANSI escapes stripped.
+#[derive(Serialize, schemars::JsonSchema)]
+struct RecentOutputResult {
+    output: String,
+}
+
+/// Output of `get_terminal_cwd`: `{ cwd: "..." | null }` — null on
+/// Windows / SSH tabs.
+#[derive(Serialize, schemars::JsonSchema)]
+struct TerminalCwdResult {
+    cwd: Option<String>,
 }
 
 // ---- helpers (reuse existing backend logic — no duplication) ----
@@ -295,17 +353,20 @@ pub struct LuminaMcpServer {
     state: TerminalState,
 }
 
-#[tool_router]
+// `vis = "pub"` exposes the generated `tool_router()` so the integration tests
+// can list the registered tools and assert on their output schemas without
+// instantiating the server.
+#[tool_router(vis = "pub")]
 impl LuminaMcpServer {
-    #[tool(name = "list_tabs", description = "List all currently open terminal tabs (id, shell, isSsh). Use get_tab / get_active_tab for per-tab details.")]
-    fn list_tabs(&self) -> Json<Vec<TabBrief>> {
+    #[tool(name = "list_tabs", description = "List all currently open terminal tabs. Returns {tabs: [{id, shell, isSsh, status}]}. Use get_tab / get_active_tab for per-tab details.")]
+    fn list_tabs(&self) -> Json<TabList> {
         let terminals = match self.state.terminals.try_lock() {
             Ok(t) => t,
             Err(e) => {
                 // Returning empty rather than panicking keeps the MCP session
                 // alive — a transient lock failure shouldn't kill the server.
                 log::error!("MCP list_tabs: failed to lock terminals: {}", e);
-                return Json(Vec::new());
+                return Json(TabList { tabs: Vec::new() });
             }
         };
         let tabs = terminals
@@ -317,11 +378,11 @@ impl LuminaMcpServer {
                 status: "running".into(),
             })
             .collect::<Vec<_>>();
-        Json(tabs)
+        Json(TabList { tabs })
     }
 
-    #[tool(name = "get_active_tab", description = "Get details (shell, isSsh, sshHost, cwd, foregroundCommand) of the currently focused terminal tab, or null if no terminal is focused.")]
-    fn get_active_tab(&self) -> Json<Option<TabDetail>> {
+    #[tool(name = "get_active_tab", description = "Get details (shell, isSsh, sshHost, cwd, foregroundCommand) of the currently focused terminal tab. Returns {tab: {...} | null} — null if no terminal is focused.")]
+    fn get_active_tab(&self) -> Json<TabLookup> {
         let active_id = self
             .state
             .active_id
@@ -329,26 +390,30 @@ impl LuminaMcpServer {
             .ok()
             .and_then(|g| g.clone());
         match active_id {
-            Some(id) => Json(tab_detail(&self.state, &id)),
-            None => Json(None),
+            Some(id) => Json(TabLookup {
+                tab: tab_detail(&self.state, &id),
+            }),
+            None => Json(TabLookup { tab: None }),
         }
     }
 
-    #[tool(name = "get_tab", description = "Get details (shell, isSsh, sshHost, cwd, foregroundCommand) of a terminal tab by id.")]
+    #[tool(name = "get_tab", description = "Get details (shell, isSsh, sshHost, cwd, foregroundCommand) of a terminal tab by id. Returns {tab: {...} | null} — null when the id is unknown.")]
     fn get_tab(
         &self,
         Parameters(IdParams { id }): Parameters<IdParams>,
-    ) -> Json<Option<TabDetail>> {
-        Json(tab_detail(&self.state, &id))
+    ) -> Json<TabLookup> {
+        Json(TabLookup {
+            tab: tab_detail(&self.state, &id),
+        })
     }
 
-    #[tool(name = "list_recent_exits", description = "List terminal tabs whose child process has recently exited (id, shell, isSsh, exitCode, exitSignal). Useful to notice failed commands; pair with get_tab for details. Bounded to the last few exits.")]
-    fn list_recent_exits(&self) -> Json<Vec<RecentExitEntry>> {
+    #[tool(name = "list_recent_exits", description = "List terminal tabs whose child process has recently exited. Returns {exits: [{id, shell, isSsh, exitCode, exitSignal}]}. Useful to notice failed commands; pair with get_tab for details. Bounded to the last few exits.")]
+    fn list_recent_exits(&self) -> Json<RecentExitList> {
         let exits = match self.state.recent_exits.try_lock() {
             Ok(e) => e,
             Err(e) => {
                 log::error!("MCP list_recent_exits: failed to lock recent_exits: {}", e);
-                return Json(Vec::new());
+                return Json(RecentExitList { exits: Vec::new() });
             }
         };
         let entries = exits
@@ -361,19 +426,21 @@ impl LuminaMcpServer {
                 exit_signal: x.exit.signal.clone(),
             })
             .collect::<Vec<_>>();
-        Json(entries)
+        Json(RecentExitList { exits: entries })
     }
 
-    #[tool(name = "list_command_history", description = "List a tab's recent commands with their PER-COMMAND exit codes (newest last), captured via shell integration. Use this to see what failed (non-zero exitCode). Bounded to the last ~50.")]
+    #[tool(name = "list_command_history", description = "List a tab's recent commands with their PER-COMMAND exit codes (newest last), captured via shell integration. Returns {history: [{command, exitCode}]}. Use this to see what failed (non-zero exitCode). Bounded to the last ~50.")]
     fn list_command_history(
         &self,
         Parameters(HistoryParams { id, limit }): Parameters<HistoryParams>,
-    ) -> Json<Vec<CommandHistoryEntry>> {
+    ) -> Json<CommandHistoryList> {
         let hist = match self.state.command_history.try_lock() {
             Ok(h) => h,
             Err(e) => {
                 log::error!("MCP list_command_history: failed to lock: {}", e);
-                return Json(Vec::new());
+                return Json(CommandHistoryList {
+                    history: Vec::new(),
+                });
             }
         };
         let entries = match hist.get(&id) {
@@ -383,28 +450,32 @@ impl LuminaMcpServer {
             }
             None => Vec::new(),
         };
-        Json(entries)
+        Json(CommandHistoryList { history: entries })
     }
 
-    #[tool(name = "get_foreground_command", description = "Get the command currently running in a tab's foreground ({command, privileged}), or null when the shell is idle at the prompt / on SSH / non-Unix.")]
+    #[tool(name = "get_foreground_command", description = "Get the command currently running in a tab's foreground. Returns {command: {command, privileged} | null} — null when the shell is idle at the prompt / on SSH / non-Unix.")]
     fn get_foreground_command(
         &self,
         Parameters(IdParams { id }): Parameters<IdParams>,
-    ) -> Json<Option<CommandInfo>> {
-        Json(foreground(&self.state, &id))
+    ) -> Json<ForegroundCommandResult> {
+        Json(ForegroundCommandResult {
+            command: foreground(&self.state, &id),
+        })
     }
 
-    #[tool(name = "get_recent_output", description = "Get the recent decoded output of a terminal tab as plain text (ANSI escapes stripped) — the last ~64 KiB tail, or the last N lines if `lines` is given. Covers output produced after the tab was created.")]
+    #[tool(name = "get_recent_output", description = "Get the recent decoded output of a terminal tab as plain text (ANSI escapes stripped) — the last ~64 KiB tail, or the last N lines if `lines` is given. Returns {output: \"...\"}. Covers output produced after the tab was created.")]
     fn get_recent_output(
         &self,
         Parameters(RecentOutputParams { id, lines }): Parameters<RecentOutputParams>,
-    ) -> Json<String> {
+    ) -> Json<RecentOutputResult> {
         let out = {
             let terminals = match self.state.terminals.try_lock() {
                 Ok(t) => t,
                 Err(e) => {
                     log::warn!("MCP get_recent_output {}: failed to lock terminals: {}", id, e);
-                    return Json(String::new());
+                    return Json(RecentOutputResult {
+                        output: String::new(),
+                    });
                 }
             };
             match terminals.get(&id) {
@@ -419,15 +490,19 @@ impl LuminaMcpServer {
                 }
             }
         };
-        Json(strip_ansi(&out.unwrap_or_default()))
+        Json(RecentOutputResult {
+            output: strip_ansi(&out.unwrap_or_default()),
+        })
     }
 
-    #[tool(name = "get_terminal_cwd", description = "Get the current working directory of a tab's shell process (best effort; null on Windows / SSH).")]
+    #[tool(name = "get_terminal_cwd", description = "Get the current working directory of a tab's shell process (best effort). Returns {cwd: \"...\" | null} — null on Windows / SSH tabs.")]
     fn get_terminal_cwd(
         &self,
         Parameters(IdParams { id }): Parameters<IdParams>,
-    ) -> Json<Option<String>> {
-        Json(live_cwd(&self.state, &id))
+    ) -> Json<TerminalCwdResult> {
+        Json(TerminalCwdResult {
+            cwd: live_cwd(&self.state, &id),
+        })
     }
 }
 

@@ -525,8 +525,14 @@ src-tauri/src/
 │                  #   tested surface (tests/tray.rs)
 ├── mcp.rs         # Read-only MCP (Model Context Protocol) server: rmcp tool handlers
 │                  #   (list_tabs/get_active_tab/get_tab/get_foreground_command/get_recent_output/
-│                  #   get_terminal_cwd) reusing TerminalState + command_tracker + the per-tab
-│                  #   recent_output ring buffer; Streamable HTTP endpoint on 127.0.0.1 via axum,
+│                  #   get_terminal_cwd/list_recent_exits/list_command_history) reusing
+│                  #   TerminalState + command_tracker + the per-tab recent_output ring buffer.
+│                  #   Every tool returns a single-field WRAPPER object (TabList/TabLookup/…) —
+│                  #   the MCP spec requires outputSchema (and structuredContent) to be a
+│                  #   top-level JSON object; rmcp does not enforce it (SEP-2106), strict
+│                  #   clients like OpenCode reject the whole tools/list otherwise. Pinned by
+│                  #   tests/mcp.rs; tool_router(vis = pub) exists so those tests can list tools.
+│                  #   Streamable HTTP endpoint on 127.0.0.1 via axum,
 │                  #   config-driven start/stop (start_mcp_server/stop_mcp_server). Read-only by
 │                  #   design — no PTY-write tool. URL token in <app data>/state/mcp-token
 │                  #   (STATE_DIR mirrors src/constants.ts; legacy-root migration + loader

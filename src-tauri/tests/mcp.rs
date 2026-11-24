@@ -2,9 +2,10 @@
 //! served to the read-only MCP server — CSI/OSC/DCS removal, control-char
 //! dropping, `\n`/`\t` preservation, UTF-8 passthrough, torn-escape safety.
 //! Plus the token loader's state-folder layout + legacy migration over a
-//! real temp dir.
+//! real temp dir, and the tool-list schema contract every MCP client
+//! validates before accepting the server.
 
-use lumina_terminal_lib::mcp::{load_or_create_token_in, strip_ansi, STATE_DIR};
+use lumina_terminal_lib::mcp::{LuminaMcpServer, load_or_create_token_in, strip_ansi, STATE_DIR};
 
 /// Unique temp dir per test (process id + label) so parallel tests don't
 /// collide, cleaned up best-effort at the end.
@@ -106,4 +107,75 @@ fn state_dir_token_wins_over_leftover_legacy_file() {
     std::fs::write(dir.join(STATE_DIR).join("mcp-token"), "lumina-new").expect("seed token");
     assert_eq!(load_or_create_token_in(&dir).unwrap(), "lumina-new");
     assert!(dir.join("mcp-token").exists());
+}
+
+// ---- tools/list schema contract ----
+//
+// The MCP spec requires every tool's `outputSchema` — and the matching
+// `structuredContent` value — to be a top-level JSON OBJECT. rmcp derives
+// both straight from the `Json<T>` return type and (per SEP-2106) does not
+// enforce the object root itself, so strict clients (OpenCode among them)
+// reject the whole server with "Invalid result for tools/list" unless every
+// tool returns a single-field wrapper object. These tests pin that contract.
+
+#[test]
+fn every_tool_output_schema_is_a_top_level_object() {
+    let tools = LuminaMcpServer::tool_router().list_all();
+    assert_eq!(tools.len(), 8, "expected the 8 read-only tools");
+    for tool in &tools {
+        let schema = tool
+            .output_schema
+            .as_ref()
+            .unwrap_or_else(|| panic!("tool `{}` is missing outputSchema", tool.name));
+        assert_eq!(
+            schema.get("type").and_then(|t| t.as_str()),
+            Some("object"),
+            "tool `{}` outputSchema must have top-level type \"object\" (MCP spec), got {:?}",
+            tool.name,
+            schema.get("type")
+        );
+    }
+}
+
+#[test]
+fn wrapper_schemas_expose_the_payload_field() {
+    let tools = LuminaMcpServer::tool_router().list_all();
+    let schema_of = |name: &str| {
+        tools
+            .iter()
+            .find(|t| t.name == name)
+            .unwrap_or_else(|| panic!("tool `{name}` not registered"))
+            .output_schema
+            .as_ref()
+            .expect("outputSchema present")
+    };
+    let field_type = |tool: &str, field: &str| {
+        schema_of(tool)
+            .get("properties")
+            .and_then(|p| p.get(field))
+            .unwrap_or_else(|| panic!("tool `{tool}` should expose a `{field}` property"))
+            .get("type")
+            .and_then(|t| t.as_str())
+            .map(str::to_owned)
+    };
+
+    assert_eq!(field_type("list_tabs", "tabs").as_deref(), Some("array"));
+    assert_eq!(field_type("list_recent_exits", "exits").as_deref(), Some("array"));
+    assert_eq!(field_type("list_command_history", "history").as_deref(), Some("array"));
+    assert_eq!(field_type("get_recent_output", "output").as_deref(), Some("string"));
+    // Nullable singletons: only the wrapper FIELD's existence matters here —
+    // the inner anyOf/null composition lives inside the object, which is
+    // legal (only the ROOT must be an object).
+    for tool in ["get_tab", "get_active_tab", "get_foreground_command", "get_terminal_cwd"] {
+        let field = match tool {
+            "get_terminal_cwd" => "cwd",
+            "get_foreground_command" => "command",
+            _ => "tab",
+        };
+        let schema = schema_of(tool);
+        assert!(
+            schema.get("properties").and_then(|p| p.get(field)).is_some(),
+            "tool `{tool}` should expose a `{field}` property"
+        );
+    }
 }
