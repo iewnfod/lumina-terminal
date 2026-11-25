@@ -99,7 +99,7 @@ function InnerApp({isMaximized, paddingOffset}: {isMaximized: boolean, paddingOf
     // follow the theme mode, not just the chrome text; "terminal" mode leaves
     // the bg to the profile/TUI.
     const {darkOverride, forceBg} = themeModeForces(themeMode, systemTheme);
-    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(themeProfile, currentId, config.enableColorSpread !== false, darkOverride, forceBg, config.globalProfile, systemTheme);
+    const {theme: effectiveTheme, bg: effectiveBg, fg: effectiveFg, isSpread, setEdgeBg} = useEffectiveTheme(themeProfile, currentId, darkOverride, forceBg, config.globalProfile, systemTheme);
     // Glass material filling the terminal area. The terminal surface is clipped
     // to a rounded rectangle via clip-path; its four corners are transparent,
     // exposing this chrome layer beneath — so the chrome reads as a continuous

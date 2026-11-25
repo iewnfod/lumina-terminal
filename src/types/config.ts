@@ -41,9 +41,11 @@ export interface GlobalConfig {
      *  one-time migration in hooks/config.tsx, which converts `true` into an
      *  explicit `copy` binding on plain Ctrl+C and strips this flag. */
     copyWithCtrl?: boolean;
-    /** When true (default), a fullscreen TUI's uniform edge background "spreads"
-     *  across the whole window chrome. When false, the app keeps the terminal
-     *  theme's background and the sampling/polling is disabled. */
+    /** @deprecated The app-wide color-spread toggle, replaced by the
+     *  `colorSpread` render option (types/terminal.ts — a global-profile value
+     *  each profile may override). Still read once by the one-time migration
+     *  in lib/configFormat.ts (migrateLegacyColorSpread), which moves the value
+     *  to `globalProfile.colorSpread` and strips this key. */
     enableColorSpread?: boolean;
     /** Minimum share of the sampled edge cells one color must cover to be
      *  treated as the terminal/TUI background by the edge sampling

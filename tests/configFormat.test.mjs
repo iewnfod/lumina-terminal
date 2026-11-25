@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {TomlError} from "smol-toml";
 
-import {parseConfigToml, renderConfigToml, semanticEqual, unwrapLegacyJson} from "../src/lib/configFormat.ts";
+import {migrateLegacyColorSpread, parseConfigToml, renderConfigToml, semanticEqual, unwrapLegacyJson} from "../src/lib/configFormat.ts";
 
 /** A representative GlobalConfig slice exercising every TOML shape the
  * config uses: array-of-tables (profiles), nested tables (render options),
@@ -172,4 +172,62 @@ test("unwrapLegacyJson rejects invalid JSON and non-object roots", () => {
     assert.throws(() => unwrapLegacyJson("[1, 2]"));
     assert.throws(() => unwrapLegacyJson("42"));
     assert.throws(() => unwrapLegacyJson("null"));
+});
+
+test("migrateLegacyColorSpread returns a config without the legacy key untouched", () => {
+    // Same reference: the startup loader compares against it to decide whether
+    // the file needs writing back.
+    const config = {language: "en-us", globalProfile: {fontSize: 13}};
+    assert.equal(migrateLegacyColorSpread(config), config);
+});
+
+test("migrateLegacyColorSpread moves the legacy value into the global profile and strips the key", () => {
+    // No [globalProfile] yet — it is created, and every other key survives.
+    assert.deepEqual(
+        migrateLegacyColorSpread({language: "zh-cn", enableColorSpread: true, themeMode: "terminal"}),
+        {language: "zh-cn", themeMode: "terminal", globalProfile: {colorSpread: true}},
+    );
+    // An explicit false is the user's setting, not "unset" — it moves too.
+    assert.deepEqual(
+        migrateLegacyColorSpread({globalProfile: {fontSize: 13}, enableColorSpread: false}),
+        {globalProfile: {fontSize: 13, colorSpread: false}},
+    );
+});
+
+test("migrateLegacyColorSpread lets an already-set colorSpread win over the legacy key", () => {
+    assert.deepEqual(
+        migrateLegacyColorSpread({enableColorSpread: true, globalProfile: {colorSpread: false}}),
+        {globalProfile: {colorSpread: false}},
+    );
+});
+
+test("migrateLegacyColorSpread is idempotent", () => {
+    const once = migrateLegacyColorSpread({enableColorSpread: true});
+    assert.equal(migrateLegacyColorSpread(once), once);
+});
+
+test("a migrated config patches back onto the file: legacy key gone, new key under [globalProfile]", () => {
+    const existing = [
+        "# my config",
+        "language = 'zh-cn'",
+        "enableColorSpread = true   # was a General setting",
+        "",
+        "[globalProfile]",
+        "fontSize = 13",
+    ].join("\n") + "\n";
+    const migrated = migrateLegacyColorSpread(parseConfigToml(existing));
+    const out = renderConfigToml(existing, migrated);
+    assert.ok(!out.includes("enableColorSpread"));
+    assert.ok(out.includes("colorSpread = true"));
+    // The hand-written layout survives the rewrite.
+    assert.ok(out.includes("# my config"));
+    assert.ok(out.includes("fontSize = 13"));
+    assert.deepEqual(parseConfigToml(out), migrated);
+});
+
+test("a migrated config adds a [globalProfile] table to a file that has none", () => {
+    const existing = "enableColorSpread = true\n\n[[profiles]]\nname = \"zsh\"\n";
+    const migrated = migrateLegacyColorSpread(parseConfigToml(existing));
+    const out = renderConfigToml(existing, migrated);
+    assert.deepEqual(parseConfigToml(out), {profiles: [{name: "zsh"}], globalProfile: {colorSpread: true}});
 });

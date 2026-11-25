@@ -75,6 +75,7 @@ export default function RenderSettings({draft, setRenderValue, idPrefix}: Render
             <ToggleRow field={renderField("webgl")} value={valueOf("webgl")} onChange={change("webgl")} idPrefix={idPrefix} />
             <ToggleRow field={renderField("graphemeClusters")} value={valueOf("graphemeClusters")} onChange={change("graphemeClusters")} idPrefix={idPrefix} />
             <ToggleRow field={renderField("ligatures")} value={valueOf("ligatures")} onChange={change("ligatures")} idPrefix={idPrefix} />
+            <ToggleRow field={renderField("colorSpread")} value={valueOf("colorSpread")} onChange={change("colorSpread")} idPrefix={idPrefix} />
         </div>
     );
 }

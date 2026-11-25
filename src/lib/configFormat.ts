@@ -1,5 +1,6 @@
 import {parse, stringify} from "smol-toml";
 import {patch} from "@decimalturn/toml-patch";
+import type {GlobalConfig} from "../types/config.ts";
 
 /**
  * Config-file format handling — the pure (no React, no Tauri) parse /
@@ -10,8 +11,9 @@ import {patch} from "@decimalturn/toml-patch";
  * migration (see {@link unwrapLegacyJson}); lib/configFile.ts orchestrates
  * the read / migrate / write flow on top of these.
  *
- * Deliberately free of internal imports so `node --test` can load it
- * directly — types/config.ts pulls in the React/i18n graph.
+ * Deliberately free of RUNTIME internal imports — the one internal import is
+ * type-only (erased, never loaded), so `node --test` can load this module
+ * directly.
  */
 
 /** Parse a TOML config document. Throws on invalid TOML (TomlError); the
@@ -36,6 +38,23 @@ export function unwrapLegacyJson(text: string): Record<string, unknown> {
         return wrapped as Record<string, unknown>;
     }
     return root;
+}
+
+/**
+ * One-time migration for `enableColorSpread`: the app-wide color-spread
+ * toggle became a render option (`globalProfile.colorSpread`, which each
+ * profile may override). The legacy value moves into the global profile —
+ * unless that already sets `colorSpread`, in which case the new key wins —
+ * and the legacy key is stripped so it disappears from config.toml.
+ * Idempotent by construction — safe to call on every load.
+ */
+export function migrateLegacyColorSpread(config: GlobalConfig): GlobalConfig {
+    if (config.enableColorSpread === undefined) return config;
+    const {enableColorSpread: legacy, globalProfile, ...rest} = config;
+    return {
+        ...rest,
+        globalProfile: {...globalProfile, colorSpread: globalProfile?.colorSpread ?? legacy},
+    };
 }
 
 /** Drop `undefined`/`null` values recursively (table values AND array

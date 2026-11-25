@@ -71,8 +71,10 @@ src/
 │   │                        #   and migrated, then renamed config.json.bak) + writeConfigDocument
 │   ├── configFormat.ts      # Pure config format layer: TOML parse + renderConfigToml (patches onto
 │   │                        #   the existing document — key order, layout and comments survive
-│   │                        #   settings rewrites; nullish pruning) + legacy JSON unwrap — zero
-│   │                        #   internal imports so node --test loads it directly
+│   │                        #   settings rewrites; nullish pruning) + legacy JSON unwrap +
+│   │                        #   migrateLegacyColorSpread (one-time enableColorSpread →
+│   │                        #   globalProfile.colorSpread move) — TYPE-only internal imports, so
+│   │                        #   node --test loads it directly (tests/configFormat.test.mjs)
 │   ├── color.ts             # isColorDark, foregroundFor, adjustColor, visibleRed
 │   ├── glass.ts             # glassSurface / glassBorder / elevationShadow / windowOutline —
 │   │                        #   backdrop-filter material + Wayland/WebKitGTK opaque fallback
@@ -232,7 +234,11 @@ src/
 ├── hooks/                   # React hooks (start with `use`)
 │   ├── config.tsx           # GlobalConfigProvider + useGlobalConfig — config.toml IO via
 │   │                        #   lib/configFile.ts + the config hot-reload watcher (dir watch +
-│   │                        #   debounce + own-write suppression via lastWrittenTextRef). Children
+│   │                        #   debounce + own-write suppression via lastWrittenTextRef) + the
+│   │                        #   one-time legacy-key migrations, run on BOTH the startup load and
+│   │                        #   every hot reload (copyWithCtrl → copy binding, profileLastOpened strip,
+│   │                        #   lib/configFormat.ts's enableColorSpread → colorSpread move; a startup
+│   │                        #   migration that changed something is written back). Children
 │   │                        #   are gated on isLoading: the app tree (and its side-effect hooks —
 │   │                        #   update check, proxy/MCP watchers) mounts only once the REAL config
 │   │                        # has loaded, so nothing acts on DEFAULT_CONFIG values
@@ -272,7 +278,9 @@ src/
 │   │                        #   and by App for the one-shot --sidebar show|hide visibility override
 │   │                        #   (local state, never persisted; first explicit toggle drops it)
 │   ├── useOutputMode.ts     # useOutputMode(id) → {markInteractive}: debounced LowLatency toggle
-│   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync
+│   ├── useEffectiveTheme.ts # useEffectiveTheme(profile, currentId) → theme/bg/fg + HeroUI sync;
+│   │                        #   the chrome follows the active tab's edge color only while that
+│   │                        #   profile's colorSpread render option is on
 │   ├── useCurrentCommand.ts # useCurrentCommand({ptyId, onCommandChange, onCommandExit, onCompletions}) →
 │   │                        #   {feedOutput} — tracks what command runs in a terminal, merging
 │   │                        #   shell-integration OSC sequences (parsed from output, precise) with

@@ -22,8 +22,8 @@ interface UseEdgeBackgroundOptions {
     /** Reports the uniform background color sampled from the terminal's outer
      *  ring (a fullscreen TUI's own bg), or null when there is none. */
     onEdgeChange?: (color: string | null) => void;
-    /** config.enableColorSpread !== false — whether the sampled color also
-     *  spreads across the whole app chrome. */
+    /** The profile's `colorSpread` render option (built-in default when unset)
+     *  — whether the sampled color also spreads across the whole app chrome. */
     colorSpread: boolean;
     /** config.edgeBackgroundCoverage — required edge-cell coverage for a
      *  color to count as the TUI background (lib/edgeBackground.ts sanitizes). */

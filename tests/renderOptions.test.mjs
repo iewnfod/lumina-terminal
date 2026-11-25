@@ -27,13 +27,19 @@ test("the schema lists each field once, in display order", () => {
         "fontFamily", "fontSize", "fontWeight", "fontStyle",
         "cursorStyle", "cursorBlink",
         "themePath",
-        "webgl", "graphemeClusters", "ligatures",
+        "webgl", "graphemeClusters", "ligatures", "colorSpread",
     ]);
     // Font, then text inputs, then switches — the order both forms render in.
     assert.deepEqual(keysOf(RENDER_FIELDS.filter((field) => field.kind === "toggle")), [
-        "cursorBlink", "webgl", "graphemeClusters", "ligatures",
+        "cursorBlink", "webgl", "graphemeClusters", "ligatures", "colorSpread",
     ]);
     assert.equal(renderField("themePath").kind, "text");
+    // Color spread moved over from the General page with its existing strings,
+    // and keeps its old default (off).
+    const colorSpread = renderField("colorSpread");
+    assert.equal(colorSpread.labelKey, "Color Spread");
+    assert.equal(colorSpread.descriptionKey, "Let fullscreen apps' background fill the whole window");
+    assert.equal(colorSpread.fallback, false);
 });
 
 test("every schema translation key exists in both languages", () => {
@@ -79,6 +85,8 @@ test("inheritedRenderValue: the global value, else the built-in default, else no
     assert.equal(inheritedRenderValue("themePath"), undefined);
     // A key present but undefined falls through like a missing one.
     assert.equal(inheritedRenderValue("scrollback", {scrollback: undefined}), 1000);
+    assert.equal(inheritedRenderValue("colorSpread"), false);
+    assert.equal(inheritedRenderValue("colorSpread", {colorSpread: true}), true);
 });
 
 test("initialOverrideValue seeds values and inverts toggles", () => {
@@ -95,6 +103,8 @@ test("initialOverrideValue seeds values and inverts toggles", () => {
     // A toggle starts at the opposite of the inherited state.
     assert.equal(initialOverrideValue("webgl"), true);
     assert.equal(initialOverrideValue("webgl", {webgl: true}), false);
+    assert.equal(initialOverrideValue("colorSpread"), true);
+    assert.equal(initialOverrideValue("colorSpread", {colorSpread: true}), false);
 });
 
 test("formatRenderValue", () => {

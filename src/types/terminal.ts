@@ -33,6 +33,12 @@ export interface TerminalRenderOptions extends ITerminalOptions {
      * ligature font (Fira Code, JetBrains Mono, …) set in `fontFamily`.
      * Off by default. */
     ligatures?: boolean;
+    /** Color spread: let a fullscreen TUI's uniform edge background spread
+     *  across the whole window chrome (sidebar, title bar and window
+     *  background follow it). Off, the chrome keeps the terminal theme's
+     *  background — edge sampling still runs, so the terminal's own interior
+     *  stays seam-free. Follows the ACTIVE tab's profile. Off by default. */
+    colorSpread?: boolean;
     padding?: TerminalPadding;
     themePath?: string;
     fontStyle?: FontStyle;

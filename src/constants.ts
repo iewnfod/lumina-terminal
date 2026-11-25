@@ -239,7 +239,6 @@ export const DEFAULT_CONFIG: GlobalConfig = {
     language: 'en-us',
     profiles: [],
     showTabBar: false,
-    enableColorSpread: false,
     themeMode: "terminal",
     windowOutline: true,
     autoUpdateOnStartup: true,

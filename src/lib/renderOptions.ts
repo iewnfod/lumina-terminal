@@ -68,7 +68,7 @@ export interface SelectRenderField {
 
 export interface ToggleRenderField {
     kind: "toggle";
-    key: "cursorBlink" | "webgl" | "graphemeClusters" | "ligatures";
+    key: "cursorBlink" | "webgl" | "graphemeClusters" | "ligatures" | "colorSpread";
     labelKey: TranslationKey;
     descriptionKey?: TranslationKey;
     fallback: boolean;
@@ -120,13 +120,32 @@ export const RENDER_FIELDS: readonly RenderField[] = [
         fallback: false,
     },
     {kind: "toggle", key: "ligatures", labelKey: "Ligatures", descriptionKey: "ligatures description", fallback: false},
+    {
+        kind: "toggle",
+        key: "colorSpread",
+        labelKey: "Color Spread",
+        descriptionKey: "Let fullscreen apps' background fill the whole window",
+        fallback: false,
+    },
 ];
 
 const FIELD_BY_KEY = new Map(RENDER_FIELDS.map((field) => [field.key, field] as const));
 
-export function renderField<K extends RenderFieldKey>(key: K): Extract<RenderField, {key: K}> {
+/** The schema member that declares `key`. `Extract<RenderField, {key: K}>`
+ *  does NOT do this: a member's `key` is a union of several keys (every
+ *  toggle shares ToggleRenderField) and Extract only matches when K is the
+ *  member's whole key type, so it resolved every field to `never` — harmless
+ *  while callers only passed the result on, but fields' own `fallback` /
+ *  `min` were unreachable. `F` and `K` are both naked type parameters, so the
+ *  conditionals distribute over both unions: a union `K` (the whole key set,
+ *  as in inheritedRenderValue) resolves to the union of its members' fields. */
+type MemberDeclaringKey<F, K extends RenderFieldKey> = F extends {key: infer Keys}
+    ? K extends Keys ? F : never
+    : never;
+
+export function renderField<K extends RenderFieldKey>(key: K): MemberDeclaringKey<RenderField, K> {
     // The key union is derived from RENDER_FIELDS, so a miss is a type error.
-    return FIELD_BY_KEY.get(key) as Extract<RenderField, {key: K}>;
+    return FIELD_BY_KEY.get(key) as MemberDeclaringKey<RenderField, K>;
 }
 
 /** Translation key for a select option, or null when the option is shown as-is. */

@@ -6,7 +6,7 @@ import {appDataDir} from "@tauri-apps/api/path";
 import {readTextFile, watch} from "@tauri-apps/plugin-fs";
 import {CONFIG_SAVE_PATH, DEFAULT_CONFIG} from "../constants.ts";
 import {readConfigDocument, writeConfigDocument, getConfigFilePath} from "../lib/configFile.ts";
-import {parseConfigToml, semanticEqual} from "../lib/configFormat.ts";
+import {migrateLegacyColorSpread, parseConfigToml, semanticEqual} from "../lib/configFormat.ts";
 import {ensureCellMetricsLoaded} from "../lib/cellMetrics.ts";
 import {migrateLegacyStateStores} from "../lib/stateStores.ts";
 import {whenInitialWindowSizeSettled} from "../lib/initialWindowSize.ts";
@@ -101,6 +101,7 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
             // "unreadable": run on defaults but leave the broken file alone.
             let migrated = migrateLegacyCopyWithCtrl(loadedConfig);
             migrated = stripLegacyProfileLastOpened(migrated);
+            migrated = migrateLegacyColorSpread(migrated);
             if (migrated !== loadedConfig) {
                 // The one-time migration changed something — persist it so
                 // the legacy flag is stripped from the file for good.
@@ -294,6 +295,7 @@ export function GlobalConfigProvider({ children }: { children: ReactNode }) {
                     const parsed = parseConfigToml(text) as unknown as GlobalConfig;
                     let merged = migrateLegacyCopyWithCtrl({...DEFAULT_CONFIG, ...parsed});
                     merged = stripLegacyProfileLastOpened(merged);
+                    merged = migrateLegacyColorSpread(merged);
                     if (semanticEqual(merged, configRef.current)) return;
                     applyConfig(merged);
                     info("Config hot-reloaded from disk").catch(() => {});

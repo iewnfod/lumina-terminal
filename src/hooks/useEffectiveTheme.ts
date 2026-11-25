@@ -2,6 +2,7 @@ import {useEffect, useState} from "react";
 import {ITheme} from "@xterm/xterm";
 import {TerminalProfile, TerminalRenderOptions} from "../types/terminal.ts";
 import {parseProfileTheme, type SystemTheme} from "../lib/term.ts";
+import {inheritedRenderValue} from "../lib/renderOptions.ts";
 import {foregroundFor, isColorDark} from "../lib/color.ts";
 import {error} from "@tauri-apps/plugin-log";
 
@@ -59,9 +60,6 @@ async function resolveProfileTheme(
 export function useEffectiveTheme(
     currentProfile: TerminalProfile | null,
     currentId: string | null,
-    /** When false, the TUI edge-background spread is disabled: edge reports are
-     *  ignored and the effective theme falls back to the terminal theme. */
-    enabled: boolean = true,
     /** Forces the light/dark decision regardless of the background color, for
      *  theme modes "system" / "light" / "dark". `null`/`undefined` = derive
      *  from the background (theme mode "terminal", the legacy behavior). This
@@ -115,11 +113,17 @@ export function useEffectiveTheme(
         setEdgeBg(null);
     }, [currentId]);
 
+    // Color spread is a render option of the active profile. A parsed tab
+    // profile already carries the global value (parseProfile merged it); the
+    // empty-state fallback is a raw config profile, so that one falls back to
+    // the global profile's, then the built-in default.
+    const colorSpread = (currentProfile?.colorSpread
+        ?? inheritedRenderValue("colorSpread", globalProfile)) === true;
     // Effective background. A forced bg (theme mode system/light/dark) wins
     // over everything — the whole window, including the terminal canvas, takes
     // that color so the mode is visually consistent. Otherwise: TUI edge color
     // if present (and spread enabled), else terminal theme bg.
-    const activeEdgeBg = forceBg ? null : (enabled ? edgeBg : null);
+    const activeEdgeBg = forceBg ? null : (colorSpread ? edgeBg : null);
     const effectiveBg = forceBg ?? activeEdgeBg ?? currentTheme?.background;
     // Resolved light/dark decision. With a dark override (theme mode system/
     // light/dark) the rendering follows the mode even if the bg color says

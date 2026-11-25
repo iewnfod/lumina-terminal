@@ -18,7 +18,6 @@ interface GeneralDraft {
     defaultProfile: string;
     themeMode: "system" | "terminal" | "light" | "dark";
     windowOutline: boolean;
-    enableColorSpread: boolean;
     autoUpdateOnStartup: boolean;
     inheritWorkingDirectory: boolean;
     imeDuplicateInputFix: boolean;
@@ -62,7 +61,6 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
         defaultProfile: currentDefault,
         themeMode: config.themeMode ?? "terminal",
         windowOutline: config.windowOutline !== false,
-        enableColorSpread: config.enableColorSpread !== false,
         autoUpdateOnStartup: config.autoUpdateOnStartup !== false,
         inheritWorkingDirectory: config.inheritWorkingDirectory ?? false,
         imeDuplicateInputFix: config.imeDuplicateInputFix !== false,
@@ -88,7 +86,6 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                 closeWindowOnLastTab: d.closeWindowOnLastTab,
                 themeMode: d.themeMode,
                 windowOutline: d.windowOutline,
-                enableColorSpread: d.enableColorSpread,
                 autoUpdateOnStartup: d.autoUpdateOnStartup,
                 inheritWorkingDirectory: d.inheritWorkingDirectory,
                 imeDuplicateInputFix: d.imeDuplicateInputFix,
@@ -114,7 +111,7 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
             }
             updateConfig(updated);
         },
-        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.enableColorSpread, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.enableShellCompletions, config.shellCompletionsOnType, config.shellCompletionsAppendSpace, config.rememberWindowPosition, config.rememberWindowSize, config.closeToTray, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
+        [config.language, config.showTabBar, config.closeWindowOnLastTab, config.themeMode, config.windowOutline, config.autoUpdateOnStartup, config.inheritWorkingDirectory, config.imeDuplicateInputFix, config.enableShellCompletions, config.shellCompletionsOnType, config.shellCompletionsAppendSpace, config.rememberWindowPosition, config.rememberWindowSize, config.closeToTray, config.sessionSaveMode, config.sessionSaveScrollback, config.loadDefaultProfileOnStartup, config.autoProxy, currentDefault],
     );
 
     return (
@@ -256,24 +253,6 @@ export default function GeneralSettings({borderColor, openAbout}: {borderColor: 
                                     </ListBox>
                                 </Select.Popover>
                             </Select>
-                        </SettingRow>
-
-                        {/* Color spread: let a fullscreen TUI's background bleed
-                            to the window edges. */}
-                        <SettingRow
-                            variant="toggle"
-                            label={<Label className="cursor-pointer">{t["Color Spread"]}</Label>}
-                            description={t["Let fullscreen apps' background fill the whole window"]}
-                            onClick={() => setDraft((prev) => ({...prev, enableColorSpread: !prev.enableColorSpread}))}
-                        >
-                            <Switch
-                                isSelected={draft.enableColorSpread}
-                                onChange={(v) => setDraft((prev) => ({...prev, enableColorSpread: v}))}
-                            >
-                                <Switch.Control>
-                                    <Switch.Thumb />
-                                </Switch.Control>
-                            </Switch>
                         </SettingRow>
 
                         {/* Window Outline: Linux-only row — on macOS/Windows the

@@ -9,6 +9,7 @@ import {getCurrentWindow} from "@tauri-apps/api/window";
 import {parseProfilePadding} from "../lib/term.ts";
 import {isInitialWindowSizeApplied, markInitialWindowSizeApplied, sizeMainWindowToProfile} from "../lib/initialWindowSize.ts";
 import {ChunkedWriter} from "../lib/chunkedWriter.ts";
+import {renderField} from "../lib/renderOptions.ts";
 import {loadBindings, parseTabIndex} from "../lib/bindings.ts";
 import type {Binding} from "../types/config.ts";
 import {Actions} from "../types/config.ts";
@@ -101,11 +102,12 @@ interface TermProps {
  *  instance: the mount-time constructor strip excludes them (not xterm
  *  options), plus cols/rows (would resize the OS window), webgl and
  *  graphemeClusters (addons can't be unloaded cleanly), ligatures (handled
- *  by re-registering the character joiner) and theme (applied with the
- *  edge-sampling fallback kept in sync). */
+ *  by re-registering the character joiner), theme (applied with the
+ *  edge-sampling fallback kept in sync) and colorSpread (it reaches the edge
+ *  sampler as a prop — not an xterm option). */
 const HOT_APPLY_EXCLUDED_KEYS: ReadonlySet<string> = new Set([
     "cols", "rows", "webgl", "padding", "themePath", "theme", "fontStyle",
-    "graphemeClusters", "ligatures",
+    "graphemeClusters", "ligatures", "colorSpread",
     "name", "exePath", "cwd", "default", "type", "ssh",
     "startupCommand", "keepAfterExit", "launcher",
 ]);
@@ -815,7 +817,7 @@ export default function Term(props : TermProps) {
         isActiveRef,
         themeBgRef: profileThemeBgRef,
         onEdgeChange: props.onEdgeBackgroundChange,
-        colorSpread: config.enableColorSpread !== false,
+        colorSpread: profile.colorSpread ?? renderField("colorSpread").fallback,
         edgeCoverage: config.edgeBackgroundCoverage,
         forceBg: props.forceBg,
     });
