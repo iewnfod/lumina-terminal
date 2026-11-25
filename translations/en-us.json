@@ -270,5 +270,13 @@
     "Completions As You Type": "Completions As You Type",
     "Experimental: request completions automatically while typing (no TAB needed)": "Experimental: request completions automatically while typing (no TAB needed), may not work reliably",
     "Append Space on Completion": "Append Space on Completion",
-    "Add a trailing space when a completion is accepted (directories excluded)": "Add a trailing space when a completion is accepted (directories excluded)"
+    "Add a trailing space when a completion is accepted (directories excluded)": "Add a trailing space when a completion is accepted (directories excluded)",
+    "Add Override": "Add Override",
+    "Use Global Setting": "Use Global Setting",
+    "Global: {v}": "Global: {v}",
+    "Not set": "Not set",
+    "On": "On",
+    "Off": "Off",
+    "No overrides yet — every render setting uses the global configuration.": "No overrides yet — every render setting uses the global configuration.",
+    "Per-side padding ({v}) — type a number to replace it": "Per-side padding ({v}) — type a number to replace it"
 }

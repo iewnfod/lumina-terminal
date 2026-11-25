@@ -345,7 +345,8 @@ export default function SettingsPage({ theme, openAbout }: { theme: ITheme | nul
                 component re-adds right padding for its content/footer. */}
             <div className="flex-1 relative" style={sidebarGlass}>
                 <MaskedSurface className="absolute inset-0 w-full h-full" style={{background: bg}}>
-                    <div className="w-full h-full pt-6 pb-6 pl-6">
+                    {/* --lum-surface: what SettingsShell's edge fades shade into. */}
+                    <div className="w-full h-full pt-6 pb-6 pl-6" style={{"--lum-surface": bg} as CSSProperties}>
                         {selectedSection === "general" ? (
                             <GeneralSettings borderColor={colors.borderColor} openAbout={openAbout} />
                         ) : selectedSection === "globalProfile" ? (

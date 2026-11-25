@@ -270,5 +270,13 @@
     "Completions As You Type": "输入时自动补全",
     "Experimental: request completions automatically while typing (no TAB needed)": "实验性：输入时自动请求补全（无需按 TAB），可能无法稳定工作",
     "Append Space on Completion": "补全后附加空格",
-    "Add a trailing space when a completion is accepted (directories excluded)": "接受补全时在词尾附加空格（目录除外）"
+    "Add a trailing space when a completion is accepted (directories excluded)": "接受补全时在词尾附加空格（目录除外）",
+    "Add Override": "添加覆盖",
+    "Use Global Setting": "使用全局配置",
+    "Global: {v}": "全局: {v}",
+    "Not set": "未设置",
+    "On": "开",
+    "Off": "关",
+    "No overrides yet — every render setting uses the global configuration.": "暂无覆盖，所有渲染设置均使用全局配置。",
+    "Per-side padding ({v}) — type a number to replace it": "按边设置（{v}），输入数字可改为统一值"
 }

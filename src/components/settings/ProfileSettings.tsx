@@ -5,7 +5,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {info, warn} from "@tauri-apps/plugin-log";
 import {open} from "@tauri-apps/plugin-dialog";
 import {Button, Input, Label, ListBox, Select, Switch} from "@heroui/react";
-import RenderSettings from "./RenderSettings.tsx";
+import ProfileRenderOverrides from "./ProfileRenderOverrides.tsx";
 import ShellSelector from "./ShellSelector.tsx";
 import SshFields from "./SshFields.tsx";
 import IconPicker from "./IconPicker.tsx";
@@ -14,6 +14,7 @@ import {customIconId, isCustomIconId} from "../../lib/appIcon.ts";
 import {listCommandIcons} from "../../lib/commandIconApi.ts";
 import {getLauncherDir, syncLaunchersFromConfig} from "../../lib/launcherApi.ts";
 import {openInFileManager} from "../../lib/fileManagerApi.ts";
+import {withRenderValue, type RenderFieldKey, type RenderValue} from "../../lib/renderOptions.ts";
 import SettingsShell from "../ui/SettingsShell.tsx";
 import SettingRow from "../ui/SettingRow.tsx";
 import SaveFooter from "../ui/SaveFooter.tsx";
@@ -72,6 +73,12 @@ export default function ProfileSettings({
             const ssh = {...prev.ssh, ...updates} as SSHConfig;
             return {...prev, ssh};
         });
+    };
+
+    // Render overrides commit one key at a time; `undefined` removes the
+    // override, so the profile inherits the global value again.
+    const updateRenderOption = (key: RenderFieldKey, value: RenderValue | undefined) => {
+        setDraft((prev) => (prev ? withRenderValue(prev, key, value) : null));
     };
 
     const [isEditingName, setIsEditingName] = useState(false);
@@ -489,7 +496,15 @@ export default function ProfileSettings({
                     </div>
                 )}
 
-                <RenderSettings draft={draft} updateDraft={updateDraft} idPrefix="profile" defaultExpanded={false} />
+                {/* Render settings as an additive override list: only what this
+                    profile overrides is shown, each row can be sent back to the
+                    global setting explicitly (ProfileRenderOverrides). */}
+                <ProfileRenderOverrides
+                    draft={draft}
+                    setRenderValue={updateRenderOption}
+                    globalProfile={config.globalProfile}
+                    borderColor={borderColor}
+                />
             </div>
         </SettingsShell>
     );

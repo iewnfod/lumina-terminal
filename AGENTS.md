@@ -205,6 +205,15 @@ src/
 │   ├── techStack.ts          # Parses README.md's "Technology Used" section into grouped items for the
 │   │                        #   About page's tech-stack modal (README is the single source of truth)
 │   ├── bindingsSettings.ts  # bindings-editor pure logic: actionLabel, detectConflicts, toDraft, …
+│   ├── renderOptions.ts    # Render-option field schema + pure helpers, shared by the two forms that
+│   │                        #   edit TerminalRenderOptions: RENDER_FIELDS (the one ordered list of the
+│   │                        #   UI-exposed fields — kind, label/option i18n keys, built-in defaults;
+│   │                        #   add a field here and both forms pick it up), listRenderOverrides /
+│   │                        #   inheritedRenderValue / initialOverrideValue (a profile's additive
+│   │                        #   override list: undefined = inherit), formatRenderValue ("Global: …"
+│   │                        #   hints), parseNumberInput, withRenderValue (the type-safe single-key
+│   │                        #   update both forms commit through). Type-only imports so node --test
+│   │                        #   loads it directly (tests/renderOptions.test.mjs)
 │   ├── setupTermAddons.ts   # setupTermAddons(term, profile, id) — assemble the standard xterm addon
 │   │                        #   stack (web links, Unicode 11, optional graphemes/WebGL, image, fit,
 │   │                        #   serialize, search) and return the handles Term keeps in refs
@@ -369,7 +378,12 @@ src/
 │   │   ├── IconButton.tsx   # Unified chrome button (replaces 3 prior button systems). Motion-aware.
 │   │   ├── MaskedSurface.tsx    # SVG-mask wrapper: clips children to a rounded rect (corners cut
 │   │   │                        #   away so the chrome beneath shows). Extensible to complex shapes.
-│   │   ├── SettingsShell.tsx    # Settings page frame (scroll body + optional footer slot)
+│   │   ├── SettingsShell.tsx    # Settings page frame (scroll body + optional footer slot). The scroll body
+│   │   │                        #   is a viewport with "content continues" edge fades: while content remains
+│   │   │                        #   beyond the top/bottom edge it shades into the settings surface
+│   │   │                        #   (`--lum-surface`, set by SettingsPage) at 75% opacity — a control cut by
+│   │   │                        #   the fold then reads as "scroll for the rest" instead of clipped (the
+│   │   │                        #   overlay scrollbars are invisible at rest)
 │   │   ├── SettingRow.tsx       # field / toggle / action / info row — kills the settings spacing drift
 │   │   ├── SectionTitle.tsx     # <h2> heading + optional subtitle (consistent mb)
 │   │   ├── SaveFooter.tsx       # Save (disabled-when-clean) + unsaved hint + trailing action slot
@@ -405,7 +419,8 @@ src/
 │   │                        #   (asset-protocol URL, resolved+cached via lib/commandIconApi.ts).
 │   │                        # Rendered when the running command maps to an app (lib/appIcon.ts);
 │   │                        # takes precedence over ShellIcon.
-│   ├── ThemePreview.tsx     # 8-color ANSI swatch with tooltip
+│   ├── ThemePreview.tsx     # 8-color ANSI swatch with tooltip; + ThemePathPreview — resolves an
+│   │                        #   options object's themePath to swatches (shared theme-path preview)
 │   ├── UpdateModal.tsx      # Update flow modal: version + release notes + download progress + install;
 │   │                        #   driven by App's single useUpdater instance + installSource
 │   ├── TechStackModal.tsx   # About page's tech-stack modal (items from lib/techStack.ts)
@@ -422,8 +437,21 @@ src/
 │       ├── ProfileSettings.tsx    # Per-profile form + the "wrap as app" launcher section (toggle,
 │       │                       #   title/working-directory/sidebar/icon rows via IconPicker, reveal
 │       │                       #   button via lib/fileManagerApi.ts). Saving chains
-│       │                       #   syncLaunchersFromConfig so launchers regenerate on commit.
-│       ├── RenderSettings.tsx     # Shared render-option form (rows/cols/font/theme/webgl)
+│       │                       #   syncLaunchersFromConfig so launchers regenerate on commit. Render
+│       │                       #   settings live in the additive ProfileRenderOverrides list below.
+│       ├── RenderSettings.tsx     # The Global Profile page's full render-option form (every field,
+│       │                       #   always visible — this IS the "global" profiles inherit from)
+│       ├── RenderFieldControl.tsx # The control for ONE render field (number / text input, select or
+│       │                       #   switch, per lib/renderOptions.ts) — the single place these are
+│       │                       #   built, shared by RenderSettings and ProfileRenderOverrides. In
+│       │                       #   override mode (`inherit`) "use the global setting" is an explicit
+│       │                       #   choice: selects get it as their first item, inputs as placeholder
+│       ├── ProfileRenderOverrides.tsx # A profile's render settings as an ADDITIVE list (like the
+│       │                       #   shortcuts page): only the keys the profile overrides are rows; an
+│       │                       #   add-row picks a setting (menu shows its inherited "Global: …"
+│       │                       #   value); every row has "Use Global Setting" (= remove the override,
+│       │                       #   back into the menu). Edits go through the parent's draft, so
+│       │                       #   nothing is written until Save
 │       ├── BindingsSettings.tsx
 │       ├── CommandIconSettings.tsx # User command→icon rules editor (config commandIcons): match
 │       │                       #   input + regex toggle (live validation) + icon picker (built-ins
@@ -670,6 +698,12 @@ categories that tend to duplicate:
   else (TabBar, MCP, settings preview all go through `getAppIcon`).
 - **Shared settings sub-forms** → `ShellSelector`, `SshFields`, `RenderSettings`.
   When a new settings page needs the same fields, reuse these components.
+- **Render-option fields** → `lib/renderOptions.ts` (`RENDER_FIELDS`) is the one
+  schema; `RenderFieldControl` builds each field's control and backs both
+  `RenderSettings` (the global full form) and `ProfileRenderOverrides` (a
+  profile's additive overrides). Do not hand-roll a render field's
+  `Input`/`Select`/`Switch`, and do not give a profile page the full form — a
+  profile inherits, so its settings are overrides added on demand.
 
 Rule of thumb: **if you are about to copy-paste >10 lines from another file,
 stop and extract.**
